@@ -114,7 +114,7 @@ public class AnalysisApi {
     List<Map<String,Object>> existing=db.queryForList(
        "SELECT revision FROM insight_calculated_field WHERE dataset_id=? AND id=?",id,formulaId);
     if(existing.isEmpty())throw new NoSuchElementException("计算字段不存在");
-    rejectPublishedSnapshotMutation(formulaId);
+    new FormulaSnapshotGuard(store,db).rejectPublishedMutation(id,formulaId);
     var result=checkFormulaUpdate(id,formulaId,expression);
     int count=db.update("UPDATE insight_calculated_field SET name=?,expression=?,phase=?,output_type=?,revision=revision+1 WHERE dataset_id=? AND id=? AND revision=?",
        name,expression,result.phase(),result.outputType(),id,formulaId,revision);
@@ -146,34 +146,13 @@ public class AnalysisApi {
     return changed;
   }
 
-  /** Published and historical snapshots must not silently acquire new formula semantics. */
-  private void rejectPublishedSnapshotMutation(String formulaId){
-    String pattern="%"+formulaId+"%";
-    Integer published=db.queryForObject(
-        "SELECT COUNT(*) FROM insight_dashboard WHERE published_json LIKE ?",Integer.class,pattern);
-    Integer history=db.queryForObject(
-        "SELECT COUNT(*) FROM insight_dashboard_version WHERE content_json LIKE ?",Integer.class,pattern);
-    if((published!=null&&published>0)||(history!=null&&history>0))
-      throw new IllegalStateException("计算字段存在已发布或历史版本引用，请新建计算字段以保留历史结果");
-  }
-
   @DeleteMapping("/datasets/{id}/calculated-fields/{formulaId}")
   @Transactional
   public Map<String,Object> deleteFormula(@PathVariable String id,@PathVariable String formulaId){
     var list=db.queryForList("SELECT id FROM insight_calculated_field WHERE dataset_id=? AND id=?",id,formulaId);
     if(list.isEmpty())throw new NoSuchElementException("计算字段不存在");
-    // Reject dependencies from other expressions and stored report snapshots.
-    String ref="%["+formulaId+"]%";
-    Integer used=db.queryForObject("SELECT COUNT(*) FROM insight_calculated_field WHERE expression LIKE ? AND id<>?",Integer.class,ref,formulaId);
-    if(used!=null&&used>0)throw new IllegalStateException("此计算字段仍被其他公式引用");
-    rejectPublishedSnapshotMutation(formulaId);
-    for(var report:db.queryForList("SELECT content_json,published_json FROM insight_dashboard")){
-      for(String key:List.of("content_json","published_json")){
-        Object raw=report.get(key);
-        if(raw!=null&&String.valueOf(raw).contains(formulaId))
-          throw new IllegalStateException("此计算字段仍被分析主题或发布快照引用");
-      }
-    }
+    // Structured direct and indirect checks include drafts and historical versions.
+    new FormulaSnapshotGuard(store,db).rejectDeletion(id,formulaId);
     db.update("DELETE FROM insight_calculated_field WHERE dataset_id=? AND id=?",id,formulaId);
     return Map.of("ok",true);
   }
