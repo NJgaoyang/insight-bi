@@ -98,6 +98,28 @@
 
 P1-02 的同连接 JOIN（重名字段与多对多语义）、多源 UNION 映射与去重可选项、多级汇总以及加工结果作为分析主题可复用数据集仍待实现。P0-05/G4 的真实 StarRocks 与生产备份、恢复及发布门禁继续暂缓/未通过。
 
+## P1-02 第三批：同连接多键 JOIN 与加工依赖删除保护（2026-10-14）
+
+- 处理步骤新增 `join` 类型：从同一个数据连接中的已保存数据集选择右表，只允许 `INNER` 或 `LEFT`、**1–4 组等值条件**，必须位于第一步。数据连接和源 SQL 只能通过服务端元数据取得，禁止客户端直接提交任意 SQL、跨连接引用、CROSS JOIN。
+- 右表必须显式选择 **1–30 个输出字段**，赋予新的稳定 `fieldId`，输出物理列统一采用 `join_<fieldId>` 别名。左表字段名称保持不变，避免 SELECT * 带来的同名字段覆盖；关联键类型必须一致、键组合不可重复，右侧输出字段与已有字段 ID 不得冲突。
+- 由于无法在不实际扫描数据的情况下证明关联键唯一，**必须显式确认多对多/重复键会使行数放大的风险**；系统不擅自去重、不修改原业务表。支持 JOIN 后过滤、计算、分组汇总；仅支持本轮清晰定义的等值语义。
+- 编辑页提供选择关联数据集、连接方式、多条件、右表输出字段与“行数放大风险”复选框；新增关联键时自动优先选取尚未使用且名称/类型匹配的字段组合，避免重复键默认阻塞保存。保存/重开保留稳定字段 ID。
+- 原 UNION 指纹计算规则保留向后兼容，JOIN 则独立记录右表 SQL/物理列元数据；被引用的数据集 SQL/结构发生变化时，已有加工配置被标记 stale，重新校验保存之前不允许直接预览。
+- 新增 `AnalysisPipelineDependencyGuard` 并接入现有数据集删除事务：当目标数据集正被其他数据集的 JOIN/UNION 加工引用时拒绝删除；删除主数据集同时清除其自身加工配置。只按结构化 `sourceDatasetId` 识别真实依赖，不因文字备注误拦；配置损坏时安全拒绝删除。
+
+### 本批只测试受影响部分
+
+- `mvn -q -o -Dtest=AnalysisPipelineJoinTest,AnalysisPipelineUnionTest,AnalysisPipelineCaseTest,AnalysisPipelineCompilerTest,AnalysisPipelineApiTest test`：**17/17 PASS**。覆盖 JOIN 多键、LEFT/INNER、未匹配行、重复键放大、JOIN 后过滤汇总、跨连接拒绝、类型/字段 ID 校验，并验证旧加工 SQL 的相关行为。
+- `mvn -q -o -Dtest=AnalysisPipelineDependencyGuardTest test`：**3/3 PASS**，覆盖引用保护、删除清理、损坏配置和文本误判。
+- `npm run build`：`vue-tsc --noEmit` 与 Vite **PASS**。
+- `node scripts/finebi_pipeline_join_ui_smoke.cjs`：隔离 Chromium **PASS**，验证多键、右表字段、显式风险确认、保存及刷新恢复；`finebi_pipeline_ui_smoke.cjs` 原加工功能相关浏览器测试 **PASS**。
+- `p0_scoped_ci.sh` 已补充 JOIN 和删除依赖保护的按文件触发测试映射；**未执行全量回归**。
+- **尚未验证 StarRocks 真库 JOIN 执行**，继续按用户要求暂缓；生产 `18110` 未部署、新增功能未实际用于生产。
+
+### 继续开发的未完成项
+
+P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量评估、多级汇总、处理后的数据作为主题可复用数据集、复杂类型兼容矩阵。P0-05/G4、生产 H2 一致性备份恢复和生产发布回滚演练依旧未通过。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
