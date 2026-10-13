@@ -13,7 +13,11 @@ type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
 type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
  op:string;value?:string;outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
 type UnionStep={id:string;type:'union';sourceDatasetId:string}
-type Step=FormulaStep|FilterStep|GroupStep|CaseStep|UnionStep
+type JoinKey={leftFieldId:string;rightFieldId:string}
+type JoinOutput={sourceFieldId:string;fieldId:string;name:string}
+type JoinStep={id:string;type:'join';sourceDatasetId:string;joinType:'INNER'|'LEFT';
+ conditions:JoinKey[];fields:JoinOutput[];acknowledgeFanout:boolean}
+type Step=FormulaStep|FilterStep|GroupStep|CaseStep|UnionStep|JoinStep
 type Column={id:string;name:string;label:string;type:string;numeric:boolean}
 
 const loading=ref(true),busy=ref(false),dirty=ref(false),stale=ref(false)
@@ -24,6 +28,12 @@ const primaryConnection=ref('')
 const unionCandidates=computed(()=>availableDatasets.value.filter(d=>
  d.id!==props.id&&d.connection_id===primaryConnection.value))
 const baseFields=ref<FieldV2[]>([])
+const joinedFields=ref<Record<string,FieldV2[]>>({})
+const rightFields=(id:string):Column[]=>(joinedFields.value[id]||[])
+ .filter(f=>!f.calculated).map(f=>({id:f.id,name:f.sourceColumn||f.id,
+ label:f.name,type:f.logicalType,numeric:f.numeric}))
+const baseColumns=():Column[]=>baseFields.value.filter(f=>!f.calculated)
+ .map(f=>({id:f.id,name:f.sourceColumn||f.id,label:f.name,type:f.logicalType,numeric:f.numeric}))
 const steps=ref<Step[]>([])
 const queryLimit=ref(30)
 const sqlPreview=ref('')
@@ -42,6 +52,13 @@ const selectable=(index:number):Column[]=>{
   if(step.type==='case'){
    fields=[...fields,{id:step.fieldId,name:'step_'+step.fieldId,label:step.name,
     type:step.outputType,numeric:step.outputType==='DECIMAL'}]
+  }
+  if(step.type==='join'){
+   fields=[...fields,...step.fields.map(x=>{
+    const source=rightFields(step.sourceDatasetId).find(f=>f.id===x.sourceFieldId)
+    return {id:x.fieldId,name:'join_'+x.fieldId,label:x.name,
+     type:source?.type||'STRING',numeric:source?.numeric||false}
+   })]
   }
   if(step.type==='group'){
    fields=[
@@ -71,11 +88,65 @@ function addFormula(){
 }
 function addUnion(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
- if(steps.value.some(x=>x.type==='union')){ElMessage.warning('首批仅支持一次上下合并');return}
+ if(steps.value.some(x=>x.type==='union'||x.type==='join')){
+  ElMessage.warning('首批仅支持一次合并或关联');return
+ }
  const candidate=unionCandidates.value[0]
  if(!candidate){ElMessage.warning('没有相同数据连接的其他数据集');return}
  steps.value.unshift({id:nextId('s'),type:'union',sourceDatasetId:candidate.id})
  changed()
+}
+async function ensureRightFields(id:string){
+ if(!id||joinedFields.value[id])return
+ joinedFields.value[id]=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')
+}
+function joinKeyFor(sourceId:string):JoinKey{
+ const left=baseColumns(),right=rightFields(sourceId)
+ const l=left.find(a=>right.some(b=>b.name===a.name&&b.type===a.type))||left[0]
+ const r=right.find(b=>b.name===l?.name&&b.type===l?.type)||
+  right.find(b=>b.type===l?.type)||right[0]
+ return {leftFieldId:l?.id||'',rightFieldId:r?.id||''}
+}
+function joinOutputFor(sourceId:string,used:JoinKey[]):JoinOutput{
+ const right=rightFields(sourceId)
+ const keyIds=new Set(used.map(k=>k.rightFieldId))
+ const src=right.find(x=>!keyIds.has(x.id))||right[0]
+ return {sourceFieldId:src?.id||'',fieldId:nextId('field'),
+  name:src?src.label+'（关联）':'关联字段'}
+}
+async function addJoin(){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ if(steps.value.some(x=>x.type==='union'||x.type==='join')){
+  ElMessage.warning('首批仅支持一次合并或关联');return
+ }
+ const candidate=unionCandidates.value[0]
+ if(!candidate){ElMessage.warning('没有相同数据连接的其他数据集');return}
+ try{
+  await ensureRightFields(candidate.id)
+  const condition=joinKeyFor(candidate.id)
+  steps.value.unshift({id:nextId('s'),type:'join',
+   sourceDatasetId:candidate.id,joinType:'LEFT',conditions:[condition],
+   fields:[joinOutputFor(candidate.id,[condition])],acknowledgeFanout:false})
+  changed()
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关联字段读取失败')}
+}
+async function changeJoinSource(step:JoinStep,id:string){
+ try{
+  await ensureRightFields(id)
+  const key=joinKeyFor(id)
+  step.sourceDatasetId=id;step.conditions=[key]
+  step.fields=[joinOutputFor(id,[key])]
+  step.acknowledgeFanout=false
+  changed()
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关联字段读取失败')}
+}
+function addJoinKey(step:JoinStep){
+ if(step.conditions.length>=4)return
+ step.conditions.push(joinKeyFor(step.sourceDatasetId));changed()
+}
+function addJoinOutput(step:JoinStep){
+ if(step.fields.length>=30)return
+ step.fields.push(joinOutputFor(step.sourceDatasetId,step.conditions));changed()
 }
 function addCase(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
@@ -108,9 +179,9 @@ function addMeasure(step:GroupStep,index:number){
 function move(index:number,delta:number){
  const next=index+delta
  if(next<0||next>=steps.value.length)return
- if((index===0&&steps.value[index]?.type==='union')||
-    (next===0&&steps.value[0]?.type==='union')){
-  ElMessage.warning('上下合并需要保留在第一步');return
+ if((index===0&&['union','join'].includes(steps.value[index]?.type||''))||
+    (next===0&&['union','join'].includes(steps.value[0]?.type||''))){
+  ElMessage.warning('关联或上下合并需要保留在第一步');return
  }
  const [item]=steps.value.splice(index,1)
  steps.value.splice(next,0,item)
@@ -132,6 +203,8 @@ async function load(){
   availableDatasets.value=all as DatasetOption[]
   baseFields.value=fields
   steps.value=structuredClone(config.steps)
+  const savedJoin=steps.value.find((x):x is JoinStep=>x.type==='join')
+  if(savedJoin)await ensureRightFields(savedJoin.sourceDatasetId)
   revision.value=config.revision;stale.value=config.stale
   savedSteps=JSON.stringify(steps.value);dirty.value=false
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取步骤失败')}
@@ -201,17 +274,19 @@ onMounted(load)
       <button @click="addFormula">＋ 计算列</button>
       <button @click="addFilter">＋ 过滤</button>
       <button @click="addCase">＋ 条件列</button>
-      <button :disabled="steps.some(x=>x.type==='union')||!unionCandidates.length"
+      <button :disabled="steps.some(x=>x.type==='union'||x.type==='join')||!unionCandidates.length"
        @click="addUnion">＋ 上下合并</button>
+      <button :disabled="steps.some(x=>x.type==='union'||x.type==='join')||!unionCandidates.length"
+       @click="addJoin">＋ 关联</button>
       <button :disabled="isGroupPresent" @click="addGroup">＋ 分组汇总</button>
      </div>
     </div>
     <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
     <section v-for="(step,index) in steps" :key="step.id" class="pipeline-step">
      <header class="pipeline-step-header">
-      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':step.type==='union'?'上下合并':'分组汇总'}}</strong>
-      <button title="步骤前移" :disabled="index===0||(index===1&&steps[0]?.type==='union')" @click="move(index,-1)">↑</button>
-      <button title="步骤后移" :disabled="index===steps.length-1||step.type==='union'" @click="move(index,1)">↓</button>
+      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':step.type==='union'?'上下合并':step.type==='join'?'数据关联':'分组汇总'}}</strong>
+      <button title="步骤前移" :disabled="index===0||(index===1&&['union','join'].includes(steps[0]?.type||''))" @click="move(index,-1)">↑</button>
+      <button title="步骤后移" :disabled="index===steps.length-1||step.type==='union'||step.type==='join'" @click="move(index,1)">↓</button>
       <button title="删除步骤" @click="removeStep(index)">删除</button>
      </header>
      <div v-if="step.type==='union'" class="pipeline-fields">
@@ -221,6 +296,49 @@ onMounted(load)
         :label="source.name" :value="source.id"/>
       </el-select>
       <small>仅支持同一数据连接、输出字段名称和类型相同的数据集；保留重复行。</small>
+     </div>
+     <div v-else-if="step.type==='join'" class="pipeline-fields">
+      <label>关联数据集（同一数据连接）</label>
+      <el-select :model-value="step.sourceDatasetId" filterable
+       @update:model-value="v=>changeJoinSource(step,String(v))">
+       <el-option v-for="source in unionCandidates" :key="source.id"
+        :label="source.name" :value="source.id"/>
+      </el-select>
+      <label>关联方式</label>
+      <el-select v-model="step.joinType" @change="changed">
+       <el-option label="LEFT JOIN（保留左表全部记录）" value="LEFT"/>
+       <el-option label="INNER JOIN（只保留匹配记录）" value="INNER"/>
+      </el-select>
+      <label>关联条件（等值匹配，最多 4 组）</label>
+      <div v-for="(condition,ci) in step.conditions" :key="ci" class="pipeline-measure">
+       <el-select v-model="condition.leftFieldId" filterable @change="changed">
+        <el-option v-for="field in baseColumns()" :key="field.id" :label="field.label"
+         :value="field.id"/>
+       </el-select>
+       <span>＝</span>
+       <el-select v-model="condition.rightFieldId" filterable @change="changed">
+        <el-option v-for="field in rightFields(step.sourceDatasetId)" :key="field.id"
+         :label="field.label" :value="field.id"/>
+       </el-select>
+       <button :disabled="step.conditions.length===1"
+        title="删除关联条件" @click="step.conditions.splice(ci,1);changed()">×</button>
+      </div>
+      <button :disabled="step.conditions.length>=4" @click="addJoinKey(step)">＋ 添加关联条件</button>
+      <label>右表输出字段（最多 30 列）</label>
+      <div v-for="(field,fi) in step.fields" :key="field.fieldId" class="pipeline-measure">
+       <el-select v-model="field.sourceFieldId" filterable @change="changed">
+        <el-option v-for="right in rightFields(step.sourceDatasetId)" :key="right.id"
+         :label="right.label" :value="right.id"/>
+       </el-select>
+       <el-input v-model="field.name" placeholder="输出列名" @input="changed"/>
+       <button :disabled="step.fields.length===1"
+        title="删除右表输出字段" @click="step.fields.splice(fi,1);changed()">×</button>
+      </div>
+      <button :disabled="step.fields.length>=30" @click="addJoinOutput(step)">＋ 添加输出字段</button>
+      <el-checkbox v-model="step.acknowledgeFanout" @change="changed">
+       我已了解：右表关联键重复可能放大结果行数
+      </el-checkbox>
+      <small>必须确认行数放大风险后才能保存；不自动去重，也不改动原始数据。</small>
      </div>
      <div v-else-if="step.type==='formula'" class="pipeline-fields">
       <label>列名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>
