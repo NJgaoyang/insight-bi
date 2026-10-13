@@ -1,0 +1,232 @@
+<script setup lang="ts">
+import {computed,onMounted,ref} from 'vue'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import {api,post,put,type FieldV2} from './api'
+
+const props=defineProps<{id:string}>()
+const emit=defineEmits<{(e:'back'):void}>()
+
+type FormulaStep={id:string;type:'formula';fieldId:string;name:string;expression:string}
+type FilterStep={id:string;type:'filter';fieldId:string;op:string;value?:string;values?:string[]}
+type Measure={id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';name:string}
+type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
+type Step=FormulaStep|FilterStep|GroupStep
+type Column={id:string;name:string;label:string;type:string;numeric:boolean}
+
+const loading=ref(true),busy=ref(false),dirty=ref(false),stale=ref(false)
+const datasetName=ref('数据加工'),revision=ref(0)
+const baseFields=ref<FieldV2[]>([])
+const steps=ref<Step[]>([])
+const queryLimit=ref(30)
+const sqlPreview=ref('')
+const previewRows=ref<Record<string,unknown>[]>([])
+const previewColumns=ref<Column[]>([])
+const truncated=ref(false)
+let savedSteps='[]'
+
+const selectable=(index:number):Column[]=>{
+ let fields:Column[]=baseFields.value.filter(f=>!f.calculated||f.phase==='ROW')
+  .map(f=>({id:f.id,name:f.sourceColumn||f.id,label:f.name,type:f.logicalType,numeric:f.numeric}))
+ for(const step of steps.value.slice(0,index)){
+  if(step.type==='formula'){
+   fields=[...fields,{id:step.fieldId,name:'step_'+step.fieldId,label:step.name,type:'DECIMAL',numeric:true}]
+  }
+  if(step.type==='group'){
+   fields=[
+    ...step.dimensions.map(id=>fields.find(f=>f.id===id)).filter((x):x is Column=>!!x),
+    ...step.measures.map(m=>({id:m.id,name:'m_'+m.id,label:m.name,type:'DECIMAL',numeric:true}))
+   ]
+  }
+ }
+ return fields
+}
+const isGroupPresent=computed(()=>steps.value.some(s=>s.type==='group'))
+function changed(){
+ dirty.value=JSON.stringify(steps.value)!==savedSteps
+ sqlPreview.value='';previewRows.value=[];previewColumns.value=[]
+}
+function nextId(prefix:string){return prefix+'_'+crypto.randomUUID().replace(/-/g,'').slice(0,12)}
+function addFormula(){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ const id=nextId('s')
+ steps.value.push({id,type:'formula',fieldId:nextId('field'),name:'计算列',expression:''})
+ changed()
+}
+function addFilter(){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ const id=nextId('s'),field=selectable(steps.value.length)[0]
+ steps.value.push({id,type:'filter',fieldId:field?.id||'',op:'eq',value:''})
+ changed()
+}
+function addGroup(){
+ if(steps.value.length>=12||isGroupPresent.value){ElMessage.warning('首批仅支持一次分组汇总');return}
+ const fields=selectable(steps.value.length)
+ steps.value.push({id:nextId('s'),type:'group',dimensions:[],
+  measures:[{id:nextId('m'),fieldId:fields.find(f=>f.numeric)?.id||'*',aggregate:'SUM',name:'汇总'}]})
+ changed()
+}
+function addMeasure(step:GroupStep,index:number){
+ if(step.measures.length>=5){ElMessage.warning('最多 5 个指标');return}
+ const available=selectable(index)
+ step.measures.push({id:nextId('m'),fieldId:available.find(f=>f.numeric)?.id||'*',
+  aggregate:'SUM',name:'指标'+(step.measures.length+1)})
+ changed()
+}
+function move(index:number,delta:number){
+ const next=index+delta
+ if(next<0||next>=steps.value.length)return
+ const [item]=steps.value.splice(index,1)
+ steps.value.splice(next,0,item)
+ changed()
+}
+function removeStep(index:number){steps.value.splice(index,1);changed()}
+function request(){return {steps:steps.value,limit:queryLimit.value}}
+async function load(){
+ loading.value=true
+ try{
+  const [all,fields,config]=await Promise.all([
+   api<Array<{id:string;name:string}>>('/datasets'),
+   api<FieldV2[]>('/datasets/'+encodeURIComponent(props.id)+'/fields'),
+   api<{steps:Step[];revision:number;stale:boolean}>('/datasets/'+encodeURIComponent(props.id)+'/pipeline')
+  ])
+  datasetName.value=all.find(x=>x.id===props.id)?.name||'数据加工'
+  baseFields.value=fields
+  steps.value=structuredClone(config.steps)
+  revision.value=config.revision;stale.value=config.stale
+  savedSteps=JSON.stringify(steps.value);dirty.value=false
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取步骤失败')}
+ finally{loading.value=false}
+}
+async function compile(){
+ busy.value=true
+ try{
+  const result=await post<{sqlPreview:string;columns:Column[]}>(
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/compile',request())
+  sqlPreview.value=result.sqlPreview;previewColumns.value=result.columns
+  ElMessage.success('步骤编译通过')
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'步骤编译失败')}
+ finally{busy.value=false}
+}
+async function preview(){
+ busy.value=true
+ try{
+  const result=await post<{rows:Record<string,unknown>[];columns:Column[];truncated:boolean}>(
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/preview',request())
+  previewRows.value=result.rows;previewColumns.value=result.columns
+  truncated.value=result.truncated;sqlPreview.value=''
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'真实数据预览失败')}
+ finally{busy.value=false}
+}
+async function save(){
+ busy.value=true
+ try{
+  const result=await put<{revision:number;stale:boolean}>(
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline',{
+    steps:steps.value,revision:revision.value})
+  revision.value=result.revision;stale.value=result.stale
+  savedSteps=JSON.stringify(steps.value);dirty.value=false
+  ElMessage.success('加工步骤已保存')
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'保存失败')}
+ finally{busy.value=false}
+}
+async function goBack(){
+ if(dirty.value){
+  try{await ElMessageBox.confirm('未保存的加工步骤将丢失，确定离开？','离开数据加工',{type:'warning'})}
+  catch{return}
+ }
+ emit('back')
+}
+onMounted(load)
+</script>
+
+<template>
+ <div class="pipeline-page">
+  <header class="pipeline-header">
+   <button class="pipeline-link" @click="goBack">← 公共数据</button>
+   <strong>{{datasetName}} / 数据加工</strong>
+   <span v-if="dirty" class="pipeline-unsaved">未保存</span>
+   <span v-if="stale" class="pipeline-warning">数据集 SQL 已变化，请重新校验保存</span>
+   <div class="pipeline-actions">
+    <button :disabled="busy||loading" @click="compile">SQL 预览</button>
+    <button :disabled="busy||loading" @click="preview">数据预览</button>
+    <button class="pipeline-save" :disabled="busy||loading||!dirty" @click="save">保存步骤</button>
+   </div>
+  </header>
+  <div v-if="loading" class="pipeline-empty">正在读取加工配置…</div>
+  <div v-else class="pipeline-content">
+   <div class="pipeline-steps">
+    <div class="pipeline-toolbar">
+     <strong>加工步骤</strong><small>按顺序执行 · 最多 12 步</small>
+     <div>
+      <button @click="addFormula">＋ 计算列</button>
+      <button @click="addFilter">＋ 过滤</button>
+      <button :disabled="isGroupPresent" @click="addGroup">＋ 分组汇总</button>
+     </div>
+    </div>
+    <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
+    <section v-for="(step,index) in steps" :key="step.id" class="pipeline-step">
+     <header class="pipeline-step-header">
+      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':'分组汇总'}}</strong>
+      <button title="步骤前移" :disabled="index===0" @click="move(index,-1)">↑</button>
+      <button title="步骤后移" :disabled="index===steps.length-1" @click="move(index,1)">↓</button>
+      <button title="删除步骤" @click="removeStep(index)">删除</button>
+     </header>
+     <div v-if="step.type==='formula'" class="pipeline-fields">
+      <label>列名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>
+      <label>计算表达式</label><el-input v-model="step.expression" type="textarea" :rows="2"
+       placeholder="例如：[revenue]-[cost]，引用字段 ID" @input="changed"/>
+      <small>可使用当前步骤之前的字段；公式在后端校验，不执行任意 SQL。</small>
+     </div>
+     <div v-else-if="step.type==='filter'" class="pipeline-fields">
+      <label>字段</label><el-select v-model="step.fieldId" filterable @change="changed">
+       <el-option v-for="f in selectable(index)" :key="f.id" :label="f.label" :value="f.id"/>
+      </el-select>
+      <label>条件</label><el-select v-model="step.op" @change="changed">
+       <el-option v-for="o in [{id:'eq',name:'等于'},{id:'ne',name:'不等于'},
+        {id:'gte',name:'大于等于'},{id:'lte',name:'小于等于'},
+        {id:'contains',name:'包含'},{id:'isNull',name:'为空'},{id:'notNull',name:'不为空'}]"
+        :key="o.id" :label="o.name" :value="o.id"/>
+      </el-select>
+      <template v-if="!['isNull','notNull'].includes(step.op)">
+       <label>值</label><el-input v-model="step.value" @input="changed"/>
+      </template>
+     </div>
+     <div v-else class="pipeline-fields">
+      <label>分组维度</label><el-select v-model="step.dimensions" multiple filterable
+       placeholder="选择 0–3 个维度" @change="changed">
+       <el-option v-for="f in selectable(index)" :key="f.id" :label="f.label" :value="f.id"/>
+      </el-select>
+      <label>汇总指标</label>
+      <div v-for="(m,i) in step.measures" :key="m.id" class="pipeline-measure">
+       <el-select v-model="m.fieldId" filterable @change="changed">
+        <el-option label="记录数 (*)" value="*"/>
+        <el-option v-for="f in selectable(index)" :key="f.id" :label="f.label" :value="f.id"/>
+       </el-select>
+       <el-select v-model="m.aggregate" @change="changed">
+        <el-option v-for="agg in ['SUM','AVG','COUNT','MIN','MAX']" :key="agg" :label="agg" :value="agg"/>
+       </el-select>
+       <el-input v-model="m.name" placeholder="名称" @input="changed"/>
+       <button title="移除汇总指标" :disabled="step.measures.length===1"
+        @click="step.measures.splice(i,1);changed()">×</button>
+      </div>
+      <button :disabled="step.measures.length>=5" @click="addMeasure(step,index)">＋ 添加指标</button>
+     </div>
+    </section>
+   </div>
+   <aside class="pipeline-result">
+    <div class="pipeline-result-head"><strong>预览结果</strong>
+     <el-input-number v-model="queryLimit" :min="1" :max="200" size="small"/>
+    </div>
+    <pre v-if="sqlPreview" class="pipeline-sql">{{sqlPreview}}</pre>
+    <div v-else-if="previewColumns.length" class="pipeline-table-wrap">
+     <table><thead><tr><th v-for="c in previewColumns" :key="c.id">{{c.label}}</th></tr></thead>
+      <tbody><tr v-for="(row,i) in previewRows" :key="i">
+       <td v-for="c in previewColumns" :key="c.id">{{row[c.name]??'—'}}</td>
+      </tr></tbody></table>
+     <small v-if="truncated">仅显示前 {{queryLimit}} 行</small>
+    </div>
+    <div v-else class="pipeline-empty">选择 SQL 预览或数据预览</div>
+   </aside>
+  </div>
+ </div>
+</template>

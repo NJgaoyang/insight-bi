@@ -4,6 +4,9 @@ import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import com.insightbi.analysis.DatasetSchemaGuard;
+import com.insightbi.analysis.DatasetSqlChangePolicy;
+import com.insightbi.analysis.AnalysisResourceGraph;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -89,19 +92,43 @@ class BiApi {
  }
  @GetMapping("/datasets")List<Map<String,Object>> datasets(){return s.datasets();}
  @GetMapping("/datasets/{id}")Map<String,Object> dataset(@PathVariable String id){var a=new LinkedHashMap<>(s.dataset(id));a.put("fields",s.arr(String.valueOf(a.remove("fields_json"))));return a;}
+ @Transactional
  @PostMapping("/datasets")Map<String,Object> saveDataset(@RequestBody Map<String,Object> x)throws Exception{
-  String id=str(x,"id",UUID.randomUUID().toString()),name=str(x,"name",""),connectionId=str(x,"connectionId",""),sql=DatabaseStore.safeSql(str(x,"sql",""));
+  String id=str(x,"id",UUID.randomUUID().toString()),name=str(x,"name",""),
+    connectionId=str(x,"connectionId",""),submittedSql=str(x,"sql","");
   if(name.isBlank()||name.length()>150)throw new IllegalArgumentException("数据集名称无效");
   String folder=optionalFolder(x);assertDataFolder(folder);
+  boolean exists=db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0;
+  String oldSql=exists?String.valueOf(s.dataset(id).get("sql_body")):null;
+  // Validate dangerous functions/AST before creating a JDBC source connection.
+  // Previously saved SQL is grandfathered only when its text is unchanged.
+  String sql=DatasetSqlChangePolicy.forSave(submittedSql,oldSql);
   List<Map<String,Object>> fields;try(Connection c=s.open(s.connection(connectionId))){fields=s.readFields(c,sql);}
   if(fields.isEmpty())throw new IllegalArgumentException("SQL 没有字段");
-  if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0)
-   db.update("UPDATE insight_dataset SET name=?,connection_id=?,sql_body=?,fields_json=? WHERE id=?",name,connectionId,sql,s.json(fields),id);
-  else db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json,folder_id) VALUES(?,?,?,?,?,?)",id,name,connectionId,sql,s.json(fields),folder);
+  Map<String,String> fieldRenames=new LinkedHashMap<>();
+  Object rawRenames=x.get("fieldRenames");
+  if(rawRenames!=null){
+   if(!(rawRenames instanceof Map<?,?> names))
+    throw new IllegalArgumentException("字段更名映射必须是旧源列到新源列的对象");
+   for(var entry:names.entrySet()){
+    if(!(entry.getKey() instanceof String old)||!(entry.getValue() instanceof String newer))
+     throw new IllegalArgumentException("字段更名映射必须由文本组成");
+    fieldRenames.put(old,newer);
+   }
+  }
+  if(!exists&&!fieldRenames.isEmpty())throw new IllegalArgumentException("新建数据集不能使用源字段更名映射");
+  if(exists){
+   var guard=new DatasetSchemaGuard(s,db);
+   guard.check(id,fields,fieldRenames);
+   guard.applyRenames(id,fieldRenames);
+   db.update("UPDATE insight_dataset SET name=?,connection_id=?,sql_body=?,fields_json=? WHERE id=?",
+     name,connectionId,sql,s.json(fields),id);
+  }else db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json,folder_id) VALUES(?,?,?,?,?,?)",id,name,connectionId,sql,s.json(fields),folder);
   return Map.of("id",id,"fields",fields);
  }
- @DeleteMapping("/datasets/{id}")Map<String,Object> deleteDataset(@PathVariable String id){
-  for(var x:db.queryForList("SELECT content_json FROM insight_dashboard"))if(String.valueOf(x.get("content_json")).contains(id))throw new IllegalArgumentException("报表正在引用该数据集");
+ @DeleteMapping("/datasets/{id}")@Transactional Map<String,Object> deleteDataset(@PathVariable String id){
+  AnalysisResourceGraph.rejectDatasetDeletion(id,s,db);
+  db.update("DELETE FROM insight_dataset_pipeline WHERE dataset_id=?",id);
   db.update("DELETE FROM insight_dataset WHERE id=?",id);return Map.of("ok",true);
  }
  @GetMapping("/datasets/{id}/preview")Map<String,Object> preview(@PathVariable String id,@RequestParam(defaultValue="50")int limit)throws Exception{
@@ -203,10 +230,37 @@ class BiApi {
   var row=new LinkedHashMap<>(list.get(0));if(published&&(row.get("published_json")==null||!"published".equals(row.get("status"))))throw new NoSuchElementException("该报表尚未发布");Object raw=published?row.get("published_json"):row.get("content_json");
   row.put("content",s.map(String.valueOf(raw)));row.remove("content_json");row.remove("published_json");return row;
  }
+ @GetMapping("/dashboards/{id}/resources")Map<String,Object> resources(@PathVariable String id,
+    @RequestParam(defaultValue="false")boolean published){
+  var rows=db.queryForList("SELECT kind,content_json,published_json,status,revision FROM insight_dashboard WHERE id=?",id);
+  if(rows.isEmpty())throw new NoSuchElementException("分析主题不存在");
+  var row=rows.get(0);
+  if(published&&(row.get("published_json")==null||!"published".equals(row.get("status"))))
+    throw new NoSuchElementException("该主题尚未发布");
+  Object raw=published?row.get("published_json"):row.get("content_json");
+  var graph=AnalysisResourceGraph.of(s.map(String.valueOf(raw)));
+  var missing=new ArrayList<String>();
+  for(String datasetId:graph.datasetIds()){
+    Integer found=db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,datasetId);
+    if(found==null||found!=1)missing.add(datasetId);
+  }
+  return Map.of("id",id,"kind",String.valueOf(row.get("kind")),"revision",row.get("revision"),
+    "schemaVersion",1,"datasetIds",graph.datasetIds(),"widgetIds",graph.widgetIds(),
+    "widgetCount",graph.widgetCount(),"dashboardIds",graph.dashboardIds(),
+    "dashboardCount",graph.dashboardCount(),"missingDatasetIds",missing);
+ }
  @PutMapping("/dashboards/{id}")Map<String,Object> update(@PathVariable String id,@RequestBody Map<String,Object> x){
   String name=str(x,"name",""),mode=str(x,"mode","grid");mode(mode);int rev=DatabaseStore.number(x.get("revision"),-1);
   if(name.isBlank()||!(x.get("content") instanceof Map))throw new IllegalArgumentException("无效报表配置");
-  String json=s.json(x.get("content"));if(json.length()>2_000_000)throw new IllegalArgumentException("内容过大");
+  var existing=db.queryForList("SELECT kind FROM insight_dashboard WHERE id=?",id);
+  if(existing.isEmpty())throw new NoSuchElementException("分析主题不存在");
+  Map<String,Object> content=s.map(s.json(x.get("content")));
+  if("analysis".equals(existing.get(0).get("kind"))){
+    var graph=AnalysisResourceGraph.of(content);
+    AnalysisResourceGraph.requireExistingDatasets(graph,db);
+    content=AnalysisResourceGraph.indexedContent(content);
+  }
+  String json=s.json(content);if(json.length()>2_000_000)throw new IllegalArgumentException("内容过大");
   int count=db.update("UPDATE insight_dashboard SET name=?,mode=?,content_json=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND revision=?",name,mode,json,id,rev);
   if(count==0)throw new IllegalStateException("此报表已被修改，请刷新");
   return Map.of("revision",rev+1);
@@ -227,6 +281,10 @@ class BiApi {
   var list=db.queryForList("SELECT name,mode,content_json FROM insight_dashboard WHERE id=?",id);
   if(list.isEmpty())throw new NoSuchElementException("仪表板不存在");
   var row=list.get(0);
+  String kind=db.queryForObject("SELECT kind FROM insight_dashboard WHERE id=?",String.class,id);
+  if("analysis".equals(kind))
+    AnalysisResourceGraph.requireExistingDatasets(
+      AnalysisResourceGraph.of(s.map(String.valueOf(row.get("content_json")))),db);
   Integer next=db.queryForObject("SELECT COALESCE(MAX(version_no),0)+1 FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id);
   db.update("UPDATE insight_dashboard SET published_json=content_json,status='published',updated_at=CURRENT_TIMESTAMP WHERE id=?",id);
   db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",UUID.randomUUID().toString(),id,next,row.get("name"),row.get("mode"),row.get("content_json"));

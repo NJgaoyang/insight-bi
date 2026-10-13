@@ -1,6 +1,6 @@
 # P0 实战任务书：FineBI 式自助分析计算引擎（StarRocks 直连）
 
-**状态：待实施；本文是开发指令与验收契约，不代表已经实现。**
+**状态：P0 核心代码开发中，尚未完成 G0/G1～G4 和 P0-05 真实环境验收；本文同时记录已实施改动与发布门禁。**
 
 - 总体目标：回到 [总计划](../FINEBI_DEVELOPMENT_EXECUTION_PLAN.md)。
 - 以现有仓库的 `8ac5a03` 为基线，P0 只覆盖字段模型、行级/聚合计算、前后过滤、多维多指标、可靠 SQL 编译、组件体验与真实 StarRocks 对账。
@@ -254,5 +254,27 @@ git diff --check
 | 日期 | 任务 | 分支/commit | 定向测试及结果 | StarRocks 对账 | 阻塞/下步 |
 |---|---|---|---|---|---|
 | 2026-10-13 | 编写本任务书 | 用 git log --oneline -- docs/FINEBI_ANALYSIS_ENGINE_P0_TASKS.md 查询 | Markdown 链接、JSON 示例、现有接口交叉检查通过 | 不适用 | P0-00 待实施 |
+| 2026-10-13 | 续修 P0-02/03/04：公式依赖及快照保护、只读函数白名单、V2 图表空值与查询取消 | feat/finebi-analysis-engine-p0: 4721a08、3c7b963、fc90416、0280e14、22bd28b、f75ad68、e7d7577 | GitHub Actions #32/#34 的 backend/frontend 均成功；新增 AnalysisFormulaDependencyTest、ReadOnlySqlGuardTest；未执行真实浏览器测试 | **未执行**（开发机离线） | G0 备份与隔离环境仍阻塞；P0-05 尚未验收，禁止直接部署 18110 |
+| 2026-10-13 | P0-04 组件分析 UI 增量及开发机浏览器验收 | feat/finebi-analysis-engine-p0: 730c101、012cc5a、3f8d98f、a6ecd64、02c88eb | 隔离预览 npm ci --offline 与 Vue/TS/Vite 构建 PASS；Chromium 多字段拖放/撤销/重做/保存重开 PASS；公式错误/创建/绑定/重开 PASS；旧本地分支定向 Maven PASS | **未执行**，均为模拟 API | 运行服务实际使用 H2；生产 runtime/local.env 缺失；在线 H2 复制不是权威备份；G0/P0-05 仍阻塞，须先安全恢复环境、取得一致性备份及非生产 StarRocks 对账 |
+
+| 2026-10-13 | P0-04 指标独立样式和真实浏览器复测 | feat/finebi-analysis-engine-p0: 715b3bf、e6322fb、acc3081、7e7951f、65eb6c8 | 两指标设置小数位/左右轴/标签可保存，样式修改不触发 SQL 重查；Chromium 两条脚本 PASS，离线 Vue+TypeScript/Vite 构建 PASS；Bash 部署脚本语法 PASS | **未执行**，测试 API 为模拟数据 | G4 完整图表/真数仍待验；G0 的凭据恢复、一致性备份、服务器 Git 同步受阻；P0-05 未通过 |
+
+| 2026-10-13 | 最新后端隔离回归 / P0-05 发布门禁复核 | feat/finebi-analysis-engine-p0: e3deabe | 开发机隔离克隆 Maven 定向执行 BiQueryInTest、AnalysisQueryPlannerTest、AnalysisEngineSqlExecutionTest、AnalysisFormulaDependencyTest、ReadOnlySqlGuardTest 全部 PASS；GitHub Actions #86 前后端成功 | **未执行**，无非生产 StarRocks 连接凭据和受控测试数据对账 | 当前生产元数据为 H2（非计划中的 MySQL）；runtime/local.env 缺失且 GitHub HTTPS 超时，生产服务不能重启；先处理环境 G0 再推进 P0-05 |
+
+| 2026-10-13 | P0-01/02/04/05 边界正确性、字段类型刷新、去重计数与只读 E2E 入口 | feat/finebi-analysis-engine-p0: d9c9ff3、7dc64c7、9b6430c、dc56ae6、fc12cdb、532fcf1、b76a25e、26523e7 | 开发机 Maven 定向测试 7 组 PASS、Vue/Vite build PASS、Chromium 多字段及公式两条脚本 PASS；E2E 只读 Runner 语法 PASS、未授权拒绝 PASS | **未执行真实 StarRocks**：JUnit E2E 默认跳过，需要明确非生产只读 JDBC 账号和开关 | G0：生产实际 H2、runtime/local.env 缺失、H2 一致性备份未完成；P0-05 禁止认定完成 |
+
+| 2026-10-13 | P0-02/03/04 公式 CASE+canonical AST、API 类型与长度校验、查询并发及前端公式组件拆分 | feat/finebi-analysis-engine-p0: 0ffecdc、9c84d5d、2b7c7f9、1d76e89、9b041b8、04b6dda、fb13fa8 | 仅运行 FormulaCompilerTypedTest、AnalysisFormulaValidationTest、AnalysisQueryLimiterTest 的相关单测；公式 UI TypeScript/Vite build 与单项 Chromium smoke PASS；不做整站回归 | **未执行**；现有独立 StarRocks E2E 仍需只读非生产环境 | G0/P0-05 保持阻塞：生产 H2 一致性备份和本机 runtime/local.env 待安全恢复，未重启 18110 |
+
+| 2026-10-13 | P0-01 数据集 Schema 更新前防护、显式 SQL 别名迁移、字段隐藏、元数据库幂等迁移 | feat/finebi-analysis-engine-p0: 6dbbd1a、917897c、664dd0d、19f1506、712d9be、e3dec82、1e3e586、02cffd1、3346d64 | 只运行 DatasetSchemaGuardTest（5）、DatasetAliasUpdateIntegrationTest（1）、FieldVisibilityTest（2）及受影响前端 build；Chromium 别名映射与隐藏字段 UI 两条脚本 PASS；CI 变更范围脚本语法与模拟 Git diff PASS | **未执行真实 StarRocks**，仅 H2 与模拟 REST | G0 生产配置恢复/一致性备份未完成；G4/P0-05 不得标记通过，生产 18110 不变 |
+
+| 2026-10-13 | P0-05 前置收尾：V1 旧列名兼容、V2 JDBC 强制只读、H2 临时库恢复演练、发布前证据闸门与停服前打包 | feat/finebi-analysis-engine-p0: dc98b05、687e2ca、818e6de、461fa6a、39e9912、2bec97d、de81e52、c107076、55f6832、7bfa30e、e0dac56、2f3de7b | 仅运行 DatasetSchemaGuardTest（8）、ReadOnlyConnectionPolicyTest（2）、MetadataRecoveryRehearsalTest（1）定向 PASS；synthetic p0_release_safety、无授权/无报告拒绝、bash -n PASS | **真实 StarRocks 未运行**，JUnit 仍 skip；专用非生产只读账号测试待完成 | **不得发布**：生产 local.env 缺失、生产 H2 未取得经恢复验证的一致性备份、隔离生产式验收/回滚未完成；见 docs/P0_RELEASE_GATE.md |
+
+| 2026-10-13 | P0-03/05：历史快照间接公式依赖、真实引用 AST 检测、StarRocks 手工 SQL 与 NULL/重复值对账 | feat/finebi-analysis-engine-p0: 8e5797f、a9b7d4e、0a18e89、2695b2d、0f17f91、924ce24 | `FormulaSnapshotGuardTest` 5 个定向用例及原有依赖测试；CI 按变动文件选取；扩展的 StarRocks JUnit 只进行编译（默认 skip） | **尚未连接 DataForge 真库**：开发机 Ping 有延迟响应，但远程命令超时；真实 JUnit 和手写 SQL 对账报告均未取得 | P0-05/G4 不可勾选；生产 H2 一致性备份、恢复凭据和生产回滚仍需现场验收 |
+
+| 2026-10-13 | P0-05 本地复用 DataForge 真数对账夹具，修复旧公式快照中引号引用误判 | feat/finebi-analysis-engine-p0: 80550fd、8524c2a、f0198f4、7c2dbad、3b92849、62ee493、96d3ffd | 开发机只运行 StarRocksInlineFixtureTest（2/2）、FormulaSnapshotGuardTest（6/6），均 PASS；生产 18110 健康，未执行其他回归 | DataForge FE 172.17.0.12:9030 TCP open；**JDBC 未认证成功/未取得实际查询结果**，不可标记真库验收 | G4/P0-05 仍待真实 StarRocks 只读对账及生产 H2 一致性恢复演练 |
+
+| 2026-10-13 | 用户授权先暂缓 G4 StarRocks，继续 P1-01 主题资源关系、共享组件多仪表板、已发布 V2 多视图查看及历史恢复 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | 只测 AnalysisResourceGraphTest（7）与相关 FineBiWorkspaceFolderTest；Vue TypeScript/Vite 构建；Chromium 编辑多视图及发布多视图两个脚本 PASS | DataForge StarRocks 真 JDBC 暂缓，不以 H2/模拟 REST 充当真数验收 | P0-05/G4 和生产 H2 备份/回滚仍待执行；P1-01 其余布局/权限依赖仍未完成 |
+
+| 2026-10-13 | P1-01 多仪表板独立布局：每个视图组件顺序、半宽/全宽、三档高度；已发布视图与历史恢复 | feat/finebi-analysis-engine-p0；docs/P1_IMPLEMENTATION_STATUS.md 第四批 | 只运行 AnalysisResourceGraphTest（8/8）、Vue/TypeScript/Vite 构建、3 个关联 Chromium 视图脚本，全部 PASS | DataForge StarRocks 真实 SQL 对账按用户指示暂缓；未以模拟数据冒充生产验收 | P1-01 独立视图发布策略、多主题资源复用尚未完成；生产 H2 备份/发布门禁不变 |
 
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。

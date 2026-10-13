@@ -3,6 +3,14 @@
 这是独立研发的 Vue 3 / TypeScript + Spring Boot 3 / Java 21 BI 系统，不是 FineBI 或腾讯云 BI 商业产品源码。
 
 
+## 2026-10-13 现场环境核实（优先于以下历史部署记录）
+
+- 开发机 `VM-0-13-tencentos` 上运行中的 `insight-bi.service`，实际 `SPRING_DATASOURCE_URL` 指向 **H2 文件** `/var/lib/insight-bi/metadata`，而不是文档中曾描述的 MySQL `datasphere`。元数据迁移尚待现场验收，**请勿直接切换 MySQL 或重启生产服务**。
+- `/opt/insight-bi/runtime/local.env` 当前缺失；旧运行 JAR 已从仍活动的 JVM 文件描述符恢复到原启动路径并备份于被 Git 忽略的 `runtime/recovery-20261013-162336/`。复制的 H2 文件只用于应急保全，未经一致性恢复验证，不视为正式备份。
+- 当前 P0 增量开发分支 `feat/finebi-analysis-engine-p0`，**GitHub 分支新提交尚未同步并部署到生产**。开发机本地 GitHub HTTPS 请求超时；不要在生产工作树上强行重置。
+- `scripts/deploy.sh` 已设置 `runtime/local.env` 与旧 JAR 前置检查，但仍须人工完成一致性备份、隔离部署、非生产 StarRocks 真数对账后才能发布。
+- P0 真实 StarRocks 的只读、无 DDL 对账脚本为 `scripts/p0_starrocks_readonly_e2e.sh`；仅在单独配置 `P0_STARROCKS_E2E=true`、`P0_STARROCKS_NONPROD_CONFIRMED=true` 以及 **非生产只读** JDBC URL/USER/PASSWORD 后执行，脚本不预装凭据。
+
 ## 下一阶段可直接执行的研发计划
 
 - **总实施计划**：[\`FINEBI_DEVELOPMENT_EXECUTION_PLAN.md\`](FINEBI_DEVELOPMENT_EXECUTION_PLAN.md) — 架构、P0～P3、质量门禁、部署与回滚约束。
@@ -28,13 +36,13 @@
 - 本机查看： http://127.0.0.1:18110/
 - 电脑访问： http://106.54.222.247:18110/ （无需 SSH 隧道）
 - 初始用户名 admin；随机生成的密码保存在服务器 /opt/insight-bi/runtime/local.env ，权限 600，不提交 Git。
-- 已切换到 MySQL 172.17.0.12:3306 的 datasphere 数据库（仅 insight_ 前缀元数据表）。原 H2 数据库已备份，不再承载在线数据。
+- **历史记录（非现网事实）**：此前曾记录切换到 MySQL datasphere；2026-10-13 现场检查证实当前运行服务仍连接 H2，请以本页顶部现场核实信息为准。
 
-## MySQL 元数据库配置（当前已启用）
+## MySQL 元数据库配置（历史方案，当前未验证启用）
 目标：172.17.0.12:3306/datasphere；所有元数据表名统一以 insight_ 开头。
 1. 将 /opt/insight-bi/runtime/mysql.env.example 复制到 /opt/insight-bi/runtime/mysql.env
 2. 仅在服务器上填写 SPRING_DATASOURCE_USERNAME / SPRING_DATASOURCE_PASSWORD；文件权限 600。
-3. systemctl restart insight-bi ; systemctl status insight-bi --no-pager。
+3. **不要直接重启**。先恢复服务器专用环境文件、完成一致性备份及隔离预览环境验证。
 4. 首次启动将自动创建 insight_connection、insight_dataset、insight_dashboard、insight_dashboard_version 四张表。
 如需从 H2 转移已有报表，请先导出迁移，不要直接切换元数据源丢失当前内容。
 

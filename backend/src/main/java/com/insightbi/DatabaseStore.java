@@ -32,28 +32,37 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard (id VARCHAR(36) PRIMARY KEY, name VARCHAR(150) NOT NULL, mode VARCHAR(12) NOT NULL, content_json LONGTEXT NOT NULL, published_json LONGTEXT, status VARCHAR(15) NOT NULL, revision INT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard_version (id VARCHAR(36) PRIMARY KEY, dashboard_id VARCHAR(36) NOT NULL, version_no INT NOT NULL, name VARCHAR(150) NOT NULL, mode VARCHAR(12) NOT NULL, content_json LONGTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (dashboard_id,version_no))");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
-  boolean hasFolder=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dashboard","folder_id")){
-      return columns.next();
-    }
-  }));
-  if(!hasFolder)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN folder_id VARCHAR(36)");
-  boolean hasKind=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dashboard","kind")){
-      return columns.next();
-    }
-  }));
-  if(!hasKind)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN kind VARCHAR(15) NOT NULL DEFAULT 'dashboard'");
+  boolean hasFolder=columnExists("insight_dashboard","folder_id");
+   if(!hasFolder)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN folder_id VARCHAR(36)");
+  boolean hasKind=columnExists("insight_dashboard","kind");
+   if(!hasKind)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN kind VARCHAR(15) NOT NULL DEFAULT 'dashboard'");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_data_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
-  boolean hasDataFolder=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dataset","folder_id")){
-      return columns.next();
+  boolean hasDataFolder=columnExists("insight_dataset","folder_id");
+   if(!hasDataFolder)jdbc.execute("ALTER TABLE insight_dataset ADD COLUMN folder_id VARCHAR(36)");
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, source_name VARCHAR(128) NOT NULL, display_name VARCHAR(150) NOT NULL, logical_type VARCHAR(20) NOT NULL, role VARCHAR(20) NOT NULL, ordinal INT NOT NULL, hidden BOOLEAN NOT NULL DEFAULT FALSE, UNIQUE(dataset_id,source_name))");
+  boolean hasFieldHidden=columnExists("insight_dataset_field","hidden");
+   if(!hasFieldHidden)jdbc.execute("ALTER TABLE insight_dataset_field ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT FALSE");
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_calculated_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, name VARCHAR(100) NOT NULL, expression VARCHAR(1500) NOT NULL, phase VARCHAR(20) NOT NULL, output_type VARCHAR(20) NOT NULL, revision INT NOT NULL DEFAULT 1, UNIQUE(dataset_id,name))");
+  // P1-02: an isolated, reversible metadata table. Never modifies dataset SQL.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_pipeline (dataset_id VARCHAR(36) PRIMARY KEY, config_json LONGTEXT NOT NULL, source_sql_hash VARCHAR(64) NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+
+
+
+ }
+ /**
+  * H2 may upper-case identifiers while MySQL preserves table casing.
+  * Check both conventions before running a metadata migration.
+  */
+ private boolean columnExists(String table,String column){
+  return Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
+   var metadata=connection.getMetaData();
+   for(String candidate:List.of(table,table.toUpperCase(Locale.ROOT))){
+    try(ResultSet columns=metadata.getColumns(connection.getCatalog(),null,candidate,"%")){
+     while(columns.next())if(column.equalsIgnoreCase(columns.getString("COLUMN_NAME")))return true;
     }
+   }
+   return false;
   }));
-  if(!hasDataFolder)jdbc.execute("ALTER TABLE insight_dataset ADD COLUMN folder_id VARCHAR(36)");
-
-
-
  }
  public String json(Object o){try{return mapper.writeValueAsString(o);}catch(Exception e){throw new IllegalArgumentException(e);}}
  public Map<String,Object> map(String json){try{return mapper.readValue(json,new TypeReference<>(){});}catch(Exception e){throw new IllegalArgumentException(e);}}
@@ -117,10 +126,34 @@ public class DatabaseStore {
   return rows;
  }
  public List<Map<String,Object>> readRows(Connection c,String sql,List<Object> params,int limit)throws Exception{
-  List<Map<String,Object>> data=new ArrayList<>();try(PreparedStatement ps=c.prepareStatement(sql)){
-   ps.setQueryTimeout(15);ps.setMaxRows(Math.min(500,limit));for(int i=0;i<params.size();i++)ps.setObject(i+1,params.get(i));
-   try(ResultSet rs=ps.executeQuery()){ResultSetMetaData meta=rs.getMetaData();int n=meta.getColumnCount();while(rs.next()&&data.size()<Math.min(500,limit)){Map<String,Object> row=new LinkedHashMap<>();for(int j=1;j<=n;j++){Object x=rs.getObject(j);if(x instanceof java.sql.Date||x instanceof Timestamp||x instanceof Time)x=x.toString();row.put(meta.getColumnLabel(j),x);}data.add(row);}}
-  }return data;
+  // Legacy V1 and previews always retain the original maximum of 500.
+  return readRowsBounded(c,sql,params,limit,500);
+ }
+ /** Internal V2 overflow probe; caller trims the sentinel row before returning data. */
+ public List<Map<String,Object>> readAnalysisRows(Connection c,String sql,List<Object> params,int requestedLimit)throws Exception{
+  if(requestedLimit<1||requestedLimit>500)throw new IllegalArgumentException("分析行数上限无效");
+  return readRowsBounded(c,sql,params,requestedLimit+1,501);
+ }
+ private List<Map<String,Object>> readRowsBounded(Connection c,String sql,List<Object> params,int limit,int cap)throws Exception{
+  int rowCap=Math.min(cap,limit);
+  List<Map<String,Object>> data=new ArrayList<>();
+  try(PreparedStatement ps=c.prepareStatement(sql)){
+   ps.setQueryTimeout(15);ps.setMaxRows(rowCap);
+   for(int i=0;i<params.size();i++)ps.setObject(i+1,params.get(i));
+   try(ResultSet rs=ps.executeQuery()){
+    ResultSetMetaData meta=rs.getMetaData();int n=meta.getColumnCount();
+    while(data.size()<rowCap&&rs.next()){
+     Map<String,Object> row=new LinkedHashMap<>();
+     for(int j=1;j<=n;j++){
+      Object x=rs.getObject(j);
+      if(x instanceof java.sql.Date||x instanceof Timestamp||x instanceof Time)x=x.toString();
+      row.put(meta.getColumnLabel(j),x);
+     }
+     data.add(row);
+    }
+   }
+  }
+  return data;
  }
  public List<Map<String,Object>> readFields(Connection c,String sql)throws Exception{
   try(PreparedStatement ps=c.prepareStatement("SELECT * FROM ("+safeSql(sql)+") insight_meta WHERE 1=0")){
