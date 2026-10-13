@@ -42,6 +42,7 @@ public final class AnalysisPipelineCompiler {
       state=switch(type){
         case "formula"->formula(state,step);
         case "filter"->filter(state,step);
+        case "case"->caseColumn(state,step);
         case "group"->group(state,step);
         default->throw new IllegalArgumentException("未实现的加工步骤："+type);
       };
@@ -81,40 +82,69 @@ public final class AnalysisPipelineCompiler {
   }
 
   private State filter(State state,Map<String,Object> step){
+    List<Object> params=new ArrayList<>(state.params());
+    String predicate=predicate(state,step,params);
+    return new State("SELECT biq.* FROM ("+state.sql()+") biq WHERE ("+predicate+")",
+      state.fields(),params,state.grouped());
+  }
+
+  /**
+   * Condition column: exactly one controlled WHEN predicate and two typed
+   * branch literals. No user SQL, no dynamic column identifiers and no
+   * untyped implicit conversion. Branch binds follow predicate binds.
+   */
+  private State caseColumn(State state,Map<String,Object> step){
+    String id=required(step,"fieldId"),name=required(step,"name");
+    if(!id.matches("[A-Za-z_][A-Za-z0-9_]{0,48}")||state.fields().containsKey(id))
+      throw new IllegalArgumentException("条件列 ID 不合法或与已有字段冲突");
+    if(name.length()>100)throw new IllegalArgumentException("条件列名称过长");
+    String outputType=required(step,"outputType").toUpperCase(Locale.ROOT);
+    if(!Set.of("STRING","DECIMAL").contains(outputType))
+      throw new IllegalArgumentException("条件列仅支持文本或数值类型");
+    List<Object> params=new ArrayList<>(state.params());
+    String condition=predicate(state,step,params);
+    Object yes=convert(step.get("thenValue"),outputType);
+    Object no=convert(step.get("elseValue"),outputType);
+    params.add(yes);params.add(no);
+    String column="step_"+id;
+    String sql="SELECT biq.*, CASE WHEN ("+condition+") THEN ? ELSE ? END AS "+
+      FormulaCompiler.quote(column)+" FROM ("+state.sql()+") biq";
+    var fields=new LinkedHashMap<>(state.fields());
+    fields.put(id,new FieldCatalog.Field(id,name,column,outputType,
+      "BOTH","DECIMAL".equals(outputType),false,"ROW",null));
+    return new State(sql,fields,params,state.grouped());
+  }
+
+  private static String predicate(State state,Map<String,Object> step,List<Object> params){
     FieldCatalog.Field field=find(state,required(step,"fieldId"));
     if(field.calculated()&&!"ROW".equals(field.phase()))
-      throw new IllegalArgumentException("不能把聚合公式用于明细过滤");
+      throw new IllegalArgumentException("不能把聚合公式用于过滤条件");
     String expr=fieldExpr(state,field);
     String op=required(step,"op");
-    List<Object> params=new ArrayList<>(state.params());
-    String predicate;
-    if("isNull".equals(op)||"notNull".equals(op)){
-      predicate=expr+("isNull".equals(op)?" IS NULL":" IS NOT NULL");
-    }else if("in".equals(op)){
+    if("isNull".equals(op)||"notNull".equals(op))
+      return expr+("isNull".equals(op)?" IS NULL":" IS NOT NULL");
+    if("in".equals(op)){
       Object values=step.get("values");
       if(!(values instanceof List<?> list)||list.isEmpty()||list.size()>30)
         throw new IllegalArgumentException("IN 必须包含 1~30 个值");
       List<String> binds=new ArrayList<>();
       for(Object value:list){params.add(convert(value,field.logicalType()));binds.add("?");}
-      predicate=expr+" IN ("+String.join(",",binds)+")";
-    }else{
-      String operator=switch(op){
-        case "eq"->"=";case "ne"->"<>";
-        case "gt"->">";case "gte"->">=";
-        case "lt"->"<";case "lte"->"<=";
-        case "contains"->"LIKE";
-        default->throw new IllegalArgumentException("不支持的过滤操作："+op);
-      };
-      if("contains".equals(op)&&!"STRING".equals(field.logicalType()))
-        throw new IllegalArgumentException("文本包含只能用于字符串字段");
-      Object value=convert(step.get("value"),field.logicalType());
-      if("contains".equals(op))
-        value="%"+value.toString().replace("!","!!").replace("%","!%").replace("_","!_")+"%";
-      params.add(value);
-      predicate=expr+" "+operator+" ?"+("contains".equals(op)?" ESCAPE '!'":"");
+      return expr+" IN ("+String.join(",",binds)+")";
     }
-    return new State("SELECT biq.* FROM ("+state.sql()+") biq WHERE ("+predicate+")",
-      state.fields(),params,state.grouped());
+    String operator=switch(op){
+      case "eq"->"=";case "ne"->"<>";
+      case "gt"->">";case "gte"->">=";
+      case "lt"->"<";case "lte"->"<=";
+      case "contains"->"LIKE";
+      default->throw new IllegalArgumentException("不支持的过滤操作："+op);
+    };
+    if("contains".equals(op)&&!"STRING".equals(field.logicalType()))
+      throw new IllegalArgumentException("文本包含只能用于字符串字段");
+    Object value=convert(step.get("value"),field.logicalType());
+    if("contains".equals(op))
+      value="%"+value.toString().replace("!","!!").replace("%","!%").replace("_","!_")+"%";
+    params.add(value);
+    return expr+" "+operator+" ?"+("contains".equals(op)?" ESCAPE '!'":"");
   }
 
   private State group(State state,Map<String,Object> step){
