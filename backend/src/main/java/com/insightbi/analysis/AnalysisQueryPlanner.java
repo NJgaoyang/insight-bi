@@ -58,6 +58,11 @@ public final class AnalysisQueryPlanner {
       String fieldId=required(m,"fieldId");
       String agg=string(m.get("aggregate"),"SUM").toUpperCase(Locale.ROOT);
       if(!Set.of("SUM","AVG","COUNT","MIN","MAX").contains(agg))throw new IllegalArgumentException("不支持的聚合方式");
+      if(m.get("distinct")!=null&&!(m.get("distinct") instanceof Boolean))
+        throw new IllegalArgumentException("去重选项必须是布尔值");
+      boolean distinct=Boolean.TRUE.equals(m.get("distinct"));
+      if(distinct&&(!agg.equals("COUNT")||fieldId.equals("*")))
+        throw new IllegalArgumentException("当前仅 COUNT(字段) 支持去重计数");
       String expression,type;
       if(fieldId.equals("*")&&agg.equals("COUNT")){expression="COUNT(*)";type="INTEGER";}
       else{
@@ -67,8 +72,10 @@ public final class AnalysisQueryPlanner {
           if(!agg.equals("SUM"))throw new IllegalArgumentException("聚合公式不能再次选择聚合方式");
           expression=c.sql();type=c.outputType();
         }else{
-          if(!agg.equals("COUNT")&&!f.numeric())throw new IllegalArgumentException("指标需为数值字段");
-          expression=agg+"("+ref(f)+")";type=agg.equals("COUNT")?"INTEGER":"DECIMAL";
+          if(Set.of("SUM","AVG").contains(agg)&&!f.numeric())
+            throw new IllegalArgumentException("SUM/AVG 指标必须是数值字段");
+          expression=agg+"("+(distinct?"DISTINCT ":"")+ref(f)+")";
+          type=agg.equals("COUNT")?"INTEGER":(agg.equals("MIN")||agg.equals("MAX"))?f.logicalType():"DECIMAL";
         }
       }
       select.add(expression+" AS "+FormulaCompiler.quote(id));
