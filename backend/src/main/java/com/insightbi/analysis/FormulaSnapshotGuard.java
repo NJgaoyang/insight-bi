@@ -78,6 +78,51 @@ public final class FormulaSnapshotGuard {
     return referencesNode(root,impactedIds);
   }
 
+  /**
+   * Legacy snapshots sometimes store formulas as text rather than a structured
+   * fieldId. Match bracketed identifiers only outside quoted SQL literals,
+   * escaped quote pairs and comments. Literal descriptions never count.
+   */
+  static boolean hasUnquotedFieldReference(String expression,Set<String> impactedIds){
+    if(expression==null||impactedIds.isEmpty())return false;
+    for(int i=0;i<expression.length();){
+      char c=expression.charAt(i);
+      if(c=='\\''||c=='"'||c=='`'){
+        char quote=c;
+        i++;
+        while(i<expression.length()){
+          char next=expression.charAt(i++);
+          if(next=='\\\\'&&i<expression.length()){i++;continue;}
+          if(next==quote){
+            if(i<expression.length()&&expression.charAt(i)==quote){i++;continue;}
+            break;
+          }
+        }
+        continue;
+      }
+      if(c=='-'&&i+1<expression.length()&&expression.charAt(i+1)=='-'){
+        i+=2;
+        while(i<expression.length()&&expression.charAt(i)!='\\n')i++;
+        continue;
+      }
+      if(c=='/'&&i+1<expression.length()&&expression.charAt(i+1)=='*'){
+        int end=expression.indexOf("*/",i+2);
+        i=end<0?expression.length():end+2;
+        continue;
+      }
+      if(c=='['){
+        int end=expression.indexOf(']',i+1);
+        if(end>i+1){
+          if(impactedIds.contains(expression.substring(i+1,end)))return true;
+          i=end+1;
+          continue;
+        }
+      }
+      i++;
+    }
+    return false;
+  }
+
   private static boolean referencesNode(Object node,Set<String> impactedIds){
     if(node instanceof List<?> list){
       for(Object child:list)if(referencesNode(child,impactedIds))return true;
@@ -90,9 +135,8 @@ public final class FormulaSnapshotGuard {
         if(Set.of("fieldIds","formulaIds").contains(key)&&value instanceof List<?> ids){
           for(Object id:ids)if(id instanceof String fieldId&&impactedIds.contains(fieldId))return true;
         }
-        if("expression".equals(key)&&value instanceof String expression){
-          for(String id:impactedIds)if(expression.contains("["+id+"]"))return true;
-        }
+        if("expression".equals(key)&&value instanceof String expression&&
+           hasUnquotedFieldReference(expression,impactedIds))return true;
         if((value instanceof List<?>||value instanceof Map<?,?>)&&referencesNode(value,impactedIds))
           return true;
       }
