@@ -9,8 +9,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
  const browser=await chromium.launch({executablePath,args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1500,height:950}})
-  const errors=[],renames=[],queries=[],saves=[]
-  let label='城市',revision=1,content={mode:'grid',theme:'light',widgets:[]}
+  const errors=[],renames=[],visibilityChanges=[],queries=[],saves=[]
+  let label='城市',hidden=false,revision=1,content={mode:'grid',theme:'light',widgets:[]}
   page.on('pageerror',e=>errors.push(e.message))
   await page.route('**/api/**',async route=>{
    const req=route.request(),path=new URL(req.url()).pathname,method=req.method()
@@ -26,8 +26,12 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
     sql_body:'SELECT city,revenue FROM sales',fields:[
      {name:'city',type:'VARCHAR',numeric:false},{name:'revenue',type:'DECIMAL',numeric:true}]}])
    if(path==='/api/datasets/ds1/fields'&&method==='GET')return send([
-    {id:'city',name:label,sourceColumn:'city',logicalType:'STRING',role:'DIMENSION',numeric:false,calculated:false,phase:'ROW'},
+    {id:'city',name:label,sourceColumn:'city',logicalType:'STRING',role:'DIMENSION',numeric:false,calculated:false,phase:'ROW',hidden},
     {id:'revenue',name:'收入',sourceColumn:'revenue',logicalType:'DECIMAL',role:'BOTH',numeric:true,calculated:false,phase:'ROW'}])
+   if(path==='/api/datasets/ds1/fields/city/visibility'&&method==='PUT'){
+    const body=req.postDataJSON();visibilityChanges.push(body.hidden);hidden=body.hidden
+    return send({id:'city',name:label,sourceColumn:'city',logicalType:'STRING',role:'DIMENSION',numeric:false,calculated:false,phase:'ROW',hidden})
+   }
    if(path==='/api/datasets/ds1/fields/city'&&method==='PUT'){
     const body=req.postDataJSON();renames.push(body)
     label=body.displayName
@@ -67,7 +71,22 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.locator('.analysis-shelf.v2-shelf .analysis-chip').first().waitFor()
   assert.ok((await page.locator('.analysis-shelf.v2-shelf').first().innerText()).includes('所属城市'))
   assert.equal(queries.at(-1).dimensions[0].fieldId,'city')
+  const priorQueries=queries.length
+  await page.locator('.analysis-field').filter({hasText:'所属城市'}).first()
+   .locator('button[title="隐藏字段"]').click()
+  await page.locator('.analysis-field').filter({hasText:'所属城市'}).first().waitFor({state:'hidden'})
+  assert.ok((await page.locator('.analysis-shelf.v2-shelf').first().innerText()).includes('所属城市'))
+  assert.equal(queries.length,priorQueries,'Hiding metadata must not query the datasource')
+  await page.locator('.analysis-field-search .el-checkbox').click()
+  const managed=page.locator('.analysis-field').filter({hasText:'所属城市'}).first()
+  await managed.waitFor()
+  assert.equal(await managed.getAttribute('draggable'),'false')
+  await managed.locator('button[title="显示字段"]').click()
+  await page.locator('.analysis-field').filter({hasText:'所属城市'}).first()
+   .locator('button[title="隐藏字段"]').waitFor()
+  assert.deepEqual(visibilityChanges,[true,false])
+  assert.equal(queries.length,priorQueries)
   assert.deepEqual(errors,[])
-  console.log('PASS P0 display alias rename: source+ID unchanged, bindings persist')
+  console.log('PASS P0 field metadata: alias, hide/unhide, existing stable bindings')
  }finally{await browser.close()}
 })().catch(e=>{console.error('FAIL P0 display alias rename',e.stack||e);process.exitCode=1})
