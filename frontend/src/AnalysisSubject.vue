@@ -24,6 +24,7 @@ const v2Fields=ref<FieldV2[]>([])
 const fieldSearch=ref('')
 const v2Dimensions=computed(()=>v2Fields.value.filter(f=>!f.calculated||f.phase==='ROW').filter(f=>f.name.includes(fieldSearch.value)))
 const v2Metrics=computed(()=>v2Fields.value.filter(f=>f.numeric).filter(f=>f.name.includes(fieldSearch.value)))
+const v2CountFields=computed(()=>v2Fields.value.filter(f=>!f.numeric&&!f.calculated).filter(f=>f.name.includes(fieldSearch.value)))
 const v2DimensionLabels=computed(()=>chosen.value?.analysisV2?.dimensions.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 const v2MeasureLabels=computed(()=>chosen.value?.analysisV2?.measures.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 /** Local undo/redo snapshots never change server data before Save. */
@@ -84,10 +85,10 @@ function addV2Field(field:FieldV2,kind:'dimension'|'metric'){
   if(b.dimensions.length>=3){ElMessage.warning('维度最多 3 个');return}
   b.dimensions.push({fieldId:field.id})
  }else{
-  if(!field.numeric){ElMessage.warning('仅数值字段可作为指标');return}
+  if(!field.numeric&&field.calculated){ElMessage.warning('该计算字段不能用于计数');return}
   if(b.measures.length>=5){ElMessage.warning('指标最多 5 个');return}
   const used=new Set(b.measures.map(m=>m.id));let i=1;while(used.has('m'+i))i++
-  b.measures.push({id:'m'+i,fieldId:field.id,aggregate:'SUM',alias:field.name})
+  b.measures.push({id:'m'+i,fieldId:field.id,aggregate:field.numeric?'SUM':'COUNT',alias:field.name})
  }
  mark()
 }
@@ -302,7 +303,12 @@ onMounted(load)
        @dragstart="onV2Drag($event,f,'metric')" @click="addV2Field(f,'metric')">
        <span class="field-metric">∑</span>{{f.name}}<small>{{f.calculated?'ƒ':'⋮⋮'}}</small>
      </div>
-     <button class="analysis-formula-add" @click="openFormula">＋ 计算字段</button>
+     <div v-if="v2CountFields.length" class="analysis-field-header">可计数字段 <small>{{v2CountFields.length}}</small></div>
+      <div v-for="f in v2CountFields" :key="'cnt-'+f.id" class="analysis-field" draggable="true"
+       @dragstart="onV2Drag($event,f,'metric')" @click="addV2Field(f,'metric')">
+       <span class="field-metric">#</span>{{f.name}}<small>COUNT</small>
+      </div>
+      <button class="analysis-formula-add" @click="openFormula">＋ 计算字段</button>
     </template>
     <template v-else>
      <div class="analysis-field-header">维度 <small>{{dimensions.length}}</small></div>
@@ -343,9 +349,10 @@ onMounted(load)
        <span v-for="(item,i) in v2MeasureLabels" :key="item.binding.id" class="analysis-chip" draggable="true"
          @dragstart="onBindingDrag($event,'metric',i)" @dragover.prevent @drop="onBindingDrop($event,'metric',i)">
         {{item.field?.name||'字段已删除'}}
-        <el-select v-model="item.binding.aggregate" size="small" style="width:82px" @change="mark">
-         <el-option v-for="agg in ['SUM','AVG','COUNT','MIN','MAX']" :key="agg" :value="agg" :label="agg"/>
+        <el-select v-model="item.binding.aggregate" size="small" style="width:82px" @change="item.binding.distinct=false;mark()">
+         <el-option v-for="agg in item.field?.phase==='AGGREGATE'?['SUM']:item.field?.numeric?['SUM','AVG','COUNT','MIN','MAX']:['COUNT','MIN','MAX']" :key="agg" :value="agg" :label="agg"/>
         </el-select>
+        <el-checkbox v-if="item.binding.aggregate==='COUNT'" v-model="item.binding.distinct" size="small" @change="mark">去重</el-checkbox>
         <button :disabled="i===0" title="指标前移" @click="moveV2Binding('metric',i,-1)">↑</button>
         <button :disabled="i===v2MeasureLabels.length-1" title="指标后移" @click="moveV2Binding('metric',i,1)">↓</button>
         <button title="移除指标" @click="removeV2Field(item.binding.id,'metric')">×</button>
