@@ -151,6 +151,28 @@ class AnalysisResourceGraphTest {
     assertEquals(2,api.get(subject,false).get("revision"));
   }
 
+  @Test void restoringPublishedVersionRecoversDashboardViewsAndStableWidgetIds(){
+    String id=String.valueOf(api.create(Map.of("name","恢复多视图","kind","analysis")).get("id"));
+    var firstContent=new LinkedHashMap<String,Object>(content(widget("w1",first),widget("w2",second)));
+    firstContent.put("dashboards",List.of(
+      Map.of("id","overview","name","概览","widgetIds",List.of("w1","w2")),
+      Map.of("id","segment","name","分项","widgetIds",List.of("w2"))));
+    api.update(id,Map.of("name","恢复多视图","mode","grid","revision",1,
+      "content",firstContent));
+    api.publish(id);
+    var changed=new LinkedHashMap<String,Object>(content(widget("w1",first)));
+    changed.put("dashboards",List.of(
+      Map.of("id","overview","name","概览","widgetIds",List.of("w1"))));
+    api.update(id,Map.of("name","修改后","mode","grid","revision",2,"content",changed));
+    assertEquals(1,api.resources(id,false).get("dashboardCount"));
+    api.restore(id,1,Map.of("revision",3));
+    assertEquals(2,api.resources(id,false).get("dashboardCount"));
+    assertEquals(List.of("overview","segment"),api.resources(id,false).get("dashboardIds"));
+    assertEquals(List.of(first,second),api.resources(id,false).get("datasetIds"));
+    assertEquals(List.of("w1","w2"),api.resources(id,false).get("widgetIds"));
+    assertEquals(4,api.get(id,false).get("revision"));
+  }
+
   @Test void evenCorruptedSavedHistoryFailsClosedOnDatasetDeletion(){
     String id=String.valueOf(api.create(Map.of("name","旧坏版本","kind","analysis")).get("id"));
     api.update(id,Map.of("name","旧坏版本","mode","grid","revision",1,
