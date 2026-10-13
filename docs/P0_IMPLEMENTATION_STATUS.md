@@ -189,6 +189,17 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 - `DataForgeStarRocksTestAccessTest` 3 项定向权限与地址校验由 GitHub Actions [#321](https://github.com/NJgaoyang/insight-bi/actions/runs/38402539719) **success**；DataForge 专用启动脚本的增量语法工作流 [#322](https://github.com/NJgaoyang/insight-bi/actions/runs/38402709639) **success**。没有执行其他模块全量回归。
 - **实际阻塞**：开发机 Remote Desktop Commander 在设备列表中显示在线，但执行命令、Ping 和文件同步连续超时；运行本环境的模型容器到这两个 FE 地址的 TCP 9030 均显示连接拒绝，不能替代开发机局域网连通性检查。因此截至本次仍**未获得真实 StarRocks JDBC 查询结果或非跳过报告**，P0-05/G4 不可视为完成。不要使用合成 SQL 测试或脚本语法通过冒充真实对账。
 
+## 2026-10-13 后续增量：历史快照间接依赖保护与真实对账矩阵
+
+用户要求仅运行修改范围的测试，继续沿 `feat/finebi-analysis-engine-p0` 推进 P0，保持生产 `18110` 不变。
+
+- **计算字段依赖安全**：新增 `FormulaSnapshotGuard`，遍历当前数据集计算字段的直接与传递依赖；当被修改公式的下游计算字段已经用于已发布仪表板或历史版本时，一样拒绝影响历史语义的修改。删除计算字段时同时保护公式依赖、草稿、已发布、历史引用。快照采用结构化 JSON 的 `fieldId/formulaId/fieldIds/formulaIds/expression` 引用检查，不再把标题、说明中的偶然 UUID 子串误判为真实引用；无法解析的历史快照安全拒绝。保留旧 `AnalysisFormulaDependencyTest` 的兼容行为。
+- **定向验收**：新增 `FormulaSnapshotGuardTest` 4 个用例：间接已发布依赖、纯文本误判、草稿引用删除、损坏快照的安全拒绝；`scripts/p0_scoped_ci.sh` 只在 `AnalysisApi` 或 `FormulaSnapshotGuard` 变动时运行相关的公式/依赖测试。GitHub Actions 对应定向作业已显示 **success**，没有执行全套回归。
+- **StarRocks 手写 SQL 真数基准**：`StarRocksReadOnlyReconciliationTest` 新增独立手写 SELECT 进行城市与月份多维聚合、利润率对比；追加重复上海记录、`NULL` 金额/日期，检查 `COUNT`、`COUNT DISTINCT`、`SUM` 以及 NULL 与零值语义。该测试仅构造内联 SELECT 数据，不操作任何业务表。GitHub Actions 定向编译检查 **success**。
+- **真实测试仍未完成**：DataForge 测试 FE 候选 `172.17.0.12:9030`；开发机设备目录偶尔显示在线且 Ping 最终返回，但远程 shell 一直超时，所以没有得到真实 JDBC 对账输出。**JUnit 被跳过的集成测试不能当作真库验收通过**。正式发布要求的生产 H2 备份和恢复验证仍未完成。
+
+变更对应主要文件：`analysis/FormulaSnapshotGuard.java`、`analysis/AnalysisApi.java`、`analysis/FormulaSnapshotGuardTest.java`、`analysis/StarRocksReadOnlyReconciliationTest.java`、`scripts/p0_scoped_ci.sh`。本次所有提交均在开发分支，不合并 `main`，不部署生产。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
