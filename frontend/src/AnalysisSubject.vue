@@ -318,7 +318,35 @@ onMounted(load)
      <div class="analysis-property-tabs"><button :class="{active:propTab==='data'}" @click="propTab='data'">数据</button><button :class="{active:propTab==='style'}" @click="propTab='style'">样式</button></div>
      <div class="analysis-property-body">
       <label>组件名称</label><el-input v-model="chosen.title" @input="mark"/>
-      <template v-if="propTab==='data'">
+      <template v-if="propTab==='data' && chosen.analysisV2">
+       <label>图表类型</label>
+       <el-select v-model="chosen.type" @change="mark">
+        <el-option v-for="t in types.filter(t=>['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(t.type))"
+         :key="t.type" :label="t.name" :value="t.type"/>
+       </el-select>
+       <label>查询行数上限</label><el-input-number v-model="chosen.analysisV2.limit" :min="1" :max="500" @change="mark"/>
+       <label>明细前过滤（≥）</label>
+       <el-select v-model="preFilterField" filterable placeholder="选择字段">
+        <el-option v-for="f in v2Fields" :key="f.id" :label="f.name" :value="f.id"/>
+       </el-select>
+       <el-input v-model="preFilterValue" placeholder="输入比较值"/>
+       <button class="analysis-formula-add" @click="addV2Filter('pre')">添加明细过滤</button>
+       <div v-for="(f,i) in chosen.analysisV2.filters.pre" :key="i" class="v2-applied-filter">
+        {{v2Fields.find(z=>z.id===f.fieldId)?.name||f.fieldId}} ≥ {{f.value}}
+        <button @click="chosen.analysisV2!.filters.pre.splice(i,1);mark()">×</button>
+       </div>
+       <label>聚合后过滤（≥）</label>
+       <el-select v-model="postFilterRef" placeholder="选择聚合指标">
+        <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
+       </el-select>
+       <el-input v-model="postFilterValue" placeholder="输入比较值"/>
+       <button class="analysis-formula-add" @click="addV2Filter('post')">添加结果过滤</button>
+       <div v-for="(f,i) in chosen.analysisV2.filters.post" :key="i" class="v2-applied-filter">
+        {{chosen.analysisV2!.measures.find(z=>z.id===f.ref)?.alias||f.ref}} ≥ {{f.value}}
+        <button @click="chosen.analysisV2!.filters.post.splice(i,1);mark()">×</button>
+       </div>
+      </template>
+      <template v-else-if="propTab==='data'">
        <label>图表类型</label><el-select v-model="chosen.type" @change="mark"><el-option v-for="t in types" :key="t.type" :value="t.type" :label="t.name"/></el-select>
        <label>维度</label><el-select v-model="chosen.dimension" filterable clearable @change="mark"><el-option v-for="f in dimensions" :key="f.name" :label="f.name" :value="f.name"/></el-select>
        <label>数值指标</label><el-select v-model="chosen.measure" filterable clearable @change="mark"><el-option v-for="f in metrics" :key="f.name" :label="f.name" :value="f.name"/></el-select>
@@ -337,4 +365,18 @@ onMounted(load)
    </aside>
   </div>
  </div>
+ <el-dialog v-model="formulaDialog" title="新增计算字段" width="540px" append-to-body>
+  <div class="v2-formula-dialog">
+   <label>字段名称</label><el-input v-model="formulaName" maxlength="100" placeholder="例如：利润率"/>
+   <label>公式表达式</label>
+   <el-input v-model="formulaExpression" type="textarea" :rows="4"
+     placeholder="例如：SUM([字段]) / NULLIF(SUM([字段]),0)"/>
+   <div class="v2-formula-hint">点击字段插入引用；支持 + - * /、SUM、AVG、COUNT、MIN、MAX、NULLIF、COALESCE、ROUND。</div>
+   <div class="v2-formula-fields"><button v-for="f in v2Fields" :key="f.id" @click="insertFormulaField(f)">{{f.name}}</button></div>
+  </div>
+  <template #footer>
+   <button class="subtle-button" @click="formulaDialog=false">取消</button>
+   <button class="primary-button" :disabled="formulaBusy" @click="saveFormula">保存计算字段</button>
+  </template>
+ </el-dialog>
 </template>
