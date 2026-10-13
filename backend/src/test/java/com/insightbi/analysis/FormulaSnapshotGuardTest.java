@@ -35,7 +35,7 @@ class FormulaSnapshotGuardTest {
 
   private static void version(Fixture f,String content){
     f.db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",
-      UUID.randomUUID().toString(),"report",1,"History","grid",content);
+      UUID.randomUUID().toString(),UUID.randomUUID().toString(),1,"History","grid",content);
   }
 
   private static void dashboard(Fixture f,String draft,String published){
