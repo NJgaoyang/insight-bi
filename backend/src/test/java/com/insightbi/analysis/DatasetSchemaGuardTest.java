@@ -78,7 +78,7 @@ class DatasetSchemaGuardTest {
  @Test void legacyFieldAndDateGroupingTypeChangeAreAlsoProtected(){
   var f=fixture();
   snapshot(f,f.store.json(Map.of("widgets",List.of(Map.of("datasetId",f.dataset,
-    "dimension","city","measure","amount"))),null);
+    "dimension","city","measure","amount")))),null);
   assertThrows(IllegalArgumentException.class,
     ()->f.guard.check(f.dataset,columns("amount","DECIMAL")));
   var next=fixture();
