@@ -277,4 +277,6 @@ git diff --check
 
 | 2026-10-13 | P1-01 多仪表板独立布局：每个视图组件顺序、半宽/全宽、三档高度；已发布视图与历史恢复 | feat/finebi-analysis-engine-p0；docs/P1_IMPLEMENTATION_STATUS.md 第四批 | 只运行 AnalysisResourceGraphTest（8/8）、Vue/TypeScript/Vite 构建、3 个关联 Chromium 视图脚本，全部 PASS | DataForge StarRocks 真实 SQL 对账按用户指示暂缓；未以模拟数据冒充生产验收 | P1-01 独立视图发布策略、多主题资源复用尚未完成；生产 H2 备份/发布门禁不变 |
 
+| 2026-10-13 | P1-02 第一批：数据集加工有序步骤引擎（行计算列、过滤、分组汇总），真实 SQL 编译/预览、持久化版本控制、旧 SQL 变化检测和页面编辑 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | AnalysisPipelineCompilerTest 4/4、AnalysisPipelineApiTest 2/2、Vue TS/Vite build、finebi_pipeline_ui_smoke.cjs Chromium PASS；仅验证变动范围 | DataForge StarRocks 真数仍按用户要求暂缓，本次 H2/REST 模拟不视为真库对账 | P1-02 JOIN/UNION/复杂条件列 UI 及结果复用尚未完成；P0-05/H2 生产备份发布门禁继续未通过 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
