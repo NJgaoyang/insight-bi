@@ -53,10 +53,17 @@ public class AnalysisApi {
     store.dataset(id);
     return db.queryForList("SELECT id,name,expression,phase,output_type,revision FROM insight_calculated_field WHERE dataset_id=? ORDER BY name",id);
   }
+  private static String requiredExpression(Map<String,Object> body){
+    Object value=body.get("expression");
+    if(!(value instanceof String text)||text.isBlank()||text.length()>1500)
+      throw new IllegalArgumentException("公式不能为空或超过 1500 字符");
+    return text.trim();
+  }
+
   @PostMapping("/datasets/{id}/calculated-fields/validate")
   public Map<String,Object> validate(@PathVariable String id,@RequestBody Map<String,Object> body){
     var formula=new FormulaCompiler(FieldCatalog.index(catalog.fields(id)))
-      .compile(AnalysisQueryPlanner.required(body,"expression"));
+      .compile(requiredExpression(body));
     return Map.of("phase",formula.phase(),"outputType",formula.outputType(),
        "references",formula.references(),"sqlPreview",formula.sql(),
        "canonicalAst",formula.canonicalAst());
@@ -66,7 +73,7 @@ public class AnalysisApi {
   public Map<String,Object> addFormula(@PathVariable String id,@RequestBody Map<String,Object> body){
     String name=AnalysisQueryPlanner.required(body,"name");
     if(name.length()>100)throw new IllegalArgumentException("计算字段名称过长");
-    String expression=AnalysisQueryPlanner.required(body,"expression");
+    String expression=requiredExpression(body);
     var result=new FormulaCompiler(FieldCatalog.index(catalog.fields(id))).compile(expression);
     String expected=String.valueOf(body.getOrDefault("phase",result.phase()));
     if(!result.phase().equals(expected))throw new IllegalArgumentException("公式计算阶段与声明不一致");
@@ -78,7 +85,7 @@ public class AnalysisApi {
   @PutMapping("/datasets/{id}/calculated-fields/{formulaId}")
   @Transactional
   public Map<String,Object> updateFormula(@PathVariable String id,@PathVariable String formulaId,@RequestBody Map<String,Object> body){
-    String expression=AnalysisQueryPlanner.required(body,"expression"),
+    String expression=requiredExpression(body),
        name=AnalysisQueryPlanner.required(body,"name");
     int revision;
     try{revision=Integer.parseInt(String.valueOf(body.get("revision")));}catch(Exception e){throw new IllegalArgumentException("缺少公式版本号");}
