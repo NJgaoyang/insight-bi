@@ -36,6 +36,7 @@ jobs:
         run: |
           node --check scripts/finebi_multifield_ui_smoke.cjs
           node --check scripts/finebi_formula_ui_smoke.cjs
+          bash -n scripts/deploy.sh
       - name: TypeScript and Vite production compilation
         working-directory: frontend
         run: npm run build
