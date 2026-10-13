@@ -8,7 +8,7 @@
 |---|---|---|---|
 | P0-00 | **部分完成** | GitHub 分支建立，旧代码/API 检查完成 | 由于实行“GitHub 开发、自行拉取部署”，生产 MySQL/JAR 备份和独立预览环境由部署者操作；本次未操作远程服务器 |
 | P0-01 | **核心代码完成，迁移待线上验证** | `FieldCatalog`、MySQL `insight_dataset_field` 和 `insight_calculated_field` 两张增量表、`GET /api/datasets/{id}/fields` | 真实 StarRocks JDBC 类型元数据与旧数据持久化验收、字段重命名引用迁移 |
-| P0-02 | **核心代码完成，AST 只读校验已加入，生产安全尚需审计** | `AnalysisQueryPlanner`、`POST /api/analysis/v2/compile`、`.../query`；最多 3 维度/5 指标；分组、日期粒度、排序、结果上限 | JSqlParser 已校验 SQL 根节点为 SELECT，但危险函数清单、权限/来源白名单及查询取消和并发限制还需完善 |
+| P0-02 | **核心代码完成，AST 只读校验已加入，生产安全尚需审计** | `AnalysisQueryPlanner`、`POST /api/analysis/v2/compile`、`.../query`；最多 3 维度/5 指标；分组、日期粒度、排序、结果上限 | JSqlParser SELECT 校验外已增加首批 SQL 函数白名单，未知调用拒绝；仍需 StarRocks 真实兼容性、只读权限、查询取消与并发限制验收 |
 | P0-03 | **基础公式与前后过滤完成，高级语义待完善** | `FormulaCompiler`、行级/聚合阶段、WHERE/HAVING、参数绑定、公式新增/修改/删除/验证 | 完整计算字段类型推断、循环引用和表达式依赖管理的复杂场景；CASE/日期/窗口/同环比按后续批次 |
 | P0-04 | **基础 UI 已接入，浏览器联调待执行** | 新组件 V2 字段列表/多槽拖拽、计算字段输入、过滤、排序、图表渲染与保存；原 V1 组件保留 | 真实浏览器多字段拖拽测试、撤销/重做、饼图与多指标互斥提示优化、更多图形属性 |
 | P0-05 | **未完成** | 已有 H2 数据执行验证与 GitHub CI | 非生产 StarRocks 真数对账、部署前数据库备份、生产/预览启动后 UI 检查、回滚演练 |
@@ -52,9 +52,22 @@ cd ../frontend && npm ci && npm run build
 - 未通过 P0-05 之前，建议在独立测试端口验证，不要直接替换在用的 `18110`。
 - 前后端 CI 报告在 [GitHub Actions](https://github.com/NJgaoyang/insight-bi/actions)；阶段待办详见 [P0 任务书](FINEBI_ANALYSIS_ENGINE_P0_TASKS.md)。
 
+
+## 2026-10-13 续开发：计算字段依赖保护与 SQL 安全边界
+
+目标分支：`feat/finebi-analysis-engine-p0`（未触碰 `main` 或生产 JAR）。
+
+- 修复 `AnalysisApi.updateFormula`：先使用**拟更新公式**构建计算字段依赖图，阻止自引用/间接循环及修改导致依赖字段计算阶段或返回类型不一致；发生验证错误时不写数据库。
+- 已发布 `published_json`、`insight_dashboard_version.content_json` 引用某公式时，禁止原地修改或删除公式，避免历史版本结果语义悄然变化；可新建计算字段并在草稿里切换。
+- 加强 `ReadOnlySqlGuard`：JSqlParser 先解析为 SELECT，再对 SQL 数据集中的函数调用使用首批保守白名单；未知函数/UDF（例如 `GET_LOCK`）拒绝，保持字符串字面量不受误判。StarRocks 方言函数扩展须先审核再增列。
+- 新增 `AnalysisFormulaDependencyTest`、`ReadOnlySqlGuardTest`，并加入 GitHub Actions 的定向 Maven 测试。
+- 提交：`4721a08`（依赖和快照保护）、`3c7b963`（依赖回归测试）、`fc90416`（函数白名单）、`0280e14`（SQL 守卫测试）、`22bd28b`（CI 测试清单）。
+- **验证状态**：源码变更已提交；当前开发机 Desktop Commander 离线，无法运行本地 Maven / 浏览器 / MySQL 备份 / StarRocks 真数对账。CI 已配置运行，但在取得工作流执行结果前，不标注通过。
+- **发布门禁**：G0 与 P0-05 均未通过；保留原 `18110` 运行环境；不得据此直接发布。需独立备份 `insight_` 元数据、旧 JAR，验证自动建表及 SQL 白名单对现有数据集的兼容性。
+
 ## 后续优先事项
 
-1. 严格 SQL AST 只读校验和数据库最小权限（阻塞生产级安全验收）。
+1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
 2. 真实 StarRocks E2E 与慢查询/参数边界验证。
 3. 计算字段依赖、更多函数和精度规则；字段变更时的引用迁移。
 4. 组件分析 V2 浏览器拖拽、筛选、保存重开测试和撤销/重做。
