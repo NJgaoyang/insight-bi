@@ -23,10 +23,11 @@ const source=computed(()=>datasets.value.find(d=>d.id===chosen.value?.datasetId)
 const dimensions=computed(()=>source.value?.fields.filter(f=>!f.numeric)??[])
 const metrics=computed(()=>source.value?.fields.filter(f=>f.numeric)??[])
 const v2Fields=ref<FieldV2[]>([])
-const fieldSearch=ref('')
-const v2Dimensions=computed(()=>v2Fields.value.filter(f=>!f.calculated||f.phase==='ROW').filter(f=>f.name.includes(fieldSearch.value)))
-const v2Metrics=computed(()=>v2Fields.value.filter(f=>f.numeric).filter(f=>f.name.includes(fieldSearch.value)))
-const v2CountFields=computed(()=>v2Fields.value.filter(f=>!f.numeric&&!f.calculated).filter(f=>f.name.includes(fieldSearch.value)))
+const fieldSearch=ref(''),showHidden=ref(false)
+const availableFields=computed(()=>v2Fields.value.filter(f=>showHidden.value||!f.hidden))
+const v2Dimensions=computed(()=>availableFields.value.filter(f=>!f.calculated||f.phase==='ROW').filter(f=>f.name.includes(fieldSearch.value)))
+const v2Metrics=computed(()=>availableFields.value.filter(f=>f.numeric).filter(f=>f.name.includes(fieldSearch.value)))
+const v2CountFields=computed(()=>availableFields.value.filter(f=>!f.numeric&&!f.calculated).filter(f=>f.name.includes(fieldSearch.value)))
 const v2DimensionLabels=computed(()=>chosen.value?.analysisV2?.dimensions.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 const v2MeasureLabels=computed(()=>chosen.value?.analysisV2?.measures.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 /** Local undo/redo snapshots never change server data before Save. */
@@ -168,6 +169,18 @@ async function renamePhysicalField(field:FieldV2){
   ElMessage.error(e instanceof Error?e.message:'字段重命名失败')
  }
 }
+async function togglePhysicalField(field:FieldV2){
+ if(field.calculated)return
+ const id=chosen.value?.datasetId
+ if(!id)return
+ try{
+  await put('/datasets/'+encodeURIComponent(id)+'/fields/'+encodeURIComponent(field.id)+'/visibility',{
+   hidden:!field.hidden
+  })
+  await refreshFormulaFields()
+  ElMessage.success(field.hidden?'字段已显示':'字段已隐藏；已有图表和公式不受影响')
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'字段显示设置失败')}
+}
 function setV2Sort(ref:string){
  const b=chosen.value?.analysisV2;if(!b)return
  b.sort=ref?[{ref,direction:b.sort[0]?.direction||'desc'}]:[]
@@ -307,23 +320,28 @@ onMounted(load)
     <div v-if="!datasets.length" class="analysis-empty-data">当前还没有数据集，请先在「公共数据」连接 StarRocks 并创建 SQL 数据集。</div>
     <div v-else-if="!chosen" class="analysis-empty-data">在底部点击「＋组件」开始分析。</div>
     <template v-else-if="chosen.analysisV2">
-     <div class="analysis-field-search"><el-input v-model="fieldSearch" clearable placeholder="搜索字段" size="small"/></div>
+     <div class="analysis-field-search">
+       <el-input v-model="fieldSearch" clearable placeholder="搜索字段" size="small"/>
+       <el-checkbox v-model="showHidden" size="small">管理隐藏字段</el-checkbox>
+      </div>
      <div class="analysis-field-header">维度 <small>{{v2Dimensions.length}}</small></div>
-     <div v-for="f in v2Dimensions" :key="f.id" class="analysis-field" draggable="true"
-       @dragstart="onV2Drag($event,f,'dimension')" @click="addV2Field(f,'dimension')">
+     <div v-for="f in v2Dimensions" :key="f.id" class="analysis-field" :class="{'is-hidden':f.hidden}" :draggable="!f.hidden"
+       @dragstart="onV2Drag($event,f,'dimension')" @click="!f.hidden&&addV2Field(f,'dimension')">
        <span class="field-dimension">{{f.logicalType==='DATE'||f.logicalType==='DATETIME'?'D':'A'}}</span>{{f.name}}
-        <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button><small>⋮⋮</small>
+        <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
+        <button v-if="!f.calculated" class="analysis-field-toggle" draggable="false" :title="f.hidden?'显示字段':'隐藏字段'" @click.stop="togglePhysicalField(f)">{{f.hidden?'显示':'隐藏'}}</button><small>⋮⋮</small>
      </div>
      <div class="analysis-field-header">数值指标 <small>{{v2Metrics.length}}</small></div>
-     <div v-for="f in v2Metrics" :key="f.id" class="analysis-field" draggable="true"
-       @dragstart="onV2Drag($event,f,'metric')" @click="addV2Field(f,'metric')">
+     <div v-for="f in v2Metrics" :key="f.id" class="analysis-field" :class="{'is-hidden':f.hidden}" :draggable="!f.hidden"
+       @dragstart="onV2Drag($event,f,'metric')" @click="!f.hidden&&addV2Field(f,'metric')">
        <span class="field-metric">∑</span>{{f.name}}
         <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
+        <button v-if="!f.calculated" class="analysis-field-toggle" draggable="false" :title="f.hidden?'显示字段':'隐藏字段'" @click.stop="togglePhysicalField(f)">{{f.hidden?'显示':'隐藏'}}</button>
         <small>{{f.calculated?'ƒ':'⋮⋮'}}</small>
      </div>
      <div v-if="v2CountFields.length" class="analysis-field-header">可计数字段 <small>{{v2CountFields.length}}</small></div>
-      <div v-for="f in v2CountFields" :key="'cnt-'+f.id" class="analysis-field" draggable="true"
-       @dragstart="onV2Drag($event,f,'metric')" @click="addV2Field(f,'metric')">
+      <div v-for="f in v2CountFields" :key="'cnt-'+f.id" class="analysis-field" :class="{'is-hidden':f.hidden}" :draggable="!f.hidden"
+       @dragstart="onV2Drag($event,f,'metric')" @click="!f.hidden&&addV2Field(f,'metric')">
        <span class="field-metric">#</span>{{f.name}}<small>COUNT</small>
       </div>
       <button class="analysis-formula-add" @click="openFormula">＋ 计算字段</button>
