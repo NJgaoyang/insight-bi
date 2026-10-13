@@ -103,6 +103,30 @@ class FormulaSnapshotGuardTest {
       Map.of("name","基础金额","expression","["+f.amount+"]+2","revision",1)).get("revision"));
   }
 
+  @Test void inlineSnapshotExpressionsDistinguishQuotedTextAndRealFieldReferences(){
+    var f=fixture();
+    String id=formula(f,"标识字段","["+f.amount+"]+1");
+    Set<String> used=Set.of(id);
+    assertFalse(FormulaSnapshotGuard.hasUnquotedFieldReference(
+      "IF(TRUE, 'show ["+id+"]', 'other')",used));
+    assertFalse(FormulaSnapshotGuard.hasUnquotedFieldReference(
+      "SELECT 'escaped '' ["+id+"]' AS label",used));
+    assertFalse(FormulaSnapshotGuard.hasUnquotedFieldReference(
+      "/* comment ["+id+"] */ SELECT 1",used));
+    assertTrue(FormulaSnapshotGuard.hasUnquotedFieldReference(
+      "SUM(["+id+"])/NULLIF(COUNT(*),0)",used));
+
+    String published=f.store.json(Map.of("widgets",List.of(Map.of("expression",
+      "IF(TRUE, 'show ["+id+"]', 'other')"))));
+    dashboard(f,"{}",published);
+    assertEquals(2,f.api.updateFormula(f.dataset,id,
+      Map.of("name","标识字段","expression","["+f.amount+"]+2","revision",1)).get("revision"));
+    version(f,f.store.json(Map.of("widgets",List.of(Map.of(
+      "expression","SUM(["+id+"])")))));
+    assertThrows(IllegalStateException.class,()->f.api.updateFormula(f.dataset,id,
+      Map.of("name","标识字段","expression","["+f.amount+"]+3","revision",2)));
+  }
+
   @Test void corruptPublishedSnapshotFailsClosed(){
     var f=fixture();
     String id=formula(f,"有快照","["+f.amount+"]+1");
