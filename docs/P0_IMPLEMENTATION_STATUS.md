@@ -140,6 +140,27 @@ cd ../frontend && npm ci && npm run build
 - **前端修改范围测试**：`npm run build`（Vue TypeScript+Vite）两次均退出码 0；只执行 `node scripts/finebi_formula_ui_smoke.cjs` 的 Chromium 模拟 REST 测试，验证错误公式、独立验证不写数据库、公式保存、刷新字段与重新打开，结果退出码 0。**未对其他界面做整站回归**。
 - **仍阻塞**：P0-05 要求的非生产 StarRocks JDBC 真数对账、H2 元数据一致性备份与恢复测试、独立生产式预览发布和旧版本回滚演练，尚未执行，不能标记 G0/G4/P0-05 全通过。生产 `18110` 服务与其配置保持不变。
 
+## 2026-10-13 增量：数据集变更防护、显式源别名迁移与字段可见性
+
+所有修改仍在 `feat/finebi-analysis-engine-p0`；开发机仅使用隔离目录 `/opt/insight-bi-p0-preview`。**生产 `18110` 未部署、未重启；真 StarRocks 对账与权威元数据备份仍未完成。**
+
+### P0-01：源字段稳定性
+
+- 新增 `DatasetSchemaGuard` 并在 `POST /api/datasets` 的已有数据集更新前执行。比较提议的真实 SQL 返回列，拒绝删除被计算字段、草稿、已发布内容及历史版本引用的源列；拒绝使现有 SUM/AVG 或日期分组不兼容的类型变更。仅新增未使用的列可直接通过。涉及元数据更新的保存入口增加事务边界。
+- **明确映射更名**：数据集编辑页面允许给出 `fieldRenames: {"旧源列":"新SQL输出别名"}`。后端严格验证旧列存在、新别名确实由新 SELECT 返回、新别名原先不存在、映射目标不重复，严禁猜测同义字段。显式映射保留 `insight_dataset_field.id`、显示名称及所有存储的公式/图表引用；不修改源数据库物理列。映射者须保证新别名与旧业务字段语义一致。
+- **物理字段隐藏**：在 `insight_dataset_field` 增加 `hidden BOOLEAN NOT NULL DEFAULT FALSE`，旧表通过 JDBC 元数据检查进行增量 ALTER；同时修复其他已有字段的元数据大小写误判，使 H2 旧表、重复初始化和 MySQL 的表名约定更兼容。字段接口返回可选 `hidden`，`PUT /api/datasets/{id}/fields/{fieldId}/visibility` 仅改变展示状态，不改变稳定 ID、SQL 或公式权限。
+- 分析主题字段面板隐藏未显示字段；勾选“管理隐藏字段”可查看并恢复，已隐藏行不可新增拖拽绑定；已有维度/指标槽绑定、公式及现有筛选仍保持可用。新建公式和筛选默认不建议隐藏字段。
+
+### 只运行改动范围的验收证据
+
+- `DatasetSchemaGuardTest`：**5/5 PASS**，覆盖公式依赖、草稿/已发布/历史引用、数值与日期类型、显式别名 ID 保留。
+- `DatasetAliasUpdateIntegrationTest`：**1/1 PASS**，使用隔离 H2 真实 JDBC 元数据与模拟源连接验证 `POST /datasets`：未映射拒绝、明确映射成功、SQL/字段 ID 保存。
+- `FieldVisibilityTest`：**2/2 PASS**，旧表加列并重复初始化的幂等性、隐藏/恢复及对既有查询与公式的兼容。
+- 前端受影响的 Vue/TypeScript/Vite `npm run build` **PASS**；仅运行相关的 `finebi_dataset_alias_ui_smoke.cjs` 和 `finebi_field_rename_ui_smoke.cjs`，真实 Chromium 搭配模拟 REST，分别验证弹窗映射保存和字段隐藏/恢复后仍能读取原图表绑定，**均 PASS**。
+- 为遵守“只测试修改部分”，把 `.github/workflows/p0-analysis-checks.yml` 变为基于 Git diff 的文件范围选择：Java 仅运行相关测试类，前端变更才构建，脚本仅语法检查，纯文档修改不跑业务测试。`scripts/p0_scoped_ci.sh` 已通过 `bash -n` 与临时 Git 仓库“只改公式 / 只改文档”模拟；工作流 YAML 已解析。GitHub Actions 最新运行仍需独立确认。
+
+**未完成与限制**：P0-00 生产 H2 的事务一致性备份及恢复演练；P0-05 非生产 StarRocks JDBC 真数、最小只读权限及真实慢查询验证；生产 `runtime/local.env` 缺失与 GitHub 网络同步异常；尚未发布，不能据这些定向测试判定 P0 完成。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
