@@ -535,7 +535,6 @@ onMounted(load)
        <ChartWidget v-else :widget="component" :datasets="datasets" :readonly="true"/>
       </div>
      </div>
-     </div>
     </div>
     <div class="analysis-bottom-tabs">
      <button v-for="(w,index) in components" :key="w.id" :class="{active:selectedId===w.id&&currentTab==='component'}" @click="selectedId=w.id;currentTab='component'">{{w.title||'组件'+(index+1)}}</button>
