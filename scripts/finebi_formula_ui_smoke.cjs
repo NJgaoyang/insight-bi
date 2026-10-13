@@ -58,7 +58,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(await page.locator('.el-dialog:visible').count(),1,'Invalid formula must keep editor open')
   await page.locator('.v2-formula-dialog textarea').fill('[revenue]-[cost]')
   await page.locator('.el-dialog__footer .primary-button').click()
-  await page.waitForFunction(()=>!document.querySelector('.el-dialog:visible'))
+  await page.locator('.el-dialog').first().waitFor({state:'hidden'})
   assert.equal(formulaWrites.length,2)
   await page.locator('.analysis-field').filter({hasText:'城市'}).first().click()
   await page.locator('.analysis-field').filter({hasText:'行利润'}).last().click()
