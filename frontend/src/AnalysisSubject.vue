@@ -434,6 +434,32 @@ onMounted(load)
         {{chosen.analysisV2!.measures.find(z=>z.id===f.ref)?.alias||f.ref}} ≥ {{f.value}}
         <button @click="chosen.analysisV2!.filters.post.splice(i,1);mark()">×</button>
        </div>
+       <label>各指标显示设置</label>
+       <div v-for="item in v2MeasureLabels" :key="'style-'+item.binding.id" class="v2-measure-setting">
+        <strong>{{item.field?.name||item.binding.id}}</strong>
+        <el-input v-model="item.binding.alias" size="small" maxlength="80" placeholder="指标别名" @input="mark"/>
+        <div class="v2-measure-inline">
+         <span>小数位</span><el-input-number v-model="item.binding.decimals" :min="0" :max="6" size="small" @change="mark"/>
+        </div>
+        <div v-if="!['pie','donut','table','metric'].includes(chosen.type)" class="v2-measure-inline">
+         <span>系列颜色</span><el-color-picker v-model="item.binding.color" size="small" @change="mark"/>
+        </div>
+        <div v-if="['bar','line','area','combo'].includes(chosen.type)" class="v2-measure-inline">
+         <span>数值轴</span>
+         <el-select v-model="item.binding.axis" size="small" placeholder="左轴" @change="mark">
+          <el-option label="左轴" value="left"/><el-option label="右轴" value="right"/>
+         </el-select>
+        </div>
+        <div v-if="chosen.type==='combo'" class="v2-measure-inline">
+         <span>系列类型</span>
+         <el-select v-model="item.binding.seriesType" size="small" placeholder="默认" clearable @change="mark">
+          <el-option label="柱状图" value="bar"/><el-option label="折线图" value="line"/>
+         </el-select>
+        </div>
+        <div v-if="!['metric','table'].includes(chosen.type)" class="v2-measure-inline">
+         <span>数据标签</span><el-switch v-model="item.binding.showLabel" size="small" @change="mark"/>
+        </div>
+       </div>
       </template>
       <template v-else-if="propTab==='data'">
        <label>图表类型</label><el-select v-model="chosen.type" @change="mark"><el-option v-for="t in types" :key="t.type" :value="t.type" :label="t.name"/></el-select>
