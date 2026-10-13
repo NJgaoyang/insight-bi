@@ -12,6 +12,11 @@ const emit=defineEmits<{(e:'back'):void}>()
 const report=ref<Dashboard|null>(null)
 const datasets=ref<Dataset[]>([])
 const components=ref<AnalysisWidgetV2[]>([])
+type DashboardView={id:string;name:string;widgetIds:string[]}
+const dashboardViews=ref<DashboardView[]>([])
+const selectedViewId=ref('')
+const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
+const dashboardWidgets=computed(()=>components.value.filter(w=>activeView.value?.widgetIds.includes(w.id)))
 const selectedId=ref('')
 const name=ref('')
 const busy=ref(false)
@@ -31,11 +36,12 @@ const v2CountFields=computed(()=>availableFields.value.filter(f=>!f.numeric&&!f.
 const v2DimensionLabels=computed(()=>chosen.value?.analysisV2?.dimensions.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 const v2MeasureLabels=computed(()=>chosen.value?.analysisV2?.measures.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 /** Local undo/redo snapshots never change server data before Save. */
-type EditorSnapshot={name:string;components:AnalysisWidgetV2[];selectedId:string}
+type EditorSnapshot={name:string;components:AnalysisWidgetV2[];selectedId:string;dashboardViews:DashboardView[];selectedViewId:string}
 const undoStack=ref<string[]>([]),redoStack=ref<string[]>([])
 let historyCurrent='',savedFingerprint=''
-function fingerprint(){return JSON.stringify({name:name.value.trim(),components:components.value})}
-function snapshot(){return JSON.stringify({name:name.value,components:components.value,selectedId:selectedId.value})}
+function fingerprint(){return JSON.stringify({name:name.value.trim(),components:components.value,dashboards:dashboardViews.value})}
+function snapshot(){return JSON.stringify({name:name.value,components:components.value,selectedId:selectedId.value,
+ dashboardViews:dashboardViews.value,selectedViewId:selectedViewId.value})}
 function resetHistory(){
  historyCurrent=snapshot();savedFingerprint=fingerprint();undoStack.value=[];redoStack.value=[]
 }
@@ -51,6 +57,9 @@ function mark(){
 function restoreHistory(serialized:string){
  const state=JSON.parse(serialized) as EditorSnapshot
  name.value=state.name;components.value=state.components
+ dashboardViews.value=state.dashboardViews
+ selectedViewId.value=dashboardViews.value.some(v=>v.id===state.selectedViewId)
+  ?state.selectedViewId:(dashboardViews.value[0]?.id??'')
  selectedId.value=components.value.some(w=>w.id===state.selectedId)?state.selectedId:(components.value[0]?.id??'')
  currentTab.value='component';historyCurrent=serialized
  dirty.value=fingerprint()!==savedFingerprint
@@ -205,6 +214,11 @@ async function load(){
   if((item as any).kind!=='analysis')throw Error('这不是分析主题，请从仪表板工作区打开')
   report.value=item;datasets.value=available;name.value=item.name
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
+  const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
+  dashboardViews.value=Array.isArray(stored)&&stored.length
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds]}))
+   :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
+  selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
   dirty.value=false;resetHistory()
  }catch(e:any){ElMessage.error(e.message||'加载分析主题失败')}
@@ -219,13 +233,20 @@ function addComponent(){
   style:{background:'#fff',color:'#24344a',chartColor:'#2867db',legend:true,legendPosition:'bottom',dataLabel:false,
     showXAxis:true,showYAxis:true,showGrid:true,showTitle:true,fontSize:13,radius:0,padding:8},columnStyles:{}
  }
- components.value.push(widget);selectedId.value=widget.id;currentTab.value='component';mark()
+ components.value.push(widget)
+ if(activeView.value)activeView.value.widgetIds.push(widget.id)
+ selectedId.value=widget.id;currentTab.value='component';mark()
 }
 function removeComponent(){
  if(!chosen.value)return
  const name=chosen.value.title
  ElMessageBox.confirm('确定删除「'+name+'」？该操作在保存前不会影响服务器版本。','删除组件',{type:'warning'})
- .then(()=>{components.value=components.value.filter(w=>w.id!==selectedId.value);selectedId.value=components.value[0]?.id??'';mark()})
+ .then(()=>{
+  const removedId=selectedId.value
+  components.value=components.value.filter(w=>w.id!==removedId)
+  for(const view of dashboardViews.value)view.widgetIds=view.widgetIds.filter(id=>id!==removedId)
+  selectedId.value=components.value[0]?.id??'';mark()
+ })
  .catch(()=>{})
 }
 function datasetChanged(){
@@ -266,6 +287,40 @@ function switchKind(kind:string){
  }
  chosen.value.type=kind;mark()
 }
+function addDashboardView(){
+ if(dashboardViews.value.length>=30){ElMessage.warning('每个主题最多 30 个仪表板');return}
+ const view:DashboardView={id:crypto.randomUUID(),name:'仪表板'+(dashboardViews.value.length+1),widgetIds:[]}
+ dashboardViews.value.push(view);selectedViewId.value=view.id;currentTab.value='dashboard';mark()
+}
+async function renameDashboardView(){
+ const view=activeView.value
+ if(!view)return
+ try{
+  const {value}=await ElMessageBox.prompt('请输入仪表板名称','重命名仪表板',{
+   inputValue:view.name,confirmButtonText:'保存',cancelButtonText:'取消',
+   inputValidator:(text:string)=>!!text.trim()&&text.trim().length<=100||'名称须为 1–100 个字符'
+  })
+  view.name=String(value).trim();mark()
+ }catch(e:unknown){if(e!=='cancel'&&e!=='close')ElMessage.error('重命名失败')}
+}
+async function removeDashboardView(){
+ const view=activeView.value
+ if(!view)return
+ if(dashboardViews.value.length===1){ElMessage.warning('需要保留至少一个仪表板');return}
+ try{
+  await ElMessageBox.confirm('删除「'+view.name+'」视图？共享组件不会被删除。','删除仪表板',{type:'warning'})
+  dashboardViews.value=dashboardViews.value.filter(v=>v.id!==view.id)
+  selectedViewId.value=dashboardViews.value[0].id
+  mark()
+ }catch{}
+}
+function setDashboardWidgets(ids:string[]){
+ const view=activeView.value
+ if(!view)return
+ const existing=new Set(components.value.map(w=>w.id))
+ view.widgetIds=[...new Set(ids.filter(id=>existing.has(id)))]
+ mark()
+}
 async function save():Promise<boolean>{
  if(!report.value)return false
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
@@ -274,7 +329,8 @@ async function save():Promise<boolean>{
   const savedContent=fingerprint()
   const updated=await put<{revision:number}>('/dashboards/'+props.id,{
    name:name.value.trim(),mode:'grid',revision:report.value.revision,
-   content:{mode:'grid',theme:'light',editorKind:'analysis',analysisSchemaVersion:2,widgets:components.value}
+   content:{mode:'grid',theme:'light',editorKind:'analysis',analysisSchemaVersion:2,
+    widgets:components.value,dashboards:dashboardViews.value}
   })
   report.value.revision=updated.revision;savedFingerprint=savedContent
   dirty.value=fingerprint()!==savedFingerprint
