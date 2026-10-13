@@ -64,6 +64,24 @@ class StarRocksReadOnlyReconciliationTest {
       assertEquals("2026-01",beijing.get("d2"));
       assertNull(find(totals,"d1","南京").get("margin"),"zero revenue must yield NULL");
 
+      // Independently written SQL baseline: do not assert only fixed constants
+      // against a query produced by the same planner being tested.
+      List<Map<String,Object>> manual=manual(conn,
+        "SELECT biq.city AS city, DATE_FORMAT(biq.order_date,'%Y-%m') AS month, "+
+        "SUM(biq.revenue) AS revenue_sum, SUM(biq.profit) AS profit_sum, "+
+        "SUM(biq.profit)/NULLIF(SUM(biq.revenue),0) AS margin "+
+        "FROM ("+SOURCE+") biq GROUP BY biq.city, DATE_FORMAT(biq.order_date,'%Y-%m')");
+      assertEquals(manual.size(),totals.size(),"Manual SQL and planned SQL should group identically");
+      for(var expected:manual){
+        var actual=find(totals,"d1",String.valueOf(expected.get("city")));
+        assertEquals(expected.get("month"),actual.get("d2"));
+        equalsDecimal(String.valueOf(expected.get("revenue_sum")),actual.get("revenue_sum"));
+        equalsDecimal(String.valueOf(expected.get("profit_sum")),actual.get("profit_sum"));
+        if(expected.get("margin")==null)assertNull(actual.get("margin"));
+        else assertEquals(0,new BigDecimal(String.valueOf(expected.get("margin")))
+          .compareTo(new BigDecimal(String.valueOf(actual.get("margin")))));
+      }
+
       query.put("filters",Map.of("pre",List.of(Map.of("fieldId","f_revenue","op","gte","value",150)),
                                   "post",List.of()));
       var pre=run(conn,planner.compile(SOURCE,query));
@@ -82,6 +100,30 @@ class StarRocksReadOnlyReconciliationTest {
       equalsDecimal("3",run(conn,planner.compile(SOURCE,distinct)).get(0).get("cities"));
       assertThrows(IllegalArgumentException.class,()->planner.compile(SOURCE,
         Map.of("dimensions",List.of(Map.of("fieldId","f_missing")))));
+
+      // Extra fixture rows exercise repeated values, a NULL decimal and NULL date.
+      // The SQL remains an inline SELECT-only derived dataset.
+      String edgeSource=SOURCE+" UNION ALL "+
+        row("上海","2026-01-05",50,40,10)+
+        " UNION ALL SELECT '上海' AS city, CAST(NULL AS DATE) AS order_date, "+
+        "CAST(NULL AS DECIMAL(18,2)) AS revenue, CAST(NULL AS DECIMAL(18,2)) AS cost, "+
+        "CAST(NULL AS DECIMAL(18,2)) AS profit";
+      Map<String,Object> counts=Map.of("dimensions",List.of(),"measures",List.of(
+        Map.of("id","count_city","fieldId","f_city","aggregate","COUNT"),
+        Map.of("id","count_revenue","fieldId","f_revenue","aggregate","COUNT"),
+        Map.of("id","unique_revenue","fieldId","f_revenue","aggregate","COUNT","distinct",true),
+        Map.of("id","total_revenue","fieldId","f_revenue","aggregate","SUM")));
+      var edge=run(conn,planner.compile(edgeSource,counts));
+      assertEquals(1,edge.size());
+      equalsDecimal("6",edge.get(0).get("count_city"));
+      equalsDecimal("5",edge.get(0).get("count_revenue"));
+      equalsDecimal("4",edge.get(0).get("unique_revenue"));
+      equalsDecimal("400",edge.get(0).get("total_revenue"));
+      var manualCounts=manual(conn,"SELECT COUNT(city) AS count_city, "+
+        "COUNT(revenue) AS count_revenue, COUNT(DISTINCT revenue) AS unique_revenue, "+
+        "SUM(revenue) AS total_revenue FROM ("+edgeSource+") biq");
+      for(var key:List.of("count_city","count_revenue","unique_revenue","total_revenue"))
+        equalsDecimal(String.valueOf(manualCounts.get(0).get(key)),edge.get(0).get(key));
     }
   }
 
@@ -102,6 +144,23 @@ class StarRocksReadOnlyReconciliationTest {
     assertTrue(rows.size()<=plan.limit()+1);
     if(rows.size()>plan.limit())rows.remove(rows.size()-1);
     return rows;
+  }
+  /** Hand-written SQL is executed independently, with no planner-generated SQL. */
+  private static List<Map<String,Object>> manual(Connection conn,String sql)throws Exception {
+    var out=new ArrayList<Map<String,Object>>();
+    try(PreparedStatement ps=conn.prepareStatement(sql)){
+      ps.setQueryTimeout(15);
+      try(ResultSet rs=ps.executeQuery()){
+        var meta=rs.getMetaData();
+        while(rs.next()){
+          var row=new LinkedHashMap<String,Object>();
+          for(int i=1;i<=meta.getColumnCount();i++)
+            row.put(meta.getColumnLabel(i),rs.getObject(i));
+          out.add(row);
+        }
+      }
+    }
+    return out;
   }
   private static Map<String,Object> find(List<Map<String,Object>> rows,String key,String expected){
     return rows.stream().filter(r->expected.equals(String.valueOf(r.get(key)))).findFirst().orElseThrow();
