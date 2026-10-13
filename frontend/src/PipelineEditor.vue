@@ -10,7 +10,9 @@ type FormulaStep={id:string;type:'formula';fieldId:string;name:string;expression
 type FilterStep={id:string;type:'filter';fieldId:string;op:string;value?:string;values?:string[]}
 type Measure={id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';name:string}
 type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
-type Step=FormulaStep|FilterStep|GroupStep
+type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
+ op:string;value?:string;outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
+type Step=FormulaStep|FilterStep|GroupStep|CaseStep
 type Column={id:string;name:string;label:string;type:string;numeric:boolean}
 
 const loading=ref(true),busy=ref(false),dirty=ref(false),stale=ref(false)
@@ -30,6 +32,10 @@ const selectable=(index:number):Column[]=>{
  for(const step of steps.value.slice(0,index)){
   if(step.type==='formula'){
    fields=[...fields,{id:step.fieldId,name:'step_'+step.fieldId,label:step.name,type:'DECIMAL',numeric:true}]
+  }
+  if(step.type==='case'){
+   fields=[...fields,{id:step.fieldId,name:'step_'+step.fieldId,label:step.name,
+    type:step.outputType,numeric:step.outputType==='DECIMAL'}]
   }
   if(step.type==='group'){
    fields=[
@@ -55,6 +61,14 @@ function addFormula(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
  const id=nextId('s')
  steps.value.push({id,type:'formula',fieldId:nextId('field'),name:'计算列',expression:''})
+ changed()
+}
+function addCase(){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ const source=selectable(steps.value.length)[0]
+ steps.value.push({id:nextId('s'),type:'case',fieldId:nextId('field'),
+  sourceFieldId:source?.id||'',name:'条件列',op:'eq',value:'',
+  outputType:'STRING',thenValue:'满足',elseValue:'其他'})
  changed()
 }
 function addFilter(){
@@ -165,13 +179,14 @@ onMounted(load)
      <div>
       <button @click="addFormula">＋ 计算列</button>
       <button @click="addFilter">＋ 过滤</button>
+      <button @click="addCase">＋ 条件列</button>
       <button :disabled="isGroupPresent" @click="addGroup">＋ 分组汇总</button>
      </div>
     </div>
     <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
     <section v-for="(step,index) in steps" :key="step.id" class="pipeline-step">
      <header class="pipeline-step-header">
-      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':'分组汇总'}}</strong>
+      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':'分组汇总'}}</strong>
       <button title="步骤前移" :disabled="index===0" @click="move(index,-1)">↑</button>
       <button title="步骤后移" :disabled="index===steps.length-1" @click="move(index,1)">↓</button>
       <button title="删除步骤" @click="removeStep(index)">删除</button>
@@ -199,6 +214,27 @@ onMounted(load)
       <template v-if="!['isNull','notNull'].includes(step.op)">
        <label>值</label><el-input v-model="step.value" @input="changed"/>
       </template>
+     </div>
+     <div v-else-if="step.type==='case'" class="pipeline-fields">
+      <label>新列名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>
+      <label>判断字段</label><el-select v-model="step.sourceFieldId" filterable @change="changed">
+       <el-option v-for="f in selectable(index)" :key="f.id" :label="f.label" :value="f.id"/>
+      </el-select>
+      <label>判断条件</label><el-select v-model="step.op" @change="changed">
+       <el-option v-for="o in [{id:'eq',name:'等于'},{id:'ne',name:'不等于'},
+        {id:'gt',name:'大于'},{id:'gte',name:'大于等于'},
+        {id:'lt',name:'小于'},{id:'lte',name:'小于等于'},
+        {id:'contains',name:'包含'},{id:'isNull',name:'为空'},{id:'notNull',name:'不为空'}]"
+        :key="o.id" :label="o.name" :value="o.id"/>
+      </el-select>
+      <template v-if="!['isNull','notNull'].includes(step.op)">
+       <label>比较值</label><el-input v-model="step.value" @input="changed"/>
+      </template>
+      <label>结果类型</label><el-select v-model="step.outputType" @change="changed">
+       <el-option label="文本" value="STRING"/><el-option label="数值" value="DECIMAL"/>
+      </el-select>
+      <label>条件成立时</label><el-input v-model="step.thenValue" @input="changed"/>
+      <label>其他情况</label><el-input v-model="step.elseValue" @input="changed"/>
      </div>
      <div v-else class="pipeline-fields">
       <label>分组维度</label><el-select v-model="step.dimensions" multiple filterable
