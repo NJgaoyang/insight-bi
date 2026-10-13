@@ -236,6 +236,12 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 开发机隔离定向 `AnalysisResourceGraphTest` **8/8 PASS**、Vue/TypeScript 构建 PASS、`finebi_view_layout_ui_smoke.cjs` 及原多视图编辑/已发布路由两个相关 Chromium 测试 PASS；生产 `18110` 服务 active、健康 `{"ok":true}`，无 Git 工作区改动，预览 `18117` 已关闭。未执行整站回归、未部署生产、未执行真实 StarRocks 对账。详见 `docs/P1_IMPLEMENTATION_STATUS.md` 第四批。
 
+### P1-02 增量开发记录：数据加工步骤引擎第一批
+
+按用户要求暂缓真实 StarRocks 后，继续开展 P1-02 的独立部分：新增有序步骤编译器和 `/api/datasets/{id}/pipeline/{compile|preview}`，行公式、类型安全明细过滤、最多一次分组汇总；新增独立元数据表、版本 CAS 存储和原 SQL 指纹，源 SQL 被修改后旧配置禁止直接预览，需重校验保存。公共数据新增“加工”入口、步骤排序/编辑/SQL 预览/真实数据预览及保存重开。详情在 `docs/P1_IMPLEMENTATION_STATUS.md`。
+
+隔离开发环境定向测试 6/6 PASS、Vue/TypeScript 构建 PASS、Chromium 页面脚本 PASS；生产 `18110` 没有部署和修改，真实 StarRocks、生产 H2 备份/恢复与发布回滚门禁**仍未完成**。尚未实现 JOIN/UNION 与全功能可复用加工数据集，不可将 P1-02 整阶段标记通过。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
