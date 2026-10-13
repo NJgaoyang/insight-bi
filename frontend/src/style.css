@@ -192,3 +192,12 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .analysis-field .analysis-field-toggle:hover{color:#2b62c4}
 .analysis-field .analysis-field-toggle+small{margin-left:0}
 .analysis-field-search .el-checkbox{margin-top:5px;margin-bottom:0;font-size:12px}
+
+/* P1 shared-widget dashboard view controls: compact and neutral. */
+.analysis-dashboard-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.analysis-dashboard-head strong{font-weight:600;white-space:nowrap}
+.analysis-dashboard-head .analysis-view-picker{width:180px;max-width:100%}
+.analysis-dashboard-head>button{border:1px solid #d9e1ed;background:#fff;color:#475a74;border-radius:4px;padding:5px 9px;cursor:pointer;font-size:12px}
+.analysis-dashboard-head>button:hover{border-color:#9caec8;color:#244d82}
+.analysis-view-components{display:flex;align-items:center;gap:10px;margin:-4px 0 16px;font-size:12px;color:#64748b}
+.analysis-view-components-picker{width:min(440px,calc(100% - 90px))}
