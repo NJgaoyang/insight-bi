@@ -226,6 +226,10 @@ function switchKind(kind:string){
  if(chosen.value.analysisV2&&!['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(kind)){
   ElMessage.warning('该图表类型尚未接入 V2 分析计算');return
  }
+ if(chosen.value.analysisV2&&['pie','donut','metric'].includes(kind)&&chosen.value.analysisV2.measures.length>1){
+  ElMessage.warning('该图表类型只能展示一个指标；请先调整指标槽，现有绑定已保留')
+  return
+ }
  chosen.value.type=kind;mark()
 }
 async function save():Promise<boolean>{
@@ -397,7 +401,7 @@ onMounted(load)
       <label>组件名称</label><el-input v-model="chosen.title" @input="mark"/>
       <template v-if="propTab==='data' && chosen.analysisV2">
        <label>图表类型</label>
-       <el-select v-model="chosen.type" @change="mark">
+       <el-select :model-value="chosen.type" @update:model-value="v=>switchKind(String(v))">
         <el-option v-for="t in types.filter(t=>['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(t.type))"
          :key="t.type" :label="t.name" :value="t.type"/>
        </el-select>
