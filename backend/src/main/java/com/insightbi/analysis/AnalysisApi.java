@@ -15,6 +15,7 @@ public class AnalysisApi {
   private final DatabaseStore store;
   private final JdbcTemplate db;
   private final FieldCatalog catalog;
+  private static final AnalysisQueryLimiter QUERY_LIMITER=new AnalysisQueryLimiter(4,250);
   public AnalysisApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog){
     this.store=store;this.db=db;this.catalog=catalog;
   }
@@ -38,7 +39,8 @@ public class AnalysisApi {
       .compile(String.valueOf(ds.get("sql_body")),request);
     long start=System.nanoTime();
     List<Map<String,Object>> rows;
-    try(Connection c=store.open(store.connection(String.valueOf(ds.get("connection_id"))))){
+    try(AnalysisQueryLimiter.Lease slot=QUERY_LIMITER.acquire();
+        Connection c=store.open(store.connection(String.valueOf(ds.get("connection_id"))))){
       rows=store.readAnalysisRows(c,plan.sql(),plan.params(),plan.limit());
     }
     boolean truncated=rows.size()>plan.limit();
