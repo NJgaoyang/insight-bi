@@ -113,6 +113,56 @@ class DatasetSchemaGuardTest {
   assertThrows(IllegalArgumentException.class,()->f.guard.check(f.dataset,
     columns("region","VARCHAR","amount","DECIMAL"),Map.of("region","amount")));
  }
+ @Test void explicitRenameMustNotBreakLegacyNameBindingsInAnySnapshot(){
+  for(String kind:List.of("draft","published","history")){
+   var f=fixture();
+   String legacy=f.store.json(Map.of("widgets",List.of(Map.of(
+     "datasetId",f.dataset,"dimension","city","measure","amount",
+     "columnDimension","city","columns",List.of("city","amount"),
+     "sort","amount","drillDimensions",List.of("city")))));
+   if(kind.equals("history")){
+    f.db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",
+      UUID.randomUUID().toString(),"report",1,"历史版本","grid",legacy);
+   }else snapshot(f,kind.equals("draft")?legacy:"{}",kind.equals("published")?legacy:null);
+   var ex=assertThrows(IllegalArgumentException.class,
+     ()->f.guard.check(f.dataset,columns("region","VARCHAR","amount","DECIMAL"),Map.of("city","region")));
+   assertTrue(ex.getMessage().contains("旧版字段"),kind+": "+ex.getMessage());
+  }
+ }
+ @Test void legacyCrossTabDrillAndSortRejectRemovedNames(){
+  for(String key:List.of("columnDimension","columns","pivotMeasures","drillDimensions","sort")){
+   var f=fixture();
+   Object value=Set.of("columns","pivotMeasures","drillDimensions").contains(key)
+       ?List.of("city"):"city";
+   String snapshot=f.store.json(Map.of("widgets",List.of(Map.of(
+     "datasetId",f.dataset,key,value))));
+   snapshot(f,snapshot,null);
+   assertThrows(IllegalArgumentException.class,()->f.guard.check(
+     f.dataset,columns("region","VARCHAR","amount","DECIMAL"),Map.of("city","region")),key);
+  }
+ }
+ @Test void storedV2PreAndPostFiltersCannotBecomeTypeIncompatible(){
+  for(String stage:List.of("pre","post")){
+   var f=fixture();
+   Map<String,Object> filter=stage.equals("pre")
+      ?Map.of("fieldId",f.city,"op","contains","value","北")
+      :Map.of("ref","m1","op","contains","value","北");
+   Map<String,Object> measure=stage.equals("pre")
+      ?Map.of("fieldId",f.amount,"id","m1","aggregate","SUM")
+      :Map.of("fieldId",f.city,"id","m1","aggregate","MIN");
+   String data=f.store.json(Map.of("widgets",List.of(Map.of("datasetId",f.dataset,
+    "analysisV2",Map.of("dimensions",List.of(Map.of("fieldId",f.city)),
+      "measures",List.of(measure),"filters",Map.of(
+        "pre",stage.equals("pre")?List.of(filter):List.of(),
+        "post",stage.equals("post")?List.of(filter):List.of()),
+      "sort",List.of(),"limit",100)))));
+   snapshot(f,data,null);
+   assertDoesNotThrow(()->f.guard.check(f.dataset,columns("city","VARCHAR","amount","DECIMAL")));
+   var ex=assertThrows(IllegalArgumentException.class,
+     ()->f.guard.check(f.dataset,columns("city","DECIMAL","amount","DECIMAL")));
+   assertTrue(ex.getMessage().contains("不兼容")||ex.getMessage().contains("数值"),ex.getMessage());
+  }
+ }
  @Test void legacyFieldAndDateGroupingTypeChangeAreAlsoProtected(){
   var f=fixture();
   snapshot(f,f.store.json(Map.of("widgets",List.of(Map.of("datasetId",f.dataset,
