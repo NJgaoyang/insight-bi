@@ -269,4 +269,6 @@ git diff --check
 
 | 2026-10-13 | P0-05 前置收尾：V1 旧列名兼容、V2 JDBC 强制只读、H2 临时库恢复演练、发布前证据闸门与停服前打包 | feat/finebi-analysis-engine-p0: dc98b05、687e2ca、818e6de、461fa6a、39e9912、2bec97d、de81e52、c107076、55f6832、7bfa30e、e0dac56、2f3de7b | 仅运行 DatasetSchemaGuardTest（8）、ReadOnlyConnectionPolicyTest（2）、MetadataRecoveryRehearsalTest（1）定向 PASS；synthetic p0_release_safety、无授权/无报告拒绝、bash -n PASS | **真实 StarRocks 未运行**，JUnit 仍 skip；专用非生产只读账号测试待完成 | **不得发布**：生产 local.env 缺失、生产 H2 未取得经恢复验证的一致性备份、隔离生产式验收/回滚未完成；见 docs/P0_RELEASE_GATE.md |
 
+| 2026-10-13 | P0-03/05：历史快照间接公式依赖、真实引用 AST 检测、StarRocks 手工 SQL 与 NULL/重复值对账 | feat/finebi-analysis-engine-p0: 8e5797f、a9b7d4e、0a18e89、2695b2d、0f17f91、924ce24 | `FormulaSnapshotGuardTest` 5 个定向用例及原有依赖测试；CI 按变动文件选取；扩展的 StarRocks JUnit 只进行编译（默认 skip） | **尚未连接 DataForge 真库**：开发机 Ping 有延迟响应，但远程命令超时；真实 JUnit 和手写 SQL 对账报告均未取得 | P0-05/G4 不可勾选；生产 H2 一致性备份、恢复凭据和生产回滚仍需现场验收 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
