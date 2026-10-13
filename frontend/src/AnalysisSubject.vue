@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import {computed,onMounted,ref,watch} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
-import {api,put,post,type Dataset,type Dashboard,type Widget} from './api'
+import {api,put,post,type Dataset,type Dashboard,type Widget,type FieldV2,type AnalysisWidgetV2} from './api'
+import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
 const report=ref<Dashboard|null>(null)
 const datasets=ref<Dataset[]>([])
-const components=ref<Widget[]>([])
+const components=ref<AnalysisWidgetV2[]>([])
 const selectedId=ref('')
 const name=ref('')
 const busy=ref(false)
@@ -19,6 +20,81 @@ const chosen=computed(()=>components.value.find(w=>w.id===selectedId.value))
 const source=computed(()=>datasets.value.find(d=>d.id===chosen.value?.datasetId))
 const dimensions=computed(()=>source.value?.fields.filter(f=>!f.numeric)??[])
 const metrics=computed(()=>source.value?.fields.filter(f=>f.numeric)??[])
+const v2Fields=ref<FieldV2[]>([])
+const fieldSearch=ref('')
+const v2Dimensions=computed(()=>v2Fields.value.filter(f=>!f.calculated||f.phase==='ROW').filter(f=>f.name.includes(fieldSearch.value)))
+const v2Metrics=computed(()=>v2Fields.value.filter(f=>f.numeric).filter(f=>f.name.includes(fieldSearch.value)))
+const v2DimensionLabels=computed(()=>chosen.value?.analysisV2?.dimensions.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
+const v2MeasureLabels=computed(()=>chosen.value?.analysisV2?.measures.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
+let fieldRequest=0
+watch(()=>chosen.value?.datasetId,async id=>{
+ const revision=++fieldRequest;v2Fields.value=[]
+ if(!id||!chosen.value?.analysisV2)return
+ try{
+  const fields=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')
+  if(revision===fieldRequest)v2Fields.value=fields
+ }catch(e:unknown){if(revision===fieldRequest)ElMessage.error(e instanceof Error?e.message:'字段元数据获取失败')}
+},{immediate:true})
+function addV2Field(field:FieldV2,kind:'dimension'|'metric'){
+ const b=chosen.value?.analysisV2;if(!b)return
+ if(kind==='dimension'){
+  if(b.dimensions.some(x=>x.fieldId===field.id))return
+  if(b.dimensions.length>=3){ElMessage.warning('维度最多 3 个');return}
+  b.dimensions.push({fieldId:field.id})
+ }else{
+  if(!field.numeric){ElMessage.warning('仅数值字段可作为指标');return}
+  if(b.measures.length>=5){ElMessage.warning('指标最多 5 个');return}
+  const used=new Set(b.measures.map(m=>m.id));let i=1;while(used.has('m'+i))i++
+  b.measures.push({id:'m'+i,fieldId:field.id,aggregate:'SUM',alias:field.name})
+ }
+ mark()
+}
+function removeV2Field(id:string,kind:'dimension'|'metric'){
+ const b=chosen.value?.analysisV2;if(!b)return
+ if(kind==='dimension')b.dimensions=b.dimensions.filter(x=>x.fieldId!==id)
+ else{
+  b.measures=b.measures.filter(x=>x.id!==id)
+  b.filters.post=b.filters.post.filter(x=>x.ref!==id)
+ }
+ mark()
+}
+function onV2Drag(e:DragEvent,field:FieldV2,kind:'dimension'|'metric'){
+ e.dataTransfer?.setData('application/x-insight-field',JSON.stringify({id:field.id,kind}))
+}
+function onV2Drop(e:DragEvent,kind:'dimension'|'metric'){
+ e.preventDefault()
+ try{
+  const payload=JSON.parse(e.dataTransfer?.getData('application/x-insight-field')||'{}')
+  const f=v2Fields.value.find(x=>x.id===payload.id)
+  if(!f||payload.kind!==kind)throw Error('字段类型不匹配')
+  addV2Field(f,kind)
+ }catch{ElMessage.warning('请拖入匹配的字段')}
+}
+const formulaDialog=ref(false),formulaName=ref(''),formulaExpression=ref(''),formulaBusy=ref(false)
+function openFormula(){formulaName.value='';formulaExpression.value='';formulaDialog.value=true}
+function insertFormulaField(field:FieldV2){formulaExpression.value+='['+field.id+']'}
+async function saveFormula(){
+ const id=chosen.value?.datasetId
+ if(!id||!formulaName.value.trim()||!formulaExpression.value.trim()){ElMessage.warning('请输入名称和公式');return}
+ formulaBusy.value=true
+ try{
+  await post('/datasets/'+encodeURIComponent(id)+'/calculated-fields',{name:formulaName.value.trim(),expression:formulaExpression.value.trim()})
+  v2Fields.value=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')
+  formulaDialog.value=false;ElMessage.success('计算字段已保存')
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'公式保存失败')}
+ finally{formulaBusy.value=false}
+}
+const preFilterField=ref(''),preFilterValue=ref(''),postFilterRef=ref(''),postFilterValue=ref('')
+function addV2Filter(stage:'pre'|'post'){
+ const b=chosen.value?.analysisV2;if(!b)return
+ const id=stage==='pre'?preFilterField.value:postFilterRef.value
+ const raw=stage==='pre'?preFilterValue.value:postFilterValue.value
+ if(!id||!raw.trim()){ElMessage.warning('请选择字段并填写过滤值');return}
+ if(stage==='pre')b.filters.pre.push({fieldId:id,op:'gte',value:raw})
+ else b.filters.post.push({ref:id,op:'gte',value:raw})
+ mark()
+}
+
 const types=[
  {type:'bar',name:'柱状图',icon:'▥'},{type:'hbar',name:'条形图',icon:'▤'},
  {type:'line',name:'折线图',icon:'⌁'},{type:'area',name:'面积图',icon:'▰'},
@@ -44,6 +120,7 @@ function addComponent(){
  const index=components.value.length+1
  const widget:Widget={
   id:crypto.randomUUID(),type:'bar',title:'组件'+index,datasetId:'',dimension:'',measure:'',agg:'SUM',columns:[],
+  analysisV2:{dimensions:[],measures:[],filters:{pre:[],post:[]},sort:[],limit:200},
   x:0,y:0,w:5,h:5,px:0,py:0,width:600,height:340,
   style:{background:'#fff',color:'#24344a',chartColor:'#2867db',legend:true,legendPosition:'bottom',dataLabel:false,
     showXAxis:true,showYAxis:true,showGrid:true,showTitle:true,fontSize:13,radius:0,padding:8},columnStyles:{}
@@ -60,6 +137,7 @@ function removeComponent(){
 function datasetChanged(){
  if(!chosen.value)return
  chosen.value.dimension='';chosen.value.measure='';chosen.value.secondMeasure='';chosen.value.columns=[]
+ if(chosen.value.analysisV2)chosen.value.analysisV2={dimensions:[],measures:[],filters:{pre:[],post:[]},sort:[],limit:200}
  mark()
 }
 function assignField(field:string,kind:'dimension'|'metric'){
@@ -83,7 +161,13 @@ function handleDrop(e:DragEvent,target:'dimension'|'metric'){
   assignField(parsed.field,target)
  }catch{ElMessage.warning('请从左侧拖入正确类型的字段')}
 }
-function switchKind(kind:string){if(!chosen.value)return;chosen.value.type=kind;mark()}
+function switchKind(kind:string){
+ if(!chosen.value)return
+ if(chosen.value.analysisV2&&!['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(kind)){
+  ElMessage.warning('该图表类型尚未接入 V2 分析计算');return
+ }
+ chosen.value.type=kind;mark()
+}
 async function save():Promise<boolean>{
  if(!report.value)return false
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
@@ -91,7 +175,7 @@ async function save():Promise<boolean>{
  try{
   const updated=await put<{revision:number}>('/dashboards/'+props.id,{
    name:name.value.trim(),mode:'grid',revision:report.value.revision,
-   content:{mode:'grid',theme:'light',editorKind:'analysis',widgets:components.value}
+   content:{mode:'grid',theme:'light',editorKind:'analysis',analysisSchemaVersion:2,widgets:components.value}
   })
   report.value.revision=updated.revision;dirty.value=false
   ElMessage.success('分析主题已保存');return true
