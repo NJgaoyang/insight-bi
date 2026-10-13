@@ -261,4 +261,6 @@ git diff --check
 
 | 2026-10-13 | 最新后端隔离回归 / P0-05 发布门禁复核 | feat/finebi-analysis-engine-p0: e3deabe | 开发机隔离克隆 Maven 定向执行 BiQueryInTest、AnalysisQueryPlannerTest、AnalysisEngineSqlExecutionTest、AnalysisFormulaDependencyTest、ReadOnlySqlGuardTest 全部 PASS；GitHub Actions #86 前后端成功 | **未执行**，无非生产 StarRocks 连接凭据和受控测试数据对账 | 当前生产元数据为 H2（非计划中的 MySQL）；runtime/local.env 缺失且 GitHub HTTPS 超时，生产服务不能重启；先处理环境 G0 再推进 P0-05 |
 
+| 2026-10-13 | P0-01/02/04/05 边界正确性、字段类型刷新、去重计数与只读 E2E 入口 | feat/finebi-analysis-engine-p0: d9c9ff3、7dc64c7、9b6430c、dc56ae6、fc12cdb、532fcf1、b76a25e、26523e7 | 开发机 Maven 定向测试 7 组 PASS、Vue/Vite build PASS、Chromium 多字段及公式两条脚本 PASS；E2E 只读 Runner 语法 PASS、未授权拒绝 PASS | **未执行真实 StarRocks**：JUnit E2E 默认跳过，需要明确非生产只读 JDBC 账号和开关 | G0：生产实际 H2、runtime/local.env 缺失、H2 一致性备份未完成；P0-05 禁止认定完成 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
