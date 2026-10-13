@@ -19,7 +19,7 @@ export interface Dashboard {id:string;name:string;mode:'grid'|'free';revision:nu
 /** New semantic query contracts: old Widget payloads continue to work unchanged. */
 export interface FieldV2 {id:string;name:string;sourceColumn:string|null;logicalType:string;role:string;numeric:boolean;calculated:boolean;phase:string;expression:string|null}
 export interface DimensionV2 {fieldId:string;granularity?:'year'|'month'|'day'}
-export interface MeasureV2 {id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';alias:string}
+export interface MeasureV2 {id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';alias:string;seriesType?:'bar'|'line';axis?:'left'|'right';decimals?:number;color?:string;showLabel?:boolean}
 export interface FilterV2 {fieldId?:string;ref?:string;op:string;value?:string|number;values?:(string|number)[]}
 export interface AnalysisV2Bindings {
   dimensions:DimensionV2[]
