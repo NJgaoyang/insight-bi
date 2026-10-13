@@ -42,7 +42,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const dialog=page.locator('.el-dialog:visible')
   await dialog.locator('textarea').fill('SELECT city AS region,amount FROM sales')
   await dialog.getByRole('button',{name:'校验并保存'}).click()
-  await page.waitForFunction(()=>document.querySelector('.el-dialog:visible')===null)
+  await dialog.waitFor({state:'hidden'})
   assert.equal(writes.length,1)
   assert.equal(writes[0].id,'ds1')
   assert.equal(writes[0].fieldRenames.city,'region')
