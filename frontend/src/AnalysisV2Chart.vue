@@ -23,7 +23,9 @@ function formatMeasure(value:unknown,id:string){
  if(base===null)return '—'
  const decimals=optionsFor(id)?.decimals
  if(decimals===undefined||decimals===null)return format(base)
- const digits=Math.max(0,Math.min(6,Math.trunc(Number(decimals))))
+ const requested=Number(decimals)
+ if(!Number.isFinite(requested))return format(base)
+ const digits=Math.max(0,Math.min(6,Math.trunc(requested)))
  return new Intl.NumberFormat('zh-CN',{minimumFractionDigits:digits,maximumFractionDigits:digits}).format(base)
 }
 function formatCell(row:Record<string,unknown>,col:{name:string;id:string;kind:string}){
@@ -69,7 +71,8 @@ function render(){
    if(metrics.length!==1){error.value='饼图仅支持一个指标，请移除其他指标';dispose();return}
    base.series=[{name:metrics[0].label,type:'pie',radius:t==='donut'?['47%','70%']:'70%',
       center:['50%','44%'],data:rows.value.map((r,i)=>({name:categories[i],value:numeric(r[metrics[0].name])})),
-      label:{show:!!style.dataLabel}}]
+      label:{show:optionsFor(metrics[0].id)?.showLabel??!!style.dataLabel,formatter:(p:any)=>p.name+': '+formatMeasure(p.value,metrics[0].id)},
+      tooltip:{valueFormatter:(value:unknown)=>formatMeasure(value,metrics[0].id)}}]
  }else{
    const horizontal=t==='hbar'
    const dualAxis=!horizontal&&metrics.some(metric=>optionsFor(metric.id)?.axis==='right')
@@ -91,8 +94,18 @@ function render(){
  }
  error.value='';chart.setOption(base,{notMerge:true});chart.resize()
 }
-watch(()=>JSON.stringify([props.widget.datasetId,props.widget.analysisV2,props.widget.type]),load,{immediate:true})
-watch(()=>JSON.stringify(props.widget.style),()=>nextTick(render))
+const queryKey=computed(()=>{
+ const b=bindings.value
+ return JSON.stringify([props.widget.datasetId,b?{
+   dimensions:b.dimensions,
+   measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,alias:m.alias})),
+   filters:b.filters,sort:b.sort,limit:b.limit
+ }:null])
+})
+watch(queryKey,load,{immediate:true})
+watch(()=>JSON.stringify([props.widget.type,props.widget.style,bindings.value?.measures.map(m=>({
+ color:m.color,axis:m.axis,seriesType:m.seriesType,decimals:m.decimals,showLabel:m.showLabel
+}))]),()=>nextTick(render))
 watch(element,el=>{
  observer?.disconnect()
  if(el){observer=new ResizeObserver(()=>chart?.resize());observer.observe(el);nextTick(render)}
