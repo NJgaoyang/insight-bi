@@ -216,6 +216,20 @@ onMounted(load)
     </div>
     <div v-if="!datasets.length" class="analysis-empty-data">当前还没有数据集，请先在「公共数据」连接 StarRocks 并创建 SQL 数据集。</div>
     <div v-else-if="!chosen" class="analysis-empty-data">在底部点击「＋组件」开始分析。</div>
+    <template v-else-if="chosen.analysisV2">
+     <div class="analysis-field-search"><el-input v-model="fieldSearch" clearable placeholder="搜索字段" size="small"/></div>
+     <div class="analysis-field-header">维度 <small>{{v2Dimensions.length}}</small></div>
+     <div v-for="f in v2Dimensions" :key="f.id" class="analysis-field" draggable="true"
+       @dragstart="onV2Drag($event,f,'dimension')" @click="addV2Field(f,'dimension')">
+       <span class="field-dimension">{{f.logicalType==='DATE'||f.logicalType==='DATETIME'?'D':'A'}}</span>{{f.name}}<small>⋮⋮</small>
+     </div>
+     <div class="analysis-field-header">数值指标 <small>{{v2Metrics.length}}</small></div>
+     <div v-for="f in v2Metrics" :key="f.id" class="analysis-field" draggable="true"
+       @dragstart="onV2Drag($event,f,'metric')" @click="addV2Field(f,'metric')">
+       <span class="field-metric">∑</span>{{f.name}}<small>{{f.calculated?'ƒ':'⋮⋮'}}</small>
+     </div>
+     <button class="analysis-formula-add" @click="openFormula">＋ 计算字段</button>
+    </template>
     <template v-else>
      <div class="analysis-field-header">维度 <small>{{dimensions.length}}</small></div>
      <div v-for="f in dimensions" :key="'dim-'+f.name" class="analysis-field" draggable="true" @dragstart="handleDragStart($event,f.name,'dimension')" @click="assignField(f.name,'dimension')">
@@ -234,7 +248,32 @@ onMounted(load)
       <button v-for="t in types" :key="t.type" :title="t.name" :class="{active:chosen?.type===t.type}"
        :disabled="!chosen" @click="switchKind(t.type)"><span>{{t.icon}}</span><small>{{t.name}}</small></button>
      </div>
-     <div v-if="chosen" class="analysis-field-shelves">
+     <div v-if="chosen?.analysisV2" class="analysis-field-shelves">
+      <div class="analysis-shelf v2-shelf" @dragover.prevent @drop="onV2Drop($event,'dimension')">
+       <span>维度</span>
+       <span v-for="item in v2DimensionLabels" :key="item.binding.fieldId" class="analysis-chip">
+        {{item.field?.name||'字段已删除'}}
+        <el-select v-if="['DATE','DATETIME'].includes(item.field?.logicalType||'')" v-model="item.binding.granularity"
+         size="small" style="width:78px" placeholder="原始" clearable @change="mark">
+         <el-option label="年" value="year"/><el-option label="月" value="month"/><el-option label="日" value="day"/>
+        </el-select>
+        <button @click="removeV2Field(item.binding.fieldId,'dimension')">×</button>
+       </span>
+       <span v-if="!v2DimensionLabels.length" class="analysis-empty-shelf">拖入维度，可添加多个</span>
+      </div>
+      <div class="analysis-shelf v2-shelf" @dragover.prevent @drop="onV2Drop($event,'metric')">
+       <span>指标</span>
+       <span v-for="item in v2MeasureLabels" :key="item.binding.id" class="analysis-chip">
+        {{item.field?.name||'字段已删除'}}
+        <el-select v-model="item.binding.aggregate" size="small" style="width:82px" @change="mark">
+         <el-option v-for="agg in ['SUM','AVG','COUNT','MIN','MAX']" :key="agg" :value="agg" :label="agg"/>
+        </el-select>
+        <button @click="removeV2Field(item.binding.id,'metric')">×</button>
+       </span>
+       <span v-if="!v2MeasureLabels.length" class="analysis-empty-shelf">拖入指标，可添加多个</span>
+      </div>
+     </div>
+     <div v-else-if="chosen" class="analysis-field-shelves">
       <div class="analysis-shelf" @dragover.prevent @drop="handleDrop($event,'dimension')">
        <span>维度</span><span v-if="chosen.dimension" class="analysis-chip">{{chosen.dimension}} <button @click="chosen.dimension='';mark()">×</button></span>
        <span v-else class="analysis-empty-shelf">拖入维度字段</span>
@@ -251,7 +290,8 @@ onMounted(load)
       <div v-if="!chosen" class="analysis-stage-empty"><strong>暂无组件</strong><span>点击底部「＋组件」创建第一张图表</span><button @click="addComponent">新建组件</button></div>
       <div v-else class="analysis-stage-content">
        <div class="analysis-stage-title"><strong>{{chosen.title}}</strong><span>数据源实时查询</span></div>
-       <ChartWidget :key="chosen.id" :widget="chosen" :datasets="datasets" :readonly="false"/>
+       <AnalysisV2Chart v-if="chosen.analysisV2" :key="chosen.id" :widget="chosen"/>
+       <ChartWidget v-else :key="chosen.id" :widget="chosen" :datasets="datasets" :readonly="false"/>
       </div>
      </div>
     </template>
@@ -260,7 +300,9 @@ onMounted(load)
      <div v-if="!components.length" class="analysis-stage-empty">暂无分析组件</div>
      <div v-else class="analysis-dashboard-grid">
       <div v-for="component in components" :key="component.id" class="analysis-dashboard-card">
-       <strong>{{component.title}}</strong><ChartWidget :widget="component" :datasets="datasets" :readonly="true"/>
+       <strong>{{component.title}}</strong>
+       <AnalysisV2Chart v-if="component.analysisV2" :widget="component" :readonly="true"/>
+       <ChartWidget v-else :widget="component" :datasets="datasets" :readonly="true"/>
       </div>
      </div>
     </div>
