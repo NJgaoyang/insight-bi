@@ -24,12 +24,13 @@ for path in "${paths[@]}"; do
     */DatabaseStore.java|*/BiApi.java)
       add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest
       add_test BiQueryInTest;add_test AnalysisResourceGraphTest
-      add_test AnalysisPipelineApiTest;;
+      add_test AnalysisPipelineApiTest;add_test AnalysisPipelineDependencyGuardTest;;
     */AnalysisResourceGraph.java) add_test AnalysisResourceGraphTest;;
     */AnalysisPipelineCompiler.java|*/AnalysisPipelineApi.java)
       add_test AnalysisPipelineCompilerTest;add_test AnalysisPipelineApiTest
       add_test AnalysisPipelineCaseTest;add_test AnalysisPipelineUnionTest
       add_test AnalysisPipelineJoinTest;;
+    */AnalysisPipelineDependencyGuard.java) add_test AnalysisPipelineDependencyGuardTest;;
     */FieldCatalog.java)
       add_test FieldVisibilityTest;add_test FieldCatalogRefreshTest;add_test FieldCatalogConcurrencyTest;;
     */DatasetSchemaGuard.java)
