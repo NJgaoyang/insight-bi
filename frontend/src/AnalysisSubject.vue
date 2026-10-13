@@ -103,6 +103,25 @@ function removeV2Field(id:string,kind:'dimension'|'metric'){
 function onV2Drag(e:DragEvent,field:FieldV2,kind:'dimension'|'metric'){
  e.dataTransfer?.setData('application/x-insight-field',JSON.stringify({id:field.id,kind}))
 }
+function onBindingDrag(e:DragEvent,kind:'dimension'|'metric',index:number){
+ e.stopPropagation()
+ e.dataTransfer?.setData('application/x-insight-binding',JSON.stringify({kind,index}))
+ if(e.dataTransfer)e.dataTransfer.effectAllowed='move'
+}
+function onBindingDrop(e:DragEvent,kind:'dimension'|'metric',target:number){
+ e.preventDefault();e.stopPropagation()
+ const raw=e.dataTransfer?.getData('application/x-insight-binding')
+ if(!raw){onV2Drop(e,kind);return}
+ try{
+  const payload=JSON.parse(raw) as {kind:string;index:number}
+  const arr=kind==='dimension'?chosen.value?.analysisV2?.dimensions:chosen.value?.analysisV2?.measures
+  if(payload.kind!==kind||!arr||!Number.isInteger(payload.index)||payload.index<0||payload.index>=arr.length)
+   throw Error('无效的字段排序')
+  if(payload.index===target)return
+  const [item]=arr.splice(payload.index,1)
+  arr.splice(target,0,item);mark()
+ }catch{ElMessage.warning('只能调整同类型字段的顺序')}
+}
 function onV2Drop(e:DragEvent,kind:'dimension'|'metric'){
  e.preventDefault()
  try{
@@ -306,7 +325,8 @@ onMounted(load)
      <div v-if="chosen?.analysisV2" class="analysis-field-shelves">
       <div class="analysis-shelf v2-shelf" @dragover.prevent @drop="onV2Drop($event,'dimension')">
        <span>维度</span>
-       <span v-for="(item,i) in v2DimensionLabels" :key="item.binding.fieldId" class="analysis-chip">
+       <span v-for="(item,i) in v2DimensionLabels" :key="item.binding.fieldId" class="analysis-chip" draggable="true"
+         @dragstart="onBindingDrag($event,'dimension',i)" @dragover.prevent @drop="onBindingDrop($event,'dimension',i)">
         {{item.field?.name||'字段已删除'}}
         <el-select v-if="['DATE','DATETIME'].includes(item.field?.logicalType||'')" v-model="item.binding.granularity"
          size="small" style="width:78px" placeholder="原始" clearable @change="mark">
@@ -320,7 +340,8 @@ onMounted(load)
       </div>
       <div class="analysis-shelf v2-shelf" @dragover.prevent @drop="onV2Drop($event,'metric')">
        <span>指标</span>
-       <span v-for="(item,i) in v2MeasureLabels" :key="item.binding.id" class="analysis-chip">
+       <span v-for="(item,i) in v2MeasureLabels" :key="item.binding.id" class="analysis-chip" draggable="true"
+         @dragstart="onBindingDrag($event,'metric',i)" @dragover.prevent @drop="onBindingDrop($event,'metric',i)">
         {{item.field?.name||'字段已删除'}}
         <el-select v-model="item.binding.aggregate" size="small" style="width:82px" @change="mark">
          <el-option v-for="agg in ['SUM','AVG','COUNT','MIN','MAX']" :key="agg" :value="agg" :label="agg"/>
