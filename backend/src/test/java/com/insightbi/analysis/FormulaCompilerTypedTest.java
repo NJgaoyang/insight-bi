@@ -25,6 +25,10 @@ class FormulaCompilerTypedTest {
     assertEquals("ROW",conditional.phase());
     assertEquals("DECIMAL",conditional.outputType());
     assertTrue(conditional.sql().contains("CASE WHEN"));
+    assertEquals("case",conditional.canonicalAst().get("kind"));
+    assertEquals(1,((List<?>)conditional.canonicalAst().get("branches")).size());
+    assertEquals("binary",((Map<?,?>)((Map<?,?>)((List<?>)conditional.canonicalAst().get("branches")).get(0)).get("condition")).get("kind"));
+    assertEquals("call",p.compile("SUM([revenue])").canonicalAst().get("kind"));
     assertTrue(conditional.references().containsAll(Set.of("city","revenue","cost")));
 
     var literal=p.compile("IF([city]='O''Reilly', 1, NULL)");
