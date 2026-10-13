@@ -104,7 +104,11 @@ public final class AnalysisPipelineCompiler {
     // SELECT-list CASE placeholders occur before the nested FROM subquery.
     // Build binds in their actual SQL order: predicate, branches, prior steps.
     List<Object> conditionParams=new ArrayList<>();
-    String condition=predicate(state,step,conditionParams);
+    // The output fieldId belongs to the new column; sourceFieldId is the
+    // field tested by the predicate. Never reuse one ID for both purposes.
+    Map<String,Object> conditionStep=new HashMap<>(step);
+    conditionStep.put("fieldId",required(step,"sourceFieldId"));
+    String condition=predicate(state,conditionStep,conditionParams);
     Object yes=convert(step.get("thenValue"),outputType);
     Object no=convert(step.get("elseValue"),outputType);
     List<Object> params=new ArrayList<>(conditionParams);
