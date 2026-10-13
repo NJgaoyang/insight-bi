@@ -97,12 +97,26 @@ class BiApi {
   String folder=optionalFolder(x);assertDataFolder(folder);
   List<Map<String,Object>> fields;try(Connection c=s.open(s.connection(connectionId))){fields=s.readFields(c,sql);}
   if(fields.isEmpty())throw new IllegalArgumentException("SQL 没有字段");
-  // Preflight the proposed physical schema before mutating SQL or fields_json.
-  if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0)
-   new DatasetSchemaGuard(s,db).check(id,fields);
-  if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0)
-   db.update("UPDATE insight_dataset SET name=?,connection_id=?,sql_body=?,fields_json=? WHERE id=?",name,connectionId,sql,s.json(fields),id);
-  else db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json,folder_id) VALUES(?,?,?,?,?,?)",id,name,connectionId,sql,s.json(fields),folder);
+  Map<String,String> fieldRenames=new LinkedHashMap<>();
+  Object rawRenames=x.get("fieldRenames");
+  if(rawRenames!=null){
+   if(!(rawRenames instanceof Map<?,?> names))
+    throw new IllegalArgumentException("字段更名映射必须是旧源列到新源列的对象");
+   for(var entry:names.entrySet()){
+    if(!(entry.getKey() instanceof String old)||!(entry.getValue() instanceof String newer))
+     throw new IllegalArgumentException("字段更名映射必须由文本组成");
+    fieldRenames.put(old,newer);
+   }
+  }
+  boolean exists=db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0;
+  if(!exists&&!fieldRenames.isEmpty())throw new IllegalArgumentException("新建数据集不能使用源字段更名映射");
+  if(exists){
+   var guard=new DatasetSchemaGuard(s,db);
+   guard.check(id,fields,fieldRenames);
+   guard.applyRenames(id,fieldRenames);
+   db.update("UPDATE insight_dataset SET name=?,connection_id=?,sql_body=?,fields_json=? WHERE id=?",
+     name,connectionId,sql,s.json(fields),id);
+  }else db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json,folder_id) VALUES(?,?,?,?,?,?)",id,name,connectionId,sql,s.json(fields),folder);
   return Map.of("id",id,"fields",fields);
  }
  @DeleteMapping("/datasets/{id}")Map<String,Object> deleteDataset(@PathVariable String id){
