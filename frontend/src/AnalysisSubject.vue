@@ -6,17 +6,17 @@ import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
+import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
 const report=ref<Dashboard|null>(null)
 const datasets=ref<Dataset[]>([])
 const components=ref<AnalysisWidgetV2[]>([])
-type DashboardView={id:string;name:string;widgetIds:string[]}
 const dashboardViews=ref<DashboardView[]>([])
 const selectedViewId=ref('')
 const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
-const dashboardWidgets=computed(()=>components.value.filter(w=>activeView.value?.widgetIds.includes(w.id)))
+const dashboardWidgets=computed(()=>orderedViewWidgets(activeView.value,components.value))
 const selectedId=ref('')
 const name=ref('')
 const busy=ref(false)
@@ -216,7 +216,7 @@ async function load(){
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds]}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
@@ -244,7 +244,10 @@ function removeComponent(){
  .then(()=>{
   const removedId=selectedId.value
   components.value=components.value.filter(w=>w.id!==removedId)
-  for(const view of dashboardViews.value)view.widgetIds=view.widgetIds.filter(id=>id!==removedId)
+  for(const view of dashboardViews.value){
+   view.widgetIds=view.widgetIds.filter(id=>id!==removedId)
+   removeUnusedLayout(view)
+  }
   selectedId.value=components.value[0]?.id??'';mark()
  })
  .catch(()=>{})
@@ -319,6 +322,28 @@ function setDashboardWidgets(ids:string[]){
  if(!view)return
  const existing=new Set(components.value.map(w=>w.id))
  view.widgetIds=[...new Set(ids.filter(id=>existing.has(id)))]
+ removeUnusedLayout(view)
+ mark()
+}
+function moveDashboardWidget(widgetId:string,offset:number){
+ const view=activeView.value
+ if(!view)return
+ const position=view.widgetIds.indexOf(widgetId),next=position+offset
+ if(position<0||next<0||next>=view.widgetIds.length)return
+ const [item]=view.widgetIds.splice(position,1)
+ view.widgetIds.splice(next,0,item)
+ mark()
+}
+function resizeDashboardWidget(widgetId:string,kind:'columns'|'height'){
+ const view=activeView.value
+ if(!view||!view.widgetIds.includes(widgetId))return
+ const current=viewLayout(view,widgetId)
+ const updated:WidgetLayout={
+  columns:kind==='columns'?(current.columns===6?12:6):current.columns,
+  height:kind==='height'?(current.height===320?480:current.height===480?640:320)
+   :(current.height===380?320:current.height)
+ }
+ view.layout={...view.layout,[widgetId]:updated}
  mark()
 }
 async function save():Promise<boolean>{
@@ -495,12 +520,21 @@ onMounted(load)
       </el-select>
      </div>
      <div v-if="!dashboardWidgets.length" class="analysis-stage-empty">当前仪表板尚未选择组件</div>
-     <div v-else class="analysis-dashboard-grid">
-      <div v-for="component in dashboardWidgets" :key="component.id" class="analysis-dashboard-card">
-       <strong>{{component.title}}</strong>
+     <div v-else class="analysis-view-grid">
+      <div v-for="(component,index) in dashboardWidgets" :key="component.id"
+       class="analysis-dashboard-card analysis-layout-card"
+       :data-widget-id="component.id" :style="cardStyle(activeView,component.id)">
+       <div class="analysis-layout-toolbar">
+        <strong>{{component.title}}</strong>
+        <button title="组件前移" :disabled="index===0" @click="moveDashboardWidget(component.id,-1)">←</button>
+        <button title="组件后移" :disabled="index===dashboardWidgets.length-1" @click="moveDashboardWidget(component.id,1)">→</button>
+        <button title="切换组件宽度" @click="resizeDashboardWidget(component.id,'columns')">{{viewLayout(activeView,component.id).columns===12?'半宽':'全宽'}}</button>
+        <button title="切换组件高度" @click="resizeDashboardWidget(component.id,'height')">高度</button>
+       </div>
        <AnalysisV2Chart v-if="component.analysisV2" :widget="component" :readonly="true"/>
        <ChartWidget v-else :widget="component" :datasets="datasets" :readonly="true"/>
       </div>
+     </div>
      </div>
     </div>
     <div class="analysis-bottom-tabs">
