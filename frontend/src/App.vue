@@ -113,6 +113,8 @@ async function confirmMove(){
  }catch(e){showError(e)}finally{saving.value=false}
 }
 
+const aliasRenames=ref<{oldName:string;newName:string}[]>([])
+const originalDatasetFields=ref<string[]>([])
 const connDialog=ref(false),dataDialog=ref(false),dashDialog=ref(false),previewDialog=ref(false)
 const conn=ref<any>({}),data=ref<any>({}),dash=ref({name:'',mode:'grid'}),tables=ref<string[]>([]),chosenTable=ref('')
 const dataPreview=ref<Record<string,any>[]>([]),previewFields=ref<string[]>([])
@@ -170,9 +172,19 @@ async function saveConnection(){
 async function deleteConnection(c:any){
  try{await ElMessageBox.confirm('将删除连接「'+c.name+'」，不会删除源数据库。','删除数据连接',{type:'warning'});await remove('/connections/'+c.id);await refresh()}catch(e:any){if(e!=='cancel')showError(e)}
 }
-function newDataset(){data.value={name:'',connectionId:'',sql:'',parentId:selectedDataFolder.value||null};tables.value=[];chosenTable.value='';dataDialog.value=true}
+function newDataset(){
+ data.value={name:'',connectionId:'',sql:'',parentId:selectedDataFolder.value||null}
+ tables.value=[];chosenTable.value='';aliasRenames.value=[];originalDatasetFields.value=[]
+ dataDialog.value=true
+}
 async function editDataset(ds:Dataset){
- data.value={id:ds.id,name:ds.name,connectionId:ds.connection_id,sql:ds.sql_body,parentId:(ds as any).folder_id??null};chosenTable.value='';dataDialog.value=true;await readTables()
+ data.value={id:ds.id,name:ds.name,connectionId:ds.connection_id,sql:ds.sql_body,parentId:(ds as any).folder_id??null}
+ chosenTable.value='';aliasRenames.value=[];originalDatasetFields.value=[];dataDialog.value=true
+ await readTables()
+ try{
+  const detail=await api<{fields:{name:string}[]}>('/datasets/'+ds.id)
+  if(data.value.id===ds.id)originalDatasetFields.value=detail.fields.map(x=>x.name)
+ }catch(e){showError(e)}
 }
 async function readTables(){
  tables.value=[];if(!data.value.connectionId)return
@@ -185,8 +197,18 @@ function selectTable(){
 }
 async function saveDataset(){
  saving.value=true
- try{await post('/datasets',data.value);dataDialog.value=false;await refresh();ElMessage.success('数据集已保存并获取真实字段')}
- catch(e){showError(e)}finally{saving.value=false}
+ try{
+  const mapping:Record<string,string>={}
+  for(const item of aliasRenames.value){
+   const before=item.oldName.trim(),after=item.newName.trim()
+   if(!before||!after||before===after)throw Error('请填写不同的旧列名与新列名')
+   if(Object.hasOwn(mapping,before))throw Error('同一个旧源列只能映射一次')
+   if(Object.values(mapping).includes(after))throw Error('多个旧源列不能映射到同一新列名')
+   mapping[before]=after
+  }
+  await post('/datasets',{...data.value,fieldRenames:mapping})
+  dataDialog.value=false;await refresh();ElMessage.success('数据集已保存并获取真实字段')
+ }catch(e){showError(e)}finally{saving.value=false}
 }
 async function deleteDataset(ds:Dataset){
  try{await ElMessageBox.confirm('将删除数据集「'+ds.name+'」，源表不会被删除。','确认删除',{type:'warning'});await remove('/datasets/'+ds.id);await refresh()}
@@ -370,7 +392,20 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
   <template #footer><button class="subtle-button" @click="connDialog=false">取消</button><button class="primary-soft" :disabled="validating" @click="testConnection">{{validating?'正在连接…':'测试连接'}}</button><button class="primary-button" :disabled="saving" @click="saveConnection">保存连接</button></template>
  </el-dialog>
  <el-dialog v-model="dataDialog" :title="data.id?'编辑数据集':'创建数据集'" width="740px" destroy-on-close>
-  <div class="modal-fields"><label>数据集名称</label><el-input v-model="data.name" placeholder="输入描述性名称"/><label>关联数据连接</label><el-select v-model="data.connectionId" placeholder="选择数据库连接" @change="readTables"><el-option v-for="c in connections" :key="c.id" :label="c.name+' ('+c.db_name+')'" :value="c.id"/></el-select><label>选择数据库表（可选）</label><div class="horizontal-form"><el-select v-model="chosenTable" filterable placeholder="选择真实数据表"><el-option v-for="t in tables" :key="t" :label="t" :value="t"/></el-select><button class="primary-soft" @click="selectTable">生成 SQL</button></div><label>只读 SELECT SQL</label><el-input v-model="data.sql" type="textarea" :rows="7" placeholder="SELECT * FROM \x60table_name\x60"/><small>保存时连接数据库读取真实字段；仅允许单条 SELECT，限制单次查询量及超时。</small></div>
+  <div class="modal-fields"><label>数据集名称</label><el-input v-model="data.name" placeholder="输入描述性名称"/><label>关联数据连接</label><el-select v-model="data.connectionId" placeholder="选择数据库连接" @change="readTables"><el-option v-for="c in connections" :key="c.id" :label="c.name+' ('+c.db_name+')'" :value="c.id"/></el-select><label>选择数据库表（可选）</label><div class="horizontal-form"><el-select v-model="chosenTable" filterable placeholder="选择真实数据表"><el-option v-for="t in tables" :key="t" :label="t" :value="t"/></el-select><button class="primary-soft" @click="selectTable">生成 SQL</button></div><label>只读 SELECT SQL</label><el-input v-model="data.sql" type="textarea" :rows="7" placeholder="SELECT * FROM \x60table_name\x60"/><small>保存时连接数据库读取真实字段；仅允许单条 SELECT，限制单次查询量及超时。</small>
+   <template v-if="data.id">
+    <label>源字段别名迁移（可选）</label>
+    <small>仅适用于同一业务字段更换 SQL 输出别名：旧列名 → 新列名。确认后保留字段 ID、计算公式及图表绑定，不修改数据库物理列。</small>
+    <div v-for="(mapping,index) in aliasRenames" :key="index" class="horizontal-form">
+     <el-select v-model="mapping.oldName" filterable placeholder="旧列名">
+      <el-option v-for="field in originalDatasetFields" :key="field" :label="field" :value="field"/>
+     </el-select>
+     <el-input v-model="mapping.newName" maxlength="128" placeholder="新 SQL 输出列名"/>
+     <button type="button" class="subtle-button" @click="aliasRenames.splice(index,1)">移除</button>
+    </div>
+    <button type="button" class="primary-soft" @click="aliasRenames.push({oldName:'',newName:''})">＋ 添加别名映射</button>
+   </template>
+  </div>
   <template #footer><button class="subtle-button" @click="dataDialog=false">取消</button><button class="primary-button" :disabled="saving" @click="saveDataset">校验并保存</button></template>
  </el-dialog>
  <el-dialog v-model="dashDialog" title="新建报表" width="510px"><div class="modal-fields"><label>报表名称</label><el-input v-model="dash.name" placeholder="请输入报表名称"/><label>设计器模式</label><div class="mode-pick"><button :class="{selected:dash.mode==='grid'}" @click="dash.mode='grid'"><span>▦</span><strong>常规仪表板</strong><small>栅格编排，自适应宽度</small></button><button :class="{selected:dash.mode==='free'}" @click="dash.mode='free'"><span>▧</span><strong>自由画布</strong><small>像素精排，适合驾驶舱</small></button></div></div><template #footer><button class="subtle-button" @click="dashDialog=false">取消</button><button class="primary-button" :disabled="saving" @click="createDashboard">创建并编辑 →</button></template></el-dialog>
