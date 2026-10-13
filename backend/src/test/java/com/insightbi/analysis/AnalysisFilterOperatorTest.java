@@ -66,6 +66,20 @@ class AnalysisFilterOperatorTest {
           "filters",dateFilter));
       assertInstanceOf(java.sql.Date.class,typed.params().get(0));
 
+      try(Statement s=c.createStatement()){
+        s.execute("INSERT INTO sales VALUES('北!_%',50,'2026-02-02'),('空金额',NULL,'2026-02-03')");
+      }
+      Map<String,Object> literalEscape=Map.of("pre",List.of(Map.of(
+        "fieldId","city","op","contains","value","!_%")),"post",List.of());
+      var escaped=query(c,literalEscape);
+      assertEquals(1,escaped.size(),"escape character and LIKE wildcards must stay literal");
+      assertEquals("北!_%",escaped.get(0).get("city"));
+      Map<String,Object> postNull=Map.of("pre",List.of(),"post",List.of(Map.of(
+        "ref","sum","op","isNull")));
+      var post=query(c,postNull);
+      assertEquals(1,post.size(),"HAVING SUM(revenue) IS NULL must preserve the null group");
+      assertEquals("空金额",post.get(0).get("city"));
+
       var planner=new AnalysisQueryPlanner(FIELDS);
       assertThrows(IllegalArgumentException.class,()->planner.compile("SELECT city,revenue,order_date FROM sales",
         Map.of("dimensions",List.of(Map.of("fieldId","city")),
