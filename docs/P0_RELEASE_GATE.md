@@ -49,6 +49,22 @@ bash scripts/p0_starrocks_readonly_e2e.sh
 
 两个启用标记缺失、连接缺失、账号为 `root/admin` 均直接拒绝。JUnit 返回 **tests ≥ 1、skipped = failures = errors = 0** 后，脚本才将实际 Surefire XML 以权限 `600` 归档到私有 `runtime/p0-starrocks-surefire.xml`。
 
+### DataForge 专用测试 StarRocks（2026-10-13）
+
+用户已明确授权使用 DataForge 专门搭建的 StarRocks 测试环境进行 P0 真数对账。此前登记的 FE 地址为内网 `172.17.0.12:9030`、公网 `81.69.15.136:9030`，**使用前仍要与 DataForge 的实际配置核对**。为避免拦截这套已确认的测试环境，新增独立入口：
+
+```bash
+# 在能直连测试 FE 的开发机上，从 DataForge 现有机密管理方式注入凭据
+# export DATAFORGE_STARROCKS_PASSWORD=...  # 示例占位符，不写在仓库
+# 可选：export DATAFORGE_STARROCKS_USER=root
+# 可选：export P0_STARROCKS_JDBC_URL=jdbc:mysql://172.17.0.12:9030/ods
+bash scripts/p0_dataforge_starrocks_e2e.sh
+```
+
+入口仅针对这两个 FE 地址、明确确认的 DataForge 测试环境，允许复用此前的测试管理员账号；其他 FE 使用 root/admin 仍被拒绝。对账脚本仅发送预定义的 SELECT/UNION ALL，不创建或修改任何表。运行凭据仅通过环境变量注入，不保存到脚本、Git 提交或验收文档。即便为测试环境，管理员账号的权限仍高于专用只读账号，不应据此假定完全无风险。
+
+**状态：** 开发机 Remote Desktop Commander 当前显示在线但命令执行及 Ping 超时，尚未拿到真实 JDBC 查询结果、非跳过的 Surefire 报告；不得把 G4/P0-05 标记为完成。生产部署检查和生产 H2 备份门禁没有取消。
+
 ## 4. 发布前只读核验及部署
 
 ```bash
