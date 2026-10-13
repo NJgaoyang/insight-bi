@@ -15,3 +15,18 @@ export interface Field {name:string;type:string;numeric:boolean}
 export interface Dataset {id:string;name:string;connection_id:string;sql_body:string;fields:Field[]}
 export interface Widget {id:string;type:string;title:string;datasetId:string;dimension:string;columnDimension?:string;measure:string;secondMeasure?:string;agg:string;columns:string[];x:number;y:number;w:number;h:number;px:number;py:number;width:number;height:number;style:Record<string,any>;columnStyles:Record<string,any>;drillDimensions?:string[];pivotMeasures?:string[];sort?:string;direction?:'asc'|'desc';topN?:number}
 export interface Dashboard {id:string;name:string;mode:'grid'|'free';revision:number;status:string;content:{mode:'grid'|'free';widgets:Widget[];theme:string}}
+
+/** New semantic query contracts: old Widget payloads continue to work unchanged. */
+export interface FieldV2 {id:string;name:string;sourceColumn:string|null;logicalType:string;role:string;numeric:boolean;calculated:boolean;phase:string;expression:string|null}
+export interface DimensionV2 {fieldId:string;granularity?:'year'|'month'|'day'}
+export interface MeasureV2 {id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';alias:string}
+export interface FilterV2 {fieldId?:string;ref?:string;op:string;value?:string|number;values?:(string|number)[]}
+export interface AnalysisV2Bindings {
+  dimensions:DimensionV2[]
+  measures:MeasureV2[]
+  filters:{pre:FilterV2[];post:FilterV2[]}
+  sort:{ref:string;direction:'asc'|'desc'}[]
+  limit:number
+}
+export type AnalysisWidgetV2 = Widget & {analysisV2?:AnalysisV2Bindings}
+export interface QueryV2Result {rows:Record<string,unknown>[];columns:{id:string;name:string;label:string;type:string;kind:string}[];executionMs:number;truncated:boolean;warnings:string[]}
