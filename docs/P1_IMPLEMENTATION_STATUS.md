@@ -30,6 +30,22 @@
 - 新增 `finebi_published_views_ui_smoke.cjs`，隔离 Chromium + 模拟 API 验证已发布 V2 的两个视图和原普通仪表板只读路由，**PASS**。
 - 新增 `AnalysisResourceGraphTest` 的版本恢复用例：通过既有 `/versions/{version}/restore` 恢复多视图配置和稳定组件/数据集引用，**PASS**。
 
+## P1-01 第四批：视图独立布局、宽高与排列
+
+- 视图 `content.dashboards[].layout` 新增可选字段，按组件 ID 保存 `{columns: 6|12, height: 320|480|640}`；每个视图可有不同排序 `widgetIds[]`、宽度和高度。图表 SQL、数据集、指标配置继续只存在共享的 `widgets[]` 中，不会因布局变化被复制。
+- `AnalysisResourceGraph` 保存与发布时严格校验：布局只能引用此视图实际选中的组件、宽高只能是允许的整数档位，防止越界、溢出和悬空 ID；无 `layout` 的历史主题继续采用原 380px 默认高度，不做数据迁移。
+- `analysis/dashboardLayout.ts` 提供有序组件列表、默认尺寸以及清理废弃布局引用。分析主题预览中新添紧凑的组件前移/后移、半宽/全宽、三档高度控件；从当前视图移除组件或全局删除组件后清理布局引用。
+- `PublishedReport.vue` 的 V2 已发布查看页按保存的视图顺序/尺寸只读渲染；窄屏切换为单列。既有普通仪表板 `Designer` 的保存与查看路径没有更改。
+- 版本恢复仍保留完整 `dashboards[].layout`，发布后的快照不会随草稿中布局的变化而被直接覆盖。
+
+### 只验证了本次关联范围
+
+- `mvn -q -o -Dtest=AnalysisResourceGraphTest test`：**8/8 PASS**，包含独立布局保存/发布/历史恢复、异常引用和整数溢出拒绝。旧普通仪表板保存合同没有更改。
+- `npm run build`：`vue-tsc --noEmit` 与 Vite **PASS**。
+- `node scripts/finebi_view_layout_ui_smoke.cjs`：真实 Chromium 交互、模拟 REST **PASS**；验证多视图布局互不影响、排序宽高保存、刷新、发布查看、响应式窄屏。
+- 对修改涉及的页面额外只运行 `finebi_theme_views_ui_smoke.cjs` 与 `finebi_published_views_ui_smoke.cjs`，**均 PASS**。未做整站或全量 Maven 测试。
+- 生产 `18110/api/health` 返回 `{"ok":true}`，工作树 0 改动，测试预览 `18117` 已关闭。未部署生产。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
