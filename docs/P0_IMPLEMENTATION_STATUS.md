@@ -200,6 +200,18 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 变更对应主要文件：`analysis/FormulaSnapshotGuard.java`、`analysis/AnalysisApi.java`、`analysis/FormulaSnapshotGuardTest.java`、`analysis/StarRocksReadOnlyReconciliationTest.java`、`scripts/p0_scoped_ci.sh`。本次所有提交均在开发分支，不合并 `main`，不部署生产。
 
+## 2026-10-13 增量：DataForge 测试 FE 联通检查与 P0-05 SQL 夹具验收
+
+在开发机 `VM-0-13-tencentos` 上实际核查：`172.17.0.12:9030` TCP **open**；`insight-bi.service` **active**、生产 `18110/api/health` 返回 `{"ok":true}`、生产 Git 工作区 **0** 改动、预览端口 `18117` 已关闭。
+
+- **真实 StarRocks JDBC 仍未验收**：端口联通不等于 JDBC 认证成功。现有 DataForge 部署配置中的可用元数据密码未能解析，源端 `mysql` 空密码尝试被拒绝，尚未取得可安全注入的 DataForge StarRocks 测试连接凭据；未对 DataForge 业务表执行查询或变更。不标记 G4/P0-05 完成，不为认证绕过开放接口。
+- **P0-05 SQL 夹具对账代码**：新增 `StarRocksInlineFixture.java`，H2 本地语义测试与真实 StarRocks opt-in 用例共享完全相同的内联 `SOURCE/EDGE_SOURCE` SQL。两边覆盖 4+2 行（北京、上海、南京、多笔重复数据、NULL 日期与收入），真实 StarRocks 用例继续提供独立手写 SQL 基准，不在数据库中建表或修改数据。
+- **本次只测修改部分**：隔离工作目录 `/opt/insight-bi-p0-preview` 运行 `mvn -q -o -Dtest=StarRocksInlineFixtureTest test`，**2 tests/0 failures/0 errors/0 skipped**。验证 `COUNT`、`COUNT DISTINCT`、`SUM`、NULL 日期以及 WHERE 与 HAVING 差别。H2 列别名会变大写，本地测试将标签小写化，既不改变正式查询规划器也不改变 StarRocks JDBC 用例。
+- **历史计算字段快照边界**：`FormulaSnapshotGuard` 对旧快照中内联表达式的 `[fieldId]` 引用增加引号、反斜杠与注释扫描。仅引用表达式实际使用的字段时才阻止公式修改，普通字符串常量不误判。开发机同步更新了 `AnalysisApi` 后，独立运行 `mvn -q -o -Dtest=FormulaSnapshotGuardTest test`，**6 tests/0 failures/0 errors/0 skipped**。
+- **CI 调整**：`p0_scoped_ci.sh` 在共享 SQL 夹具变化时只选择 `StarRocksInlineFixtureTest`；相关 GitHub Actions 定向检查通过，未执行无关的全量回归或线上部署。
+
+**剩余发布阻塞不变：** 需要 DataForge StarRocks 有效的 JDBC 身份信息以执行真实只读对账；生产 H2 一致性备份与独立恢复、生产式隔离部署及回滚演练均未执行。在这些门禁有有效证据之前保留 P0-05 未完成。生产 `18110` 保持不变。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
