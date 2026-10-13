@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.insightbi.analysis.DatasetSchemaGuard;
 import com.insightbi.analysis.DatasetSqlChangePolicy;
 import com.insightbi.analysis.AnalysisResourceGraph;
+import com.insightbi.analysis.AnalysisPipelineDependencyGuard;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -128,6 +129,7 @@ class BiApi {
  }
  @DeleteMapping("/datasets/{id}")@Transactional Map<String,Object> deleteDataset(@PathVariable String id){
   AnalysisResourceGraph.rejectDatasetDeletion(id,s,db);
+  AnalysisPipelineDependencyGuard.rejectDatasetDeletion(id,s,db);
   db.update("DELETE FROM insight_dataset_pipeline WHERE dataset_id=?",id);
   db.update("DELETE FROM insight_dataset WHERE id=?",id);return Map.of("ok",true);
  }
