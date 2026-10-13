@@ -5,6 +5,7 @@ import {api,put,post,type Dataset,type Dashboard,type Widget,type FieldV2,type A
 import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
+import AnalysisFilters from './analysis/AnalysisFilters.vue'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -155,17 +156,6 @@ function setV2Direction(direction:'asc'|'desc'){
  const b=chosen.value?.analysisV2;if(!b?.sort.length)return
  b.sort[0].direction=direction;mark()
 }
-const preFilterField=ref(''),preFilterValue=ref(''),postFilterRef=ref(''),postFilterValue=ref('')
-function addV2Filter(stage:'pre'|'post'){
- const b=chosen.value?.analysisV2;if(!b)return
- const id=stage==='pre'?preFilterField.value:postFilterRef.value
- const raw=stage==='pre'?preFilterValue.value:postFilterValue.value
- if(!id||!raw.trim()){ElMessage.warning('请选择字段并填写过滤值');return}
- if(stage==='pre')b.filters.pre.push({fieldId:id,op:'gte',value:raw})
- else b.filters.post.push({ref:id,op:'gte',value:raw})
- mark()
-}
-
 const types=[
  {type:'bar',name:'柱状图',icon:'▥'},{type:'hbar',name:'条形图',icon:'▤'},
  {type:'line',name:'折线图',icon:'⌁'},{type:'area',name:'面积图',icon:'▰'},
@@ -421,26 +411,7 @@ onMounted(load)
          @update:model-value="v=>setV2Direction(v as 'asc'|'desc')">
         <el-option label="降序" value="desc"/><el-option label="升序" value="asc"/>
        </el-select>
-       <label>明细前过滤（≥）</label>
-       <el-select v-model="preFilterField" filterable placeholder="选择字段">
-        <el-option v-for="f in v2Fields" :key="f.id" :label="f.name" :value="f.id"/>
-       </el-select>
-       <el-input v-model="preFilterValue" placeholder="输入比较值"/>
-       <button class="analysis-formula-add" @click="addV2Filter('pre')">添加明细过滤</button>
-       <div v-for="(f,i) in chosen.analysisV2.filters.pre" :key="i" class="v2-applied-filter">
-        {{v2Fields.find(z=>z.id===f.fieldId)?.name||f.fieldId}} ≥ {{f.value}}
-        <button @click="chosen.analysisV2!.filters.pre.splice(i,1);mark()">×</button>
-       </div>
-       <label>聚合后过滤（≥）</label>
-       <el-select v-model="postFilterRef" placeholder="选择聚合指标">
-        <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
-       </el-select>
-       <el-input v-model="postFilterValue" placeholder="输入比较值"/>
-       <button class="analysis-formula-add" @click="addV2Filter('post')">添加结果过滤</button>
-       <div v-for="(f,i) in chosen.analysisV2.filters.post" :key="i" class="v2-applied-filter">
-        {{chosen.analysisV2!.measures.find(z=>z.id===f.ref)?.alias||f.ref}} ≥ {{f.value}}
-        <button @click="chosen.analysisV2!.filters.post.splice(i,1);mark()">×</button>
-       </div>
+       <AnalysisFilters :key="chosen.id" :bindings="chosen.analysisV2" :fields="v2Fields" @change="mark"/>
        <label>各指标显示设置</label>
        <div v-for="item in v2MeasureLabels" :key="'style-'+item.binding.id" class="v2-measure-setting">
         <strong>{{item.field?.name||item.binding.id}}</strong>
