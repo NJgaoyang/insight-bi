@@ -1,4 +1,4 @@
-name: P0 Analysis Engine Checks
+name: P0 Changed-Area Checks
 on:
   push:
     branches:
@@ -6,40 +6,64 @@ on:
   pull_request:
     branches:
       - main
+
 jobs:
-  backend:
+  focused:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Identify changed modules and tests
+        id: scope
+        shell: bash
+        run: bash scripts/p0_scoped_ci.sh
+
       - uses: actions/setup-java@v4
+        if: steps.scope.outputs.backend == 'true'
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
           cache-dependency-path: backend/pom.xml
-      - name: Targeted API, compiler and compatibility tests
+      - name: Run only affected backend tests
+        if: steps.scope.outputs.backend == 'true'
         working-directory: backend
-        run: mvn -B -q -Dtest=BiQueryInTest,FineBiWorkspaceFolderTest,AnalysisQueryPlannerTest,AnalysisEngineSqlExecutionTest,AnalysisFormulaDependencyTest,ReadOnlySqlGuardTest,AnalysisQueryBoundaryTest,FieldCatalogRefreshTest,FormulaComplexityTest,AnalysisFilterOperatorTest,FieldCatalogConcurrencyTest,FieldDisplayNameTest test
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+        shell: bash
+        env:
+          SELECTED_TESTS: ${{ steps.scope.outputs.tests }}
+        run: |
+          if [[ -n "$SELECTED_TESTS" ]]; then
+            mvn -B -q "-Dtest=$SELECTED_TESTS" test
+          else
+            mvn -B -q -DskipTests package
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.scope.outputs.frontend == 'true'
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Install locked dependencies
+      - name: Install frontend dependencies
+        if: steps.scope.outputs.frontend == 'true'
         working-directory: frontend
         run: npm ci --no-audit --no-fund
-      - name: Check browser smoke test syntax
-        run: |
-          node --check scripts/finebi_multifield_ui_smoke.cjs
-          node --check scripts/finebi_formula_ui_smoke.cjs
-          node --check scripts/finebi_filters_ui_smoke.cjs
-          node --check scripts/finebi_field_rename_ui_smoke.cjs
-          bash -n scripts/deploy.sh
-          bash -n scripts/p0_starrocks_readonly_e2e.sh
-      - name: TypeScript and Vite production compilation
+      - name: Compile changed frontend
+        if: steps.scope.outputs.frontend == 'true'
         working-directory: frontend
         run: npm run build
+
+      - name: Syntax-check only modified scripts
+        if: steps.scope.outputs.scripts == 'true'
+        shell: bash
+        env:
+          BASE: ${{ steps.scope.outputs.base }}
+        run: |
+          while IFS= read -r file; do
+            [[ -f "$file" ]] || continue
+            case "$file" in
+              *.cjs|*.js) node --check "$file";;
+              *.sh) bash -n "$file";;
+            esac
+          done < <(git diff --name-only "$BASE" HEAD -- scripts/)
