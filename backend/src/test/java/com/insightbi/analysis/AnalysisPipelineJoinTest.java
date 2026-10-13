@@ -14,19 +14,19 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class AnalysisPipelineJoinTest {
   private static final List<FieldCatalog.Field> LEFT=List.of(
     new FieldCatalog.Field("city","城市","city","STRING","DIMENSION",false,false,"ROW",null),
-    new FieldCatalog.Field("month","月份","month","STRING","DIMENSION",false,false,"ROW",null),
+    new FieldCatalog.Field("period","月份","period","STRING","DIMENSION",false,false,"ROW",null),
     new FieldCatalog.Field("revenue","收入","revenue","DECIMAL","BOTH",true,false,"ROW",null));
   private static final List<FieldCatalog.Field> RIGHT=List.of(
     new FieldCatalog.Field("rcity","城市","city","STRING","DIMENSION",false,false,"ROW",null),
-    new FieldCatalog.Field("rmonth","月份","month","STRING","DIMENSION",false,false,"ROW",null),
+    new FieldCatalog.Field("rperiod","月份","period","STRING","DIMENSION",false,false,"ROW",null),
     new FieldCatalog.Field("refund","退款额","refund","DECIMAL","BOTH",true,false,"ROW",null));
-  private static final String MAIN="SELECT city,month,revenue FROM sales";
-  private static final String SECOND="SELECT city,month,refund FROM archive";
+  private static final String MAIN="SELECT city,period,revenue FROM sales";
+  private static final String SECOND="SELECT city,period,refund FROM archive";
   private static Map<String,Object> join(String type){
     return Map.of("id","joinStep","type","join","sourceDatasetId","archive_ds",
       "joinType",type,"acknowledgeFanout",true,
       "conditions",List.of(Map.of("leftFieldId","city","rightFieldId","rcity"),
-        Map.of("leftFieldId","month","rightFieldId","rmonth")),
+        Map.of("leftFieldId","period","rightFieldId","rperiod")),
       "fields",List.of(Map.of("sourceFieldId","refund","fieldId","refundValue","name","退款额")));
   }
   private static AnalysisPipelineCompiler compiler(){
@@ -37,8 +37,8 @@ class AnalysisPipelineJoinTest {
     Connection c=DriverManager.getConnection(
       "jdbc:h2:mem:join_"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa","");
     try(var st=c.createStatement()){
-      st.execute("CREATE TABLE sales(city VARCHAR(20),month VARCHAR(10),revenue DECIMAL(12,2))");
-      st.execute("CREATE TABLE archive(city VARCHAR(20),month VARCHAR(10),refund DECIMAL(12,2))");
+      st.execute("CREATE TABLE sales(city VARCHAR(20),period VARCHAR(10),revenue DECIMAL(12,2))");
+      st.execute("CREATE TABLE archive(city VARCHAR(20),period VARCHAR(10),refund DECIMAL(12,2))");
       st.execute("INSERT INTO sales VALUES ('北京','01',100),('北京','02',150),('上海','01',40)");
       st.execute("INSERT INTO archive VALUES ('北京','01',5),('北京','01',7),('上海','01',2),('北京','03',99)");
     }
@@ -70,10 +70,10 @@ class AnalysisPipelineJoinTest {
     try(var c=sample()){
       var rows=execute(c,plan);
       assertEquals(4,rows.size());
-      var unmatched=rows.stream().filter(x->"02".equals(x.get("month"))).findFirst().orElseThrow();
+      var unmatched=rows.stream().filter(x->"02".equals(x.get("period"))).findFirst().orElseThrow();
       assertNull(unmatched.get("join_refundvalue"));
       assertEquals(2,rows.stream().filter(x->
-        "北京".equals(x.get("city"))&&"01".equals(x.get("month"))).count());
+        "北京".equals(x.get("city"))&&"01".equals(x.get("period"))).count());
     }
   }
   @Test void innerJoinAndSubsequentGroupingBehavePredictably()throws Exception {
@@ -117,7 +117,7 @@ class AnalysisPipelineJoinTest {
         "op","eq","value","北京"),join("INNER")))));
     var unsafe=new AnalysisPipelineCompiler(LEFT,Map.of(
       "archive_ds",new AnalysisPipelineCompiler.UnionSource(
-        "SELECT city,month,refund FROM archive; DELETE FROM sales",RIGHT)));
+        "SELECT city,period,refund FROM archive; DELETE FROM sales",RIGHT)));
     assertThrows(IllegalArgumentException.class,()->unsafe.compile(MAIN,Map.of("steps",List.of(join("INNER")))));
   }
   @Test void secondarySourceChangesInvalidateSavedJoinAndCrossConnectionIsRejected()throws Exception {
@@ -136,7 +136,7 @@ class AnalysisPipelineJoinTest {
     assertEquals(1,api.save("main_ds",Map.of("revision",0,"steps",List.of(join("LEFT")))).get("revision"));
     assertEquals(false,api.get("main_ds").get("stale"));
     db.update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
-      "SELECT city,month,refund FROM archive_v2","archive_ds");
+      "SELECT city,period,refund FROM archive_v2","archive_ds");
     assertEquals(true,api.get("main_ds").get("stale"));
     assertThrows(IllegalStateException.class,()->api.preview("main_ds",
       Map.of("steps",List.of(join("LEFT")),"limit",20)));
