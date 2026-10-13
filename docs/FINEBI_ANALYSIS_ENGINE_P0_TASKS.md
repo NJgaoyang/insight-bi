@@ -273,4 +273,6 @@ git diff --check
 
 | 2026-10-13 | P0-05 本地复用 DataForge 真数对账夹具，修复旧公式快照中引号引用误判 | feat/finebi-analysis-engine-p0: 80550fd、8524c2a、f0198f4、7c2dbad、3b92849、62ee493、96d3ffd | 开发机只运行 StarRocksInlineFixtureTest（2/2）、FormulaSnapshotGuardTest（6/6），均 PASS；生产 18110 健康，未执行其他回归 | DataForge FE 172.17.0.12:9030 TCP open；**JDBC 未认证成功/未取得实际查询结果**，不可标记真库验收 | G4/P0-05 仍待真实 StarRocks 只读对账及生产 H2 一致性恢复演练 |
 
+| 2026-10-13 | 用户授权先暂缓 G4 StarRocks，继续 P1-01 主题资源关系、共享组件多仪表板、已发布 V2 多视图查看及历史恢复 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | 只测 AnalysisResourceGraphTest（7）与相关 FineBiWorkspaceFolderTest；Vue TypeScript/Vite 构建；Chromium 编辑多视图及发布多视图两个脚本 PASS | DataForge StarRocks 真 JDBC 暂缓，不以 H2/模拟 REST 充当真数验收 | P0-05/G4 和生产 H2 备份/回滚仍待执行；P1-01 其余布局/权限依赖仍未完成 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
