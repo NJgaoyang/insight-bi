@@ -475,10 +475,28 @@ onMounted(load)
      </div>
     </template>
     <div v-else class="analysis-dashboard-preview">
-     <div class="analysis-dashboard-head">仪表板预览 <small>组件按创建顺序排列</small></div>
-     <div v-if="!components.length" class="analysis-stage-empty">暂无分析组件</div>
+     <div class="analysis-dashboard-head">
+      <strong>仪表板</strong>
+      <el-select v-model="selectedViewId" size="small" class="analysis-view-picker" aria-label="选择仪表板">
+       <el-option v-for="view in dashboardViews" :key="view.id" :label="view.name" :value="view.id"/>
+      </el-select>
+      <button title="新建仪表板" @click="addDashboardView">＋ 新建</button>
+      <button v-if="activeView" title="重命名仪表板" @click="renameDashboardView">重命名</button>
+      <button v-if="dashboardViews.length>1" title="删除仪表板" @click="removeDashboardView">删除</button>
+     </div>
+     <div v-if="activeView" class="analysis-view-components">
+      <span>显示组件</span>
+      <el-select :model-value="activeView.widgetIds" multiple filterable collapse-tags
+       size="small" class="analysis-view-components-picker" placeholder="选择已有组件"
+       aria-label="仪表板显示组件"
+       @update:model-value="v=>setDashboardWidgets(v as string[])">
+       <el-option v-for="component in components" :key="component.id"
+        :label="component.title||component.id" :value="component.id"/>
+      </el-select>
+     </div>
+     <div v-if="!dashboardWidgets.length" class="analysis-stage-empty">当前仪表板尚未选择组件</div>
      <div v-else class="analysis-dashboard-grid">
-      <div v-for="component in components" :key="component.id" class="analysis-dashboard-card">
+      <div v-for="component in dashboardWidgets" :key="component.id" class="analysis-dashboard-card">
        <strong>{{component.title}}</strong>
        <AnalysisV2Chart v-if="component.analysisV2" :widget="component" :readonly="true"/>
        <ChartWidget v-else :widget="component" :datasets="datasets" :readonly="true"/>
