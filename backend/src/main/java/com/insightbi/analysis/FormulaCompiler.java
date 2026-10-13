@@ -9,15 +9,17 @@ import java.util.*;
  * the calculation stage, rather than frontend chart settings.
  */
 public final class FormulaCompiler {
-  public record Compiled(String sql,String phase,String outputType,Set<String> references){}
-  private record Expr(String sql,String type,boolean aggregate,boolean bare,Set<String> refs){}
+  public record Compiled(String sql,String phase,String outputType,Set<String> references,
+                         Map<String,Object> canonicalAst){}
+  private record Expr(String sql,String type,boolean aggregate,boolean bare,
+                      Set<String> refs,Map<String,Object> ast){}
   private final Map<String,FieldCatalog.Field> fields;
   private final Set<String> resolving=new HashSet<>();
   public FormulaCompiler(Map<String,FieldCatalog.Field> fields){this.fields=Map.copyOf(fields);}
   public Compiled compile(String formula){
     Expr x=parse(formula);
     if(x.aggregate&&x.bare)throw new IllegalArgumentException("聚合表达式不能同时直接引用明细字段");
-    return new Compiled(x.sql,x.aggregate?"AGGREGATE":"ROW",x.type,Set.copyOf(x.refs));
+    return new Compiled(x.sql,x.aggregate?"AGGREGATE":"ROW",x.type,Set.copyOf(x.refs),x.ast);
   }
   private Expr parse(String formula){
     if(formula==null||formula.isBlank()||formula.length()>1500)throw new IllegalArgumentException("公式不能为空或过长");
@@ -32,14 +34,16 @@ public final class FormulaCompiler {
   private Expr field(String id){
     FieldCatalog.Field f=fields.get(id);
     if(f==null)throw new IllegalArgumentException("无权使用或不存在的字段: "+id);
-    if(!f.calculated())return new Expr("biq."+quote(f.sourceColumn()),f.logicalType(),false,true,Set.of(id));
+    if(!f.calculated())return new Expr("biq."+quote(f.sourceColumn()),f.logicalType(),false,true,
+        Set.of(id),Map.of("kind","field","fieldId",id));
     if(!resolving.add(id))throw new IllegalArgumentException("计算字段存在循环依赖: "+id);
     try{
       Expr nested=parse(f.expression());
       if(nested.aggregate&&!f.phase().equals("AGGREGATE"))throw new IllegalArgumentException("计算阶段不匹配");
       if(!nested.aggregate&&f.phase().equals("AGGREGATE"))throw new IllegalArgumentException("聚合计算字段必须含聚合函数");
       Set<String> refs=new LinkedHashSet<>(nested.refs);refs.add(id);
-      return new Expr("("+nested.sql+")",nested.type,nested.aggregate,nested.bare,refs);
+      return new Expr("("+nested.sql+")",nested.type,nested.aggregate,nested.bare,
+          refs,Map.of("kind","field","fieldId",id));
     }finally{resolving.remove(id);}
   }
   private static Set<String> union(List<Expr> exprs){
@@ -69,11 +73,11 @@ public final class FormulaCompiler {
     return "NULL".equals(left)||"NULL".equals(right)||left.equals(right)||
         (numericType(left)&&numericType(right));
   }
-  private static Expr combined(String sql,String type,List<Expr> expressions){
+  private static Expr combined(String sql,String type,List<Expr> expressions,Map<String,Object> ast){
     boolean aggregate=expressions.stream().anyMatch(x->x.aggregate);
     boolean bare=expressions.stream().anyMatch(x->x.bare);
     if(aggregate&&bare)throw new IllegalArgumentException("不能混用明细字段和聚合结果");
-    return new Expr(sql,type,aggregate,bare,union(expressions));
+    return new Expr(sql,type,aggregate,bare,union(expressions),ast);
   }
   private Expr operation(String op,Expr a,Expr b){
     if(Set.of("+","-","*","/").contains(op)){numeric(a);numeric(b);}
@@ -82,7 +86,8 @@ public final class FormulaCompiler {
     if(comparison&&!comparable(a.type,b.type))
       throw new IllegalArgumentException("比较两侧的字段类型不兼容: "+a.type+" / "+b.type);
     String type=comparison?"BOOLEAN":("DOUBLE".equals(a.type)||"DOUBLE".equals(b.type)?"DOUBLE":"DECIMAL");
-    return combined("("+a.sql+" "+op+" "+b.sql+")",type,List.of(a,b));
+    return combined("("+a.sql+" "+op+" "+b.sql+")",type,List.of(a,b),
+       Map.of("kind","binary","operator",op,"left",a.ast,"right",b.ast));
   }
   private Expr function(String name,List<Expr> args){
     String n=name.toUpperCase(Locale.ROOT);
@@ -92,7 +97,8 @@ public final class FormulaCompiler {
       if(a.aggregate)throw new IllegalArgumentException("不允许嵌套聚合");
       if(Set.of("SUM","AVG").contains(n))numeric(a);
       String type=n.equals("COUNT")?"INTEGER":Set.of("MIN","MAX").contains(n)?a.type:"DECIMAL";
-      return new Expr(n+"("+a.sql+")",type,true,false,a.refs);
+      return new Expr(n+"("+a.sql+")",type,true,false,a.refs,
+          Map.of("kind","call","function",n,"arguments",List.of(a.ast)));
     }
     if(!Set.of("ABS","ROUND","COALESCE","NULLIF","IF").contains(n))throw new IllegalArgumentException("不支持的公式函数: "+name);
     int count=args.size();
@@ -110,7 +116,8 @@ public final class FormulaCompiler {
       default->args.get(0).type;
     };
     String sql=n+"("+String.join(",",args.stream().map(x->x.sql).toList())+")";
-    return combined(sql,type,args);
+    return combined(sql,type,args,
+       Map.of("kind","call","function",n,"arguments",args.stream().map(x->x.ast).toList()));
   }
   private final class Parser {
     final String input;int pos=0,depth=0;
@@ -131,6 +138,8 @@ public final class FormulaCompiler {
     Expr caseExpression(){
       List<Expr> parts=new ArrayList<>(),values=new ArrayList<>();
       StringBuilder sql=new StringBuilder("CASE");
+      List<Map<String,Object>> branchesAst=new ArrayList<>();
+      Map<String,Object> fallbackAst=null;
       int branches=0;
       while(keyword("WHEN")){
         if(++branches>8)throw new IllegalArgumentException("CASE 最多支持 8 个 WHEN 分支");
@@ -139,16 +148,21 @@ public final class FormulaCompiler {
         expectKeyword("THEN");
         Expr value=expression();
         parts.add(condition);parts.add(value);values.add(value);
+        branchesAst.add(Map.of("condition",condition.ast,"value",value.ast));
         sql.append(" WHEN ").append(condition.sql).append(" THEN ").append(value.sql);
       }
       if(branches==0)throw new IllegalArgumentException("CASE 至少需要一个 WHEN");
       if(keyword("ELSE")){
         Expr fallback=expression();parts.add(fallback);values.add(fallback);
+        fallbackAst=fallback.ast;
         sql.append(" ELSE ").append(fallback.sql);
       }
       expectKeyword("END");
       sql.append(" END");
-      return combined(sql.toString(),resultType(values),parts);
+      Map<String,Object> ast=fallbackAst==null
+          ?Map.of("kind","case","branches",List.copyOf(branchesAst))
+          :Map.of("kind","case","branches",List.copyOf(branchesAst),"else",fallbackAst);
+      return combined(sql.toString(),resultType(values),parts,ast);
     }
     Expr expression(){return comparison();}
     Expr comparison(){
@@ -175,11 +189,14 @@ public final class FormulaCompiler {
       if(accept('(')){
         Expr v=expression();if(!accept(')'))throw new IllegalArgumentException("缺少右括号");return v;
       }
-      if(accept('-')){Expr v=primary();numeric(v);return new Expr("(-"+v.sql+")",v.type,v.aggregate,v.bare,v.refs);}
+      if(accept('-')){Expr v=primary();numeric(v);return new Expr("(-"+v.sql+")",v.type,v.aggregate,v.bare,v.refs,
+          Map.of("kind","unary","operator","-","operand",v.ast));}
       if(keyword("CASE"))return caseExpression();
-      if(keyword("NULL"))return new Expr("NULL","NULL",false,false,Set.of());
-      if(keyword("TRUE"))return new Expr("TRUE","BOOLEAN",false,false,Set.of());
-      if(keyword("FALSE"))return new Expr("FALSE","BOOLEAN",false,false,Set.of());
+      if(keyword("NULL"))return new Expr("NULL","NULL",false,false,Set.of(),Map.of("kind","literal","type","NULL"));
+      if(keyword("TRUE"))return new Expr("TRUE","BOOLEAN",false,false,Set.of(),
+          Map.of("kind","literal","type","BOOLEAN","value",true));
+      if(keyword("FALSE"))return new Expr("FALSE","BOOLEAN",false,false,Set.of(),
+          Map.of("kind","literal","type","BOOLEAN","value",false));
       if(accept('\'')){
         StringBuilder literal=new StringBuilder();
         boolean ended=false;
@@ -193,7 +210,8 @@ public final class FormulaCompiler {
           literal.append(ch);
         }
         if(!ended)throw new IllegalArgumentException("字符串缺少结束引号");
-        return new Expr("'"+literal.toString().replace("'","''")+"'","STRING",false,false,Set.of());
+        return new Expr("'"+literal.toString().replace("'","''")+"'","STRING",false,false,Set.of(),
+          Map.of("kind","literal","type","STRING","value",literal.toString()));
       }
       if(accept('[')){
         int start=pos;while(pos<input.length()&&input.charAt(pos)!=']')pos++;
@@ -204,7 +222,8 @@ public final class FormulaCompiler {
         int from=pos;
         while(pos<input.length()&&(Character.isDigit(input.charAt(pos))||input.charAt(pos)=='.'))pos++;
         String num=input.substring(from,pos);
-        try{return new Expr(new BigDecimal(num).toPlainString(),"DECIMAL",false,false,Set.of());}
+        try{return new Expr(new BigDecimal(num).toPlainString(),"DECIMAL",false,false,Set.of(),
+            Map.of("kind","literal","type","DECIMAL","value",new BigDecimal(num).toPlainString()));}
         catch(NumberFormatException ex){throw new IllegalArgumentException("非法数值常量");}
       }
       if(pos<input.length()&&Character.isLetter(input.charAt(pos))){
