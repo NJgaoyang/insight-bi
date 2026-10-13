@@ -182,3 +182,7 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 /* P0 formula validation: feedback is local to the editor and never executes SQL. */
 .v2-formula-validation{padding:9px 11px;border-radius:6px;background:#eef8f2;color:#217346;font-size:12px;line-height:1.55}
 .v2-formula-error{padding:9px 11px;border-radius:6px;background:#fff1f1;color:#ae3d46;font-size:12px;line-height:1.55}
+
+.analysis-field .analysis-field-rename{margin-left:auto;border:0;background:transparent;color:#8292a8;padding:2px 4px;cursor:pointer;font-size:13px}
+.analysis-field .analysis-field-rename:hover{color:#2b62c4}
+.analysis-field .analysis-field-rename+small{margin-left:0}
