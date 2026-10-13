@@ -119,6 +119,38 @@ class AnalysisResourceGraphTest {
     assertEquals(List.of("real"),realIndex.get("widgetIds"));
   }
 
+  @Test void dashboardViewsReuseWidgetsAndRejectDanglingViewReferences(){
+    String subject=String.valueOf(api.create(Map.of("name","多仪表板主题","kind","analysis")).get("id"));
+    var existing=content(widget("revenue-widget",first),widget("profit-widget",second));
+    var payload=new LinkedHashMap<String,Object>(existing);
+    payload.put("dashboards",List.of(
+      Map.of("id","overview","name","整体经营","widgetIds",List.of("revenue-widget","profit-widget")),
+      Map.of("id","finance","name","财务分析","widgetIds",List.of("profit-widget"))));
+    api.update(subject,Map.of("name","多仪表板主题","mode","grid","revision",1,"content",payload));
+    var resource=api.resources(subject,false);
+    assertEquals(2,resource.get("dashboardCount"));
+    assertEquals(List.of("overview","finance"),resource.get("dashboardIds"));
+    assertEquals(List.of(first,second),resource.get("datasetIds"));
+    var persisted=(Map<?,?>)api.get(subject,false).get("content");
+    assertEquals(payload.get("dashboards"),persisted.get("dashboards"));
+    var index=(Map<?,?>)persisted.get("resourceIndex");
+    assertEquals(List.of("overview","finance"),index.get("dashboardIds"));
+    api.publish(subject);
+    assertEquals(2,api.resources(subject,true).get("dashboardCount"));
+
+    var invalid=new LinkedHashMap<>(payload);
+    invalid.put("dashboards",List.of(Map.of(
+      "id","wrong","name","损坏引用","widgetIds",List.of("missing-widget"))));
+    assertThrows(IllegalArgumentException.class,()->api.update(subject,Map.of(
+      "name","多仪表板主题","mode","grid","revision",2,"content",invalid)));
+    invalid.put("dashboards",List.of(
+      Map.of("id","same","name","视图1","widgetIds",List.of()),
+      Map.of("id","same","name","视图2","widgetIds",List.of())));
+    assertThrows(IllegalArgumentException.class,()->api.update(subject,Map.of(
+      "name","多仪表板主题","mode","grid","revision",2,"content",invalid)));
+    assertEquals(2,api.get(subject,false).get("revision"));
+  }
+
   @Test void evenCorruptedSavedHistoryFailsClosedOnDatasetDeletion(){
     String id=String.valueOf(api.create(Map.of("name","旧坏版本","kind","analysis")).get("id"));
     api.update(id,Map.of("name","旧坏版本","mode","grid","revision",1,
