@@ -101,11 +101,14 @@ public final class AnalysisPipelineCompiler {
     String outputType=required(step,"outputType").toUpperCase(Locale.ROOT);
     if(!Set.of("STRING","DECIMAL").contains(outputType))
       throw new IllegalArgumentException("条件列仅支持文本或数值类型");
-    List<Object> params=new ArrayList<>(state.params());
-    String condition=predicate(state,step,params);
+    // SELECT-list CASE placeholders occur before the nested FROM subquery.
+    // Build binds in their actual SQL order: predicate, branches, prior steps.
+    List<Object> conditionParams=new ArrayList<>();
+    String condition=predicate(state,step,conditionParams);
     Object yes=convert(step.get("thenValue"),outputType);
     Object no=convert(step.get("elseValue"),outputType);
-    params.add(yes);params.add(no);
+    List<Object> params=new ArrayList<>(conditionParams);
+    params.add(yes);params.add(no);params.addAll(state.params());
     String column="step_"+id;
     String sql="SELECT biq.*, CASE WHEN ("+condition+") THEN ? ELSE ? END AS "+
       FormulaCompiler.quote(column)+" FROM ("+state.sql()+") biq";
