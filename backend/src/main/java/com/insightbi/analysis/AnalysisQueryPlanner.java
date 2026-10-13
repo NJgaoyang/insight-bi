@@ -147,9 +147,12 @@ public final class AnalysisQueryPlanner {
     String operator=switch(op){case "eq"->"=";case "ne"->"<>";case "gt"->">";case "gte"->">=";case "lt"->"<";case "lte"->"<=";case "contains"->"LIKE";default->throw new IllegalArgumentException("过滤符号无效");};
     if(op.equals("contains")&&!type.equals("STRING"))throw new IllegalArgumentException("文本包含过滤必须作用于字符串字段");
     Object value=convert(f.get("value"),type);
-    if(op.equals("contains"))value="%"+String.valueOf(value).replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%";
+    // Escape using a single, explicit character across MySQL/StarRocks dialects.
+    // Backslash literals differ between JDBC and server SQL modes.
+    if(op.equals("contains"))
+      value="%"+String.valueOf(value).replace("!","!!").replace("%","!%").replace("_","!_")+"%";
     params.add(value);
-    return "("+expression+" "+operator+" ?"+(op.equals("contains")?" ESCAPE '\\\\'":"")+")";
+    return "("+expression+" "+operator+" ?"+(op.equals("contains")?" ESCAPE '!'":"")+")";
   }
   private static Object convert(Object value,String type){
     if(value==null)throw new IllegalArgumentException("过滤值不可为 NULL，请使用 isNull");
