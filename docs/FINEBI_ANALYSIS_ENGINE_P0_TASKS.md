@@ -265,4 +265,6 @@ git diff --check
 
 | 2026-10-13 | P0-02/03/04 公式 CASE+canonical AST、API 类型与长度校验、查询并发及前端公式组件拆分 | feat/finebi-analysis-engine-p0: 0ffecdc、9c84d5d、2b7c7f9、1d76e89、9b041b8、04b6dda、fb13fa8 | 仅运行 FormulaCompilerTypedTest、AnalysisFormulaValidationTest、AnalysisQueryLimiterTest 的相关单测；公式 UI TypeScript/Vite build 与单项 Chromium smoke PASS；不做整站回归 | **未执行**；现有独立 StarRocks E2E 仍需只读非生产环境 | G0/P0-05 保持阻塞：生产 H2 一致性备份和本机 runtime/local.env 待安全恢复，未重启 18110 |
 
+| 2026-10-13 | P0-01 数据集 Schema 更新前防护、显式 SQL 别名迁移、字段隐藏、元数据库幂等迁移 | feat/finebi-analysis-engine-p0: 6dbbd1a、917897c、664dd0d、19f1506、712d9be、e3dec82、1e3e586、02cffd1、3346d64 | 只运行 DatasetSchemaGuardTest（5）、DatasetAliasUpdateIntegrationTest（1）、FieldVisibilityTest（2）及受影响前端 build；Chromium 别名映射与隐藏字段 UI 两条脚本 PASS；CI 变更范围脚本语法与模拟 Git diff PASS | **未执行真实 StarRocks**，仅 H2 与模拟 REST | G0 生产配置恢复/一致性备份未完成；G4/P0-05 不得标记通过，生产 18110 不变 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
