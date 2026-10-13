@@ -39,7 +39,7 @@ class AnalysisPipelineCaseTest {
     return rows;
   }
   private static Map<String,Object> condition(){
-    return Map.of("id","conditional","type","case","fieldId","revenue",
+    return Map.of("id","conditional","type","case","fieldId","tier","sourceFieldId","revenue",
       "op","gte","value","100","name","收入等级","outputType","STRING",
       "thenValue","高","elseValue","低");
   }
@@ -48,17 +48,17 @@ class AnalysisPipelineCaseTest {
       Map.of("steps",List.of(condition()),"limit",20));
     assertEquals(List.of(new BigDecimal("100"),"高","低",21),plan.params());
     assertFalse(plan.sql().contains("'高'"));
-    assertTrue(plan.columns().stream().anyMatch(x->"step_conditional".equals(x.get("name"))));
+    assertTrue(plan.columns().stream().anyMatch(x->"step_tier".equals(x.get("name"))));
     try(var c=sample()){
       var rows=run(c,plan);
       assertEquals(4,rows.size());
-      assertEquals(2,rows.stream().filter(r->"高".equals(r.get("step_conditional"))).count());
-      assertEquals(2,rows.stream().filter(r->"低".equals(r.get("step_conditional"))).count());
+      assertEquals(2,rows.stream().filter(r->"高".equals(r.get("step_tier"))).count());
+      assertEquals(2,rows.stream().filter(r->"低".equals(r.get("step_tier"))).count());
     }
   }
   @Test void boundOrderWhenPriorFilterAndConditionalBothHaveParameters()throws Exception{
     var filter=Map.of("id","early","type","filter","fieldId","city","op","eq","value","北京");
-    var condition=Map.of("id","late","type","case","fieldId","revenue",
+    var condition=Map.of("id","late","type","case","fieldId","late","sourceFieldId","revenue",
       "op","gte","value","100","name","达标金额","outputType","DECIMAL",
       "thenValue","2.5","elseValue","0");
     var plan=new AnalysisPipelineCompiler(FIELDS).compile(SOURCE,
@@ -76,7 +76,7 @@ class AnalysisPipelineCaseTest {
     }
   }
   @Test void conditionCanBeGroupedThenUsedByAnotherFilter()throws Exception{
-    var group=Map.of("id","grouping","type","group","dimensions",List.of("conditional"),
+    var group=Map.of("id","grouping","type","group","dimensions",List.of("tier"),
       "measures",List.of(Map.of("id","n","fieldId","*","aggregate","COUNT")));
     var plan=new AnalysisPipelineCompiler(FIELDS).compile(SOURCE,
       Map.of("steps",List.of(condition(),group)));
@@ -100,7 +100,7 @@ class AnalysisPipelineCaseTest {
       Map.<String,Object>of("op","exec"),
       Map.<String,Object>of("outputType","SQL"),
       Map.<String,Object>of("outputType","DECIMAL","thenValue","not a number"),
-      Map.<String,Object>of("fieldId","unknown_field"))){
+      Map.<String,Object>of("sourceFieldId","unknown_field"))){
       var candidate=new HashMap<String,Object>(condition());candidate.putAll(overrides);
       assertThrows(IllegalArgumentException.class,()->engine.compile(SOURCE,
         Map.of("steps",List.of(candidate))),candidate.toString());
