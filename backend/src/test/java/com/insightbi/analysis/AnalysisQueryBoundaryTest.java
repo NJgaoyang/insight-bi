@@ -44,6 +44,24 @@ class AnalysisQueryBoundaryTest {
     assertFalse((Boolean)initial.get("truncated"),"duplicate raw rows are one distinct dimension");
     assertEquals(1,rows(initial).size());
 
+    // A COUNT DISTINCT on a source field counts unique non-null values, not rows.
+    jdbc.update("INSERT INTO sales VALUES('City-000',10)");
+    String revenue=catalog.fields(dataset).stream().filter(col->"revenue".equals(col.sourceColumn()))
+      .findFirst().orElseThrow().id();
+    var countReq=new HashMap<String,Object>();
+    countReq.put("datasetId",dataset);
+    countReq.put("dimensions",List.of());
+    countReq.put("measures",List.of(
+       Map.of("id","unique_revenue","fieldId",revenue,"aggregate","COUNT","distinct",true),
+       Map.of("id","row_count","fieldId",city,"aggregate","COUNT")));
+    var counted=api.query(countReq);
+    assertEquals(2,((Number)rows(counted).get(0).get("unique_revenue")).intValue());
+    assertEquals(3,((Number)rows(counted).get(0).get("row_count")).intValue());
+    countReq.put("measures",List.of(Map.of(
+       "id","bad","fieldId",revenue,"aggregate","SUM","distinct",true)));
+    assertThrows(IllegalArgumentException.class,()->api.query(countReq),
+       "Distinct is supported only for COUNT(field), never a raw SQL option");
+
     // 500 distinct groups must not be marked truncated.
     for(int i=1;i<500;i++)
       jdbc.update("INSERT INTO sales VALUES(?,?)",String.format("City-%03d",i),BigDecimal.valueOf(i));
