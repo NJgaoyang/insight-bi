@@ -4,6 +4,7 @@ import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import com.insightbi.analysis.DatasetSchemaGuard;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -89,12 +90,16 @@ class BiApi {
  }
  @GetMapping("/datasets")List<Map<String,Object>> datasets(){return s.datasets();}
  @GetMapping("/datasets/{id}")Map<String,Object> dataset(@PathVariable String id){var a=new LinkedHashMap<>(s.dataset(id));a.put("fields",s.arr(String.valueOf(a.remove("fields_json"))));return a;}
+ @Transactional
  @PostMapping("/datasets")Map<String,Object> saveDataset(@RequestBody Map<String,Object> x)throws Exception{
   String id=str(x,"id",UUID.randomUUID().toString()),name=str(x,"name",""),connectionId=str(x,"connectionId",""),sql=DatabaseStore.safeSql(str(x,"sql",""));
   if(name.isBlank()||name.length()>150)throw new IllegalArgumentException("数据集名称无效");
   String folder=optionalFolder(x);assertDataFolder(folder);
   List<Map<String,Object>> fields;try(Connection c=s.open(s.connection(connectionId))){fields=s.readFields(c,sql);}
   if(fields.isEmpty())throw new IllegalArgumentException("SQL 没有字段");
+  // Preflight the proposed physical schema before mutating SQL or fields_json.
+  if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0)
+   new DatasetSchemaGuard(s,db).check(id,fields);
   if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0)
    db.update("UPDATE insight_dataset SET name=?,connection_id=?,sql_body=?,fields_json=? WHERE id=?",name,connectionId,sql,s.json(fields),id);
   else db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json,folder_id) VALUES(?,?,?,?,?,?)",id,name,connectionId,sql,s.json(fields),folder);
