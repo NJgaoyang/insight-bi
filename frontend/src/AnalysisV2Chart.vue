@@ -17,6 +17,18 @@ const visibleColumns=computed(()=>result.value?.columns??[])
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
 const format=(v:unknown)=>v===undefined||v===null?'—':typeof v==='number'?new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(v):String(v)
 const numeric=(v:unknown):number|null=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
+const optionsFor=(id:string)=>bindings.value?.measures.find(m=>m.id===id)
+function formatMeasure(value:unknown,id:string){
+ const base=numeric(value)
+ if(base===null)return '—'
+ const decimals=optionsFor(id)?.decimals
+ if(decimals===undefined||decimals===null)return format(base)
+ const digits=Math.max(0,Math.min(6,Math.trunc(Number(decimals))))
+ return new Intl.NumberFormat('zh-CN',{minimumFractionDigits:digits,maximumFractionDigits:digits}).format(base)
+}
+function formatCell(row:Record<string,unknown>,col:{name:string;id:string;kind:string}){
+ return col.kind==='measure'?formatMeasure(row[col.name],col.id):format(row[col.name])
+}
 function dispose(){if(chart){chart.dispose();chart=null}}
 async function load(){
  const gen=++generation,config=bindings.value
@@ -44,7 +56,7 @@ function render(){
  const dims=dimNames.value,metrics=measureNames.value
  if(!metrics.length||(!dims.length&&t!=='metric')){dispose();return}
  if(!chart)chart=echarts.init(element.value,undefined,{renderer:'canvas'})
- const x=dims[0],categories=rows.value.map(row=>dims.map(d=>format(row[d.name])).join(' / '))
+ const categories=rows.value.map(row=>dims.map(d=>format(row[d.name])).join(' / '))
  const style=props.widget.style||{}
  const palette=[style.chartColor||'#3671dc','#16a6a4','#eba54c','#846ac7','#df7684']
  const base:any={
@@ -60,14 +72,22 @@ function render(){
       label:{show:!!style.dataLabel}}]
  }else{
    const horizontal=t==='hbar'
+   const dualAxis=!horizontal&&metrics.some(metric=>optionsFor(metric.id)?.axis==='right')
    base.xAxis=horizontal?{type:'value'}:{type:'category',data:categories,axisLabel:{hideOverlap:true}}
-   base.yAxis=horizontal?{type:'category',data:categories}:{type:'value'}
-   base.series=metrics.map((metric,i)=>({
-     name:metric.label,type:t==='line'||t==='area'?'line':t==='combo'&&i%2===1?'line':'bar',
-     data:rows.value.map(row=>numeric(row[metric.name])),
-     smooth:!!style.smooth,areaStyle:t==='area'?{opacity:0.14}:undefined,
-     label:{show:!!style.dataLabel,position:'top'}
-   }))
+   base.yAxis=horizontal?{type:'category',data:categories}:dualAxis?[{type:'value'},{type:'value',alignTicks:true}]:{type:'value'}
+   base.series=metrics.map((metric,i)=>{
+     const setting=optionsFor(metric.id)
+     return {
+       name:metric.label,
+       type:t==='line'||t==='area'?'line':t==='combo'?(setting?.seriesType||(i%2===1?'line':'bar')):'bar',
+       yAxisIndex:dualAxis&&setting?.axis==='right'?1:0,
+       data:rows.value.map(row=>numeric(row[metric.name])),
+       itemStyle:setting?.color?{color:setting.color}:undefined,
+       smooth:!!style.smooth,areaStyle:t==='area'?{opacity:0.14}:undefined,
+       label:{show:setting?.showLabel??!!style.dataLabel,position:'top',formatter:(p:any)=>formatMeasure(p.value,metric.id)},
+       tooltip:{valueFormatter:(value:unknown)=>formatMeasure(value,metric.id)}
+     }
+   })
  }
  error.value='';chart.setOption(base,{notMerge:true});chart.resize()
 }
@@ -85,12 +105,12 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
   <div v-else-if="error" class="v2-chart-notice v2-chart-error">{{error}}</div>
   <div v-else-if="!rows.length" class="v2-chart-notice">暂无查询结果</div>
   <template v-else-if="widget.type==='metric'">
-    <div class="v2-metric-value">{{format(metricValue)}}</div>
+    <div class="v2-metric-value">{{formatMeasure(metricValue,measureNames[0]?.id||'')}}</div>
     <div class="v2-metric-label">{{measureNames[0]?.label}}</div>
   </template>
   <div v-else-if="widget.type==='table'" class="v2-table-wrap">
    <table><thead><tr><th v-for="c in visibleColumns" :key="c.name">{{c.label}}</th></tr></thead>
-   <tbody><tr v-for="(row,index) in rows" :key="index"><td v-for="c in visibleColumns" :key="c.name">{{format(row[c.name])}}</td></tr></tbody></table>
+   <tbody><tr v-for="(row,index) in rows" :key="index"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
   <div v-show="!loading&&!error&&rows.length>0&&!['metric','table'].includes(widget.type)" ref="element" class="v2-echart-canvas"></div>
   <div v-if="result&&!loading" class="v2-query-meta">
