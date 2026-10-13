@@ -58,7 +58,8 @@ public class AnalysisApi {
     var formula=new FormulaCompiler(FieldCatalog.index(catalog.fields(id)))
       .compile(AnalysisQueryPlanner.required(body,"expression"));
     return Map.of("phase",formula.phase(),"outputType",formula.outputType(),
-       "references",formula.references(),"sqlPreview",formula.sql());
+       "references",formula.references(),"sqlPreview",formula.sql(),
+       "canonicalAst",formula.canonicalAst());
   }
   @PostMapping("/datasets/{id}/calculated-fields")
   @Transactional
