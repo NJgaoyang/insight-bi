@@ -12,7 +12,14 @@ import java.util.*;
 @Service
 public class FieldCatalog {
   public record Field(String id,String name,String sourceColumn,String logicalType,
-                      String role,boolean numeric,boolean calculated,String phase,String expression) {}
+                      String role,boolean numeric,boolean calculated,String phase,String expression,
+                      boolean hidden) {
+    // Preserve existing constructors used by V2 planners and integration fixtures.
+    public Field(String id,String name,String sourceColumn,String logicalType,
+                 String role,boolean numeric,boolean calculated,String phase,String expression){
+      this(id,name,sourceColumn,logicalType,role,numeric,calculated,phase,expression,false);
+    }
+  }
   private final DatabaseStore store;
   private final JdbcTemplate jdbc;
   public FieldCatalog(DatabaseStore store,JdbcTemplate jdbc){this.store=store;this.jdbc=jdbc;}
@@ -57,12 +64,15 @@ public class FieldCatalog {
                   "WHERE dataset_id=? AND source_name=? AND logical_type<>?",
                   type,role,datasetId,name,type);
     }
-    for(Map<String,Object> f:jdbc.queryForList("SELECT id,source_name,display_name,logical_type,role FROM insight_dataset_field WHERE dataset_id=? ORDER BY ordinal",datasetId)){
+    for(Map<String,Object> f:jdbc.queryForList("SELECT id,source_name,display_name,logical_type,role,hidden FROM insight_dataset_field WHERE dataset_id=? ORDER BY ordinal",datasetId)){
       String source=String.valueOf(f.get("source_name"));
       if(legacy.stream().noneMatch(v->source.equals(v.get("name"))))continue;
       String type=String.valueOf(f.get("logical_type"));
+      Object hiddenValue=f.get("hidden");
+      boolean hidden=Boolean.TRUE.equals(hiddenValue)||
+        (hiddenValue instanceof Number number&&number.intValue()!=0);
       result.add(new Field(String.valueOf(f.get("id")),String.valueOf(f.get("display_name")),source,type,
-          String.valueOf(f.get("role")),Set.of("INTEGER","DOUBLE","DECIMAL").contains(type),false,"ROW",null));
+          String.valueOf(f.get("role")),Set.of("INTEGER","DOUBLE","DECIMAL").contains(type),false,"ROW",null,hidden));
     }
     for(Map<String,Object> f:jdbc.queryForList("SELECT id,name,expression,output_type,phase FROM insight_calculated_field WHERE dataset_id=? ORDER BY name",datasetId)){
       String type=String.valueOf(f.get("output_type"));
@@ -81,6 +91,15 @@ public class FieldCatalog {
       throw new NoSuchElementException("可重命名的源字段不存在");
     int updated=jdbc.update("UPDATE insight_dataset_field SET display_name=? WHERE dataset_id=? AND id=?",
        displayName.trim(),datasetId,fieldId);
+    if(updated!=1)throw new NoSuchElementException("源字段不存在");
+    return fields(datasetId).stream().filter(f->f.id().equals(fieldId)).findFirst().orElseThrow();
+  }
+  /** UI-only visibility. Hidden fields keep stable IDs and stay compilable. */
+  public Field setHidden(String datasetId,String fieldId,boolean hidden){
+    if(fields(datasetId).stream().noneMatch(f->f.id().equals(fieldId)&&!f.calculated()))
+      throw new NoSuchElementException("源字段不存在");
+    int updated=jdbc.update("UPDATE insight_dataset_field SET hidden=? WHERE dataset_id=? AND id=?",
+      hidden,datasetId,fieldId);
     if(updated!=1)throw new NoSuchElementException("源字段不存在");
     return fields(datasetId).stream().filter(f->f.id().equals(fieldId)).findFirst().orElseThrow();
   }
