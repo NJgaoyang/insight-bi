@@ -9,15 +9,18 @@ const loading=ref(false),error=ref(''),rows=ref<Record<string,unknown>[]>([])
 const result=ref<QueryV2Result|null>(null)
 const bindings=computed(()=>props.widget.analysisV2)
 let chart:echarts.ECharts|null=null,observer:ResizeObserver|null=null,generation=0
+let activeRequest:AbortController|null=null
 const supported=['bar','hbar','line','area','pie','donut','combo','metric','table']
 const dimNames=computed(()=>result.value?.columns.filter(c=>c.kind==='dimension')??[])
 const measureNames=computed(()=>result.value?.columns.filter(c=>c.kind==='measure')??[])
 const visibleColumns=computed(()=>result.value?.columns??[])
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
 const format=(v:unknown)=>v===undefined||v===null?'—':typeof v==='number'?new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(v):String(v)
+const numeric=(v:unknown):number|null=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
 function dispose(){if(chart){chart.dispose();chart=null}}
 async function load(){
  const gen=++generation,config=bindings.value
+ activeRequest?.abort();activeRequest=null
  if(!props.widget.datasetId||!config||!config.measures.length){
   result.value=null;rows.value=[];error.value='请选择数据集并拖入至少一个指标';loading.value=false;dispose();return
  }
@@ -25,14 +28,15 @@ async function load(){
   result.value=null;rows.value=[];error.value='当前 V2 图表类型尚未支持，请选择柱图、折线图、饼图、指标卡或明细表';dispose();return
  }
  loading.value=true;error.value=''
+ const controller=new AbortController();activeRequest=controller
  try{
-  const response=await api<QueryV2Result>('/analysis/v2/query',{method:'POST',body:JSON.stringify({datasetId:props.widget.datasetId,...config})})
+  const response=await api<QueryV2Result>('/analysis/v2/query',{method:'POST',body:JSON.stringify({datasetId:props.widget.datasetId,...config}),signal:controller.signal})
   if(gen!==generation)return
   result.value=response;rows.value=response.rows
   await nextTick();render()
  }catch(e:unknown){
   if(gen===generation){error.value=e instanceof Error?e.message:'查询失败';rows.value=[];result.value=null;dispose()}
- }finally{if(gen===generation)loading.value=false}
+ }finally{if(gen===generation){loading.value=false;if(activeRequest===controller)activeRequest=null}}
 }
 function render(){
  const t=props.widget.type
@@ -52,7 +56,7 @@ function render(){
  if(t==='pie'||t==='donut'){
    if(metrics.length!==1){error.value='饼图仅支持一个指标，请移除其他指标';dispose();return}
    base.series=[{name:metrics[0].label,type:'pie',radius:t==='donut'?['47%','70%']:'70%',
-      center:['50%','44%'],data:rows.value.map((r,i)=>({name:categories[i],value:Number(r[metrics[0].name])||0})),
+      center:['50%','44%'],data:rows.value.map((r,i)=>({name:categories[i],value:numeric(r[metrics[0].name])})),
       label:{show:!!style.dataLabel}}]
  }else{
    const horizontal=t==='hbar'
@@ -60,7 +64,7 @@ function render(){
    base.yAxis=horizontal?{type:'category',data:categories}:{type:'value'}
    base.series=metrics.map((metric,i)=>({
      name:metric.label,type:t==='line'||t==='area'?'line':t==='combo'&&i%2===1?'line':'bar',
-     data:rows.value.map(row=>row[metric.name]===null?null:Number(row[metric.name])||0),
+     data:rows.value.map(row=>numeric(row[metric.name])),
      smooth:!!style.smooth,areaStyle:t==='area'?{opacity:0.14}:undefined,
      label:{show:!!style.dataLabel,position:'top'}
    }))
@@ -73,7 +77,7 @@ watch(element,el=>{
  observer?.disconnect()
  if(el){observer=new ResizeObserver(()=>chart?.resize());observer.observe(el);nextTick(render)}
 },{flush:'post'})
-onBeforeUnmount(()=>{generation++;observer?.disconnect();dispose()})
+onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();dispose()})
 </script>
 <template>
  <div class="v2-analysis-widget">
