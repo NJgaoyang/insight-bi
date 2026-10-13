@@ -57,6 +57,7 @@
   - `PUT /api/datasets/{id}/pipeline`：先编译校验再按 revision 保存，避免覆盖其他编辑者的修改；SQL 源变化时旧配置禁止直接预览，必须重新校验保存。
 - 数据库只新增独立的 `insight_dataset_pipeline` 表（`dataset_id`, `config_json`, `source_sql_hash`, `revision`, `updated_at`），`CREATE TABLE IF NOT EXISTS` 幂等，删除数据集时同事务清理。没有修改既有数据集 SQL 或仪表板 JSON；旧版本服务不依赖该表。
 - `PipelineEditor.vue` 新增简洁数据加工页面，从“公共数据 → 加工”进入。支持步骤增加/删除/前移/后移、基本字段与运算符设置、SQL 预览、真实数据预览、保存并重新进入恢复。入口只修改 App 的相关路由，不影响旧数据集编辑。
+- 计算列编辑器提供当前可用字段的**中文名称选择按钮**，点击插入后端稳定 `[fieldId]`，无须手工查找随机 UUID；现有步骤重排和已有字段的合法性最终仍由后端编译器校验。
 - **本批暂未实现**：同源 JOIN / UNION、多个分组汇总、复杂条件列 UI 以及加工结果作为其他分析主题的直接可复用数据集；不将 P1-02 整阶段标记完成。
 - **StarRocks 真数依照用户指示暂缓**，隔离 H2 测试只能证明 SQL 编译与参数语义，不可替代目标数据库 E2E。
 
