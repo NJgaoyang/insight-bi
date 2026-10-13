@@ -10,7 +10,7 @@
 | P0-01 | **核心代码完成，迁移待线上验证** | `FieldCatalog`、MySQL `insight_dataset_field` 和 `insight_calculated_field` 两张增量表、`GET /api/datasets/{id}/fields` | 真实 StarRocks JDBC 类型元数据与旧数据持久化验收、字段重命名引用迁移 |
 | P0-02 | **核心代码完成，AST 只读校验已加入，生产安全尚需审计** | `AnalysisQueryPlanner`、`POST /api/analysis/v2/compile`、`.../query`；最多 3 维度/5 指标；分组、日期粒度、排序、结果上限 | JSqlParser SELECT 校验外已增加首批 SQL 函数白名单，未知调用拒绝；仍需 StarRocks 真实兼容性、只读权限、查询取消与并发限制验收 |
 | P0-03 | **基础公式与前后过滤完成，高级语义待完善** | `FormulaCompiler`、行级/聚合阶段、WHERE/HAVING、参数绑定、公式新增/修改/删除/验证 | 已补公式更新的自引用、循环及依赖阶段检查；仍缺完整类型推断、复杂表达式依赖管理和 CASE/日期/窗口能力 |
-| P0-04 | **基础 UI 已接入，浏览器联调待执行** | 新组件 V2 字段列表/多槽拖拽、计算字段输入、过滤、排序、图表渲染与保存；原 V1 组件保留 | 多字段与公式 UI 的模拟 API 浏览器测试已通过；仍缺真实 StarRocks E2E、完整按指标样式及其他图表边界验收 |
+| P0-04 | **基础 UI 已接入，模拟 REST 浏览器联调已通过** | 新组件 V2 字段列表/多槽拖拽、计算字段输入、过滤、排序、图表渲染与保存；原 V1 组件保留 | 多字段与公式 UI 的模拟 API 浏览器测试已通过；仍缺真实 StarRocks E2E、完整按指标样式及其他图表边界验收 |
 | P0-05 | **未完成** | 已有 H2 数据执行验证与 GitHub CI | 非生产 StarRocks 真数对账、部署前数据库备份、生产/预览启动后 UI 检查、回滚演练 |
 
 ## 已实现接口（均经过原有会话与 CSRF 拦截器）
@@ -104,6 +104,21 @@ cd ../frontend && npm ci && npm run build
 - 执行 `(cd /opt/insight-bi-p0-preview/backend && mvn -q -o -Dtest=BiQueryInTest,AnalysisQueryPlannerTest,AnalysisEngineSqlExecutionTest,AnalysisFormulaDependencyTest,ReadOnlySqlGuardTest test)`，**退出码 0，PASS**。仅出现 Mockito 动态代理警告，不影响测试结果。
 - GitHub Actions 工作流 #86 `backend`、`frontend` 均为 **success**，包括前端构建、后端定向单元测试与脚本语法检查。
 - 至此本轮代码级回归与隔离的模拟浏览器交互均成功；**仍未执行真实非生产 StarRocks 查询对账及在线元数据一致性备份**，不要将 G0/P0-05 勾选为完成。
+
+## 2026-10-13 续开发：查询边界、字段刷新和非生产对账入口
+
+本次增量均提交至 `feat/finebi-analysis-engine-p0`，仅在 GitHub 分支与服务器独立克隆上实施，生产服务未重启。
+
+1. **准确分组与截断**：维度-only 的 V2 查询同样执行 `GROUP BY`，拒绝同一字段重复绑定维度；V2 SQL 查询使用额外一条 sentinel 记录判断是否真的被截断，恰好 500 行返回 `truncated=false`，501 行返回前 500 条、`truncated=true`；V1 `readRows` 的 500 行硬上限和响应形状保持不变。
+2. **字段类型刷新**：物理列名不变、SELECT 返回 JDBC 类型变化时，更新 `insight_dataset_field.logical_type` 与默认 `role`，保留 `field_id` 与用户自定义显示名称。此阶段尚未实现物理列重命名识别，不能把 rename 视为受支持迁移。
+3. **去重计数**：结构化 `measures[].distinct=true` 只允许用于 `COUNT(字段)`，编译 `COUNT(DISTINCT biq.字段)`；非法 SUM DISTINCT、COUNT(*) DISTINCT 被拒绝，字段引用仍仅允许后台元数据 ID。前端支持将非数值维度作为 COUNT 指标，并提供去重开关。MIN/MAX 列类型按源字段返回。
+4. **隔离定向验证**：开发机执行六组原有/新增 Maven 查询回归，再执行包含 `FieldCatalogRefreshTest` 的七组定向测试，均 `exit=0`；Vue TypeScript/Vite 构建 `exit=0`；Chromium `finebi_multifield_ui_smoke.cjs` 和 `finebi_formula_ui_smoke.cjs` 均 `exit=0`，包括文本字段 `COUNT DISTINCT` 的保存、刷新、重新查询。浏览器 API 为模拟数据。
+5. **真实 StarRocks 对账入口**：新增 `StarRocksReadOnlyReconciliationTest`，以 SELECT UNION ALL 内联构造北京/上海/南京四行固定数据，测试多维/月份、多指标、聚合利润率、除零 NULL、WHERE 与 HAVING、COUNT DISTINCT；不创建/写入任何业务表。默认 `@EnabledIfEnvironmentVariable` 跳过，仅在明确设置非生产连接、只读账号及两项启用标记时执行。封装脚本 `scripts/p0_starrocks_readonly_e2e.sh`，语法检查通过、未授权运行拒绝码 2。**真实 StarRocks 对账没有执行，不能把该测试存在或跳过视为通过 G4/P0-05。**
+6. **运行环境说明**：README 增加 2026-10-13 现场核实告警，修正过去“生产已经在 MySQL”与当前实际 H2 服务不一致的描述，禁止按历史说明直接重启。
+
+已提交核心文件：`AnalysisQueryPlanner.java`、`DatabaseStore.java`、`AnalysisApi.java`、`FieldCatalog.java`、`AnalysisQueryBoundaryTest.java`、`FieldCatalogRefreshTest.java`、`StarRocksReadOnlyReconciliationTest.java`、`AnalysisSubject.vue`、`AnalysisV2Chart.vue` 及相关脚本/CI。
+
+**剩余发布门禁**：恢复生产 `runtime/local.env` 的合法配置、完成 H2 一致性备份并验证恢复；确认独立非生产 StarRocks 的只读账号和连接后启动只读真数对账；再隔离执行 P0-05 兼容/回滚检查。服务器到 GitHub 的 HTTPS 网络仍需单独处理，不直接覆盖现网工作树。
 
 ## 后续优先事项
 
