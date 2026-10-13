@@ -4,6 +4,7 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,remove,csrf,type Dataset} from './api'
 import Designer from './Designer.vue'
 import AnalysisSubject from './AnalysisSubject.vue'
+import PublishedReport from './PublishedReport.vue'
 const logged=ref(false),loading=ref(true),username=ref('admin'),password=ref(''),loginBusy=ref(false)
 const route=ref('dashboards'),activeId=ref(''),view=ref(false)
 const connections=ref<any[]>([]),datasets=ref<Dataset[]>([]),dashboards=ref<any[]>([])
@@ -286,6 +287,7 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
   </form>
  </div>
  <AnalysisSubject v-else-if="route==='analysis'&&activeId" :key="activeId" :id="activeId" @back="navigate('dashboards')"/>
+ <PublishedReport v-else-if="route==='view'&&activeId" :key="activeId+route" :id="activeId" @back="navigate('dashboards')"/>
  <Designer v-else-if="editor&&activeId" :key="activeId+route" :id="activeId" :readonly="view" @back="navigate('dashboards')"/>
  <div v-else class="app-shell">
   <aside class="nav-panel">
