@@ -29,7 +29,7 @@ class FormulaComplexityTest {
   @Test void sharedNodeCountRejectsBroadExpressions(){
     Map<String,FieldCatalog.Field> fields=Map.of("v",new FieldCatalog.Field(
       "v","数值","value","DECIMAL","BOTH",true,false,"ROW",null));
-    String expression=String.join("+",Collections.nCopies(140,"[v]"));
+    String expression=String.join("+",Collections.nCopies(300,"[v]"));
     assertTrue(expression.length()<=1500);
     IllegalArgumentException ex=assertThrows(IllegalArgumentException.class,
       ()->compiler(fields).compile(expression));
