@@ -19,6 +19,8 @@ public final class FormulaCompiler {
   public Compiled compile(String formula){
     Expr x=parse(formula);
     if(x.aggregate&&x.bare)throw new IllegalArgumentException("聚合表达式不能同时直接引用明细字段");
+    if("NULL".equals(x.type)||"UNKNOWN".equals(x.type))
+      throw new IllegalArgumentException("公式返回类型无法确定，请至少提供一个有明确类型的结果");
     return new Compiled(x.sql,x.aggregate?"AGGREGATE":"ROW",x.type,Set.copyOf(x.refs),x.ast);
   }
   private Expr parse(String formula){
