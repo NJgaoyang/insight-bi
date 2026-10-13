@@ -51,6 +51,8 @@ public class DatabaseStore {
     }
   }));
   if(!hasDataFolder)jdbc.execute("ALTER TABLE insight_dataset ADD COLUMN folder_id VARCHAR(36)");
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, source_name VARCHAR(128) NOT NULL, display_name VARCHAR(150) NOT NULL, logical_type VARCHAR(20) NOT NULL, role VARCHAR(20) NOT NULL, ordinal INT NOT NULL, UNIQUE(dataset_id,source_name))");
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_calculated_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, name VARCHAR(100) NOT NULL, expression VARCHAR(1500) NOT NULL, phase VARCHAR(20) NOT NULL, output_type VARCHAR(20) NOT NULL, revision INT NOT NULL DEFAULT 1, UNIQUE(dataset_id,name))");
 
 
 
