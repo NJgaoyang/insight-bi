@@ -245,7 +245,8 @@ class BiApi {
   }
   return Map.of("id",id,"kind",String.valueOf(row.get("kind")),"revision",row.get("revision"),
     "schemaVersion",1,"datasetIds",graph.datasetIds(),"widgetIds",graph.widgetIds(),
-    "widgetCount",graph.widgetCount(),"missingDatasetIds",missing);
+    "widgetCount",graph.widgetCount(),"dashboardIds",graph.dashboardIds(),
+    "dashboardCount",graph.dashboardCount(),"missingDatasetIds",missing);
  }
  @PutMapping("/dashboards/{id}")Map<String,Object> update(@PathVariable String id,@RequestBody Map<String,Object> x){
   String name=str(x,"name",""),mode=str(x,"mode","grid");mode(mode);int rev=DatabaseStore.number(x.get("revision"),-1);
