@@ -76,4 +76,12 @@ class AnalysisQueryPlannerTest {
     base.put("sort",List.of());base.put("limit",9999);
     assertThrows(IllegalArgumentException.class,()->p.compile("SELECT city,revenue FROM sales",base));
   }
+  @Test void selectAstGuardFailsClosed(){
+    assertEquals("SELECT city,revenue FROM sales",ReadOnlySqlGuard.validate("SELECT city,revenue FROM sales"));
+    assertThrows(IllegalArgumentException.class,()->ReadOnlySqlGuard.validate("DELETE FROM sales"));
+    assertThrows(IllegalArgumentException.class,()->ReadOnlySqlGuard.validate("SELECT * FROM sales; DELETE FROM sales"));
+    assertThrows(IllegalArgumentException.class,()->ReadOnlySqlGuard.validate("SELECT * FROM sales FOR UPDATE"));
+    assertThrows(IllegalArgumentException.class,()->ReadOnlySqlGuard.validate("SELECT SLEEP(10)"));
+  }
+
 }
