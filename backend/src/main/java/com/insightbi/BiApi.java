@@ -5,6 +5,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import com.insightbi.analysis.DatasetSchemaGuard;
+import com.insightbi.analysis.DatasetSqlChangePolicy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -92,9 +93,15 @@ class BiApi {
  @GetMapping("/datasets/{id}")Map<String,Object> dataset(@PathVariable String id){var a=new LinkedHashMap<>(s.dataset(id));a.put("fields",s.arr(String.valueOf(a.remove("fields_json"))));return a;}
  @Transactional
  @PostMapping("/datasets")Map<String,Object> saveDataset(@RequestBody Map<String,Object> x)throws Exception{
-  String id=str(x,"id",UUID.randomUUID().toString()),name=str(x,"name",""),connectionId=str(x,"connectionId",""),sql=DatabaseStore.safeSql(str(x,"sql",""));
+  String id=str(x,"id",UUID.randomUUID().toString()),name=str(x,"name",""),
+    connectionId=str(x,"connectionId",""),submittedSql=str(x,"sql","");
   if(name.isBlank()||name.length()>150)throw new IllegalArgumentException("数据集名称无效");
   String folder=optionalFolder(x);assertDataFolder(folder);
+  boolean exists=db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0;
+  String oldSql=exists?String.valueOf(s.dataset(id).get("sql_body")):null;
+  // Validate dangerous functions/AST before creating a JDBC source connection.
+  // Previously saved SQL is grandfathered only when its text is unchanged.
+  String sql=DatasetSqlChangePolicy.forSave(submittedSql,oldSql);
   List<Map<String,Object>> fields;try(Connection c=s.open(s.connection(connectionId))){fields=s.readFields(c,sql);}
   if(fields.isEmpty())throw new IllegalArgumentException("SQL 没有字段");
   Map<String,String> fieldRenames=new LinkedHashMap<>();
@@ -108,7 +115,6 @@ class BiApi {
     fieldRenames.put(old,newer);
    }
   }
-  boolean exists=db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,id)>0;
   if(!exists&&!fieldRenames.isEmpty())throw new IllegalArgumentException("新建数据集不能使用源字段更名映射");
   if(exists){
    var guard=new DatasetSchemaGuard(s,db);
