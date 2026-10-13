@@ -25,7 +25,9 @@ class StarRocksInlineFixtureTest {
         var meta=rs.getMetaData();
         while(rs.next()){
           var row=new LinkedHashMap<String,Object>();
-          for(int i=1;i<=meta.getColumnCount();i++)row.put(meta.getColumnLabel(i),rs.getObject(i));
+          // H2 upper-cases bare alias labels; StarRocks/MySQL return them as written.
+          for(int i=1;i<=meta.getColumnCount();i++)
+            row.put(meta.getColumnLabel(i).toLowerCase(Locale.ROOT),rs.getObject(i));
           result.add(row);
         }
       }
