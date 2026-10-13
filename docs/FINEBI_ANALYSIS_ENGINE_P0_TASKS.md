@@ -259,4 +259,6 @@ git diff --check
 
 | 2026-10-13 | P0-04 指标独立样式和真实浏览器复测 | feat/finebi-analysis-engine-p0: 715b3bf、e6322fb、acc3081、7e7951f、65eb6c8 | 两指标设置小数位/左右轴/标签可保存，样式修改不触发 SQL 重查；Chromium 两条脚本 PASS，离线 Vue+TypeScript/Vite 构建 PASS；Bash 部署脚本语法 PASS | **未执行**，测试 API 为模拟数据 | G4 完整图表/真数仍待验；G0 的凭据恢复、一致性备份、服务器 Git 同步受阻；P0-05 未通过 |
 
+| 2026-10-13 | 最新后端隔离回归 / P0-05 发布门禁复核 | feat/finebi-analysis-engine-p0: e3deabe | 开发机隔离克隆 Maven 定向执行 BiQueryInTest、AnalysisQueryPlannerTest、AnalysisEngineSqlExecutionTest、AnalysisFormulaDependencyTest、ReadOnlySqlGuardTest 全部 PASS；GitHub Actions #86 前后端成功 | **未执行**，无非生产 StarRocks 连接凭据和受控测试数据对账 | 当前生产元数据为 H2（非计划中的 MySQL）；runtime/local.env 缺失且 GitHub HTTPS 超时，生产服务不能重启；先处理环境 G0 再推进 P0-05 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
