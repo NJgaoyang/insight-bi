@@ -32,6 +32,10 @@ jobs:
       - name: Install locked dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
+      - name: Check browser smoke test syntax
+        run: |
+          node --check scripts/finebi_multifield_ui_smoke.cjs
+          node --check scripts/finebi_formula_ui_smoke.cjs
       - name: TypeScript and Vite production compilation
         working-directory: frontend
         run: npm run build
