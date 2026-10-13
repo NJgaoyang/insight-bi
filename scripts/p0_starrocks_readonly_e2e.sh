@@ -15,8 +15,16 @@ case "${P0_STARROCKS_JDBC_URL}" in
 esac
 case "${P0_STARROCKS_USER,,}" in
   root|admin|administrator)
-    echo "拒绝执行：必须使用专门创建的非生产只读数据库账号，不可用管理员" >&2
-    exit 2;;
+    # User-confirmed dedicated DataForge TEST StarRocks only: keep the
+    # ordinary production prohibition, and retain SELECT-only test SQL.
+    if [[ "${P0_DATAFORGE_STARROCKS_TEST:-}" != "true" ]]; then
+      echo "拒绝执行：管理员只允许显式确认 DataForge 专用测试 FE" >&2
+      exit 2
+    fi
+    case "${P0_STARROCKS_JDBC_URL#jdbc:mysql://}" in
+      172.17.0.12:9030/*|81.69.15.136:9030/*) ;;
+      *) echo "拒绝执行：指定的 FE 不属于已确认 DataForge 测试地址" >&2; exit 2;;
+    esac;;
 esac
 
 app="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
