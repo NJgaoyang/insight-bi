@@ -16,7 +16,7 @@ const operators=[
  {value:'isNull',label:'为空'},{value:'notNull',label:'不为空'}
 ]
 const noValue=new Set(['isNull','notNull'])
-const preFields=computed(()=>props.fields.filter(f=>!f.calculated||f.phase==='ROW'))
+const preFields=computed(()=>props.fields.filter(f=>(!f.calculated||f.phase==='ROW')&&!f.hidden))
 const preSelected=computed(()=>preFields.value.find(f=>f.id===preField.value))
 const postSelected=computed(()=>props.bindings.measures.find(m=>m.id===postMetric.value))
 function typeOfMeasure(m:MeasureV2|undefined):string {
