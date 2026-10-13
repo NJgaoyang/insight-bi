@@ -179,6 +179,16 @@ cd ../frontend && npm ci && npm run build
 
 GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398263323) 曾在 `AnalysisQueryBoundaryTest` 失败：H2 MySQL 兼容测试连接不会报告 JDBC 只读状态，而新的 V2 查询门禁会正确拒绝这个连接。已仅调整该 H2 查询边界用例，模拟支持只读的 JDBC 状态；拒绝非只读连接的生产策略没有放宽，并由 `ReadOnlyConnectionPolicyTest` 单独验证。开发机定向 `AnalysisQueryBoundaryTest` 通过；GitHub Actions [#305](https://github.com/NJgaoyang/insight-bi/actions/runs/38399054252) **success**。修复提交 `15f6182`。
 
+## 2026-10-13：接入 DataForge 专用 StarRocks 测试环境
+
+用户确认 **DataForge 的 StarRocks 为专用测试环境**，允许本项目复用其测试连接，不必另外新建 StarRocks 集群。已在 P0 真数对账工具中加入明确受限的测试环境入口，原正式环境仍禁止管理员凭据。
+
+- FE 候选地址：`172.17.0.12:9030`（同局域网优先），`81.69.15.136:9030`（备用公网）。执行前要与 DataForge 当前配置核实；脚本默认使用 `jdbc:mysql://172.17.0.12:9030/ods`。
+- 通过 `scripts/p0_dataforge_starrocks_e2e.sh` 注入 `DATAFORGE_STARROCKS_PASSWORD` 等运行时环境变量，设置 `P0_STARROCKS_E2E=true`、`P0_STARROCKS_NONPROD_CONFIRMED=true`、`P0_DATAFORGE_STARROCKS_TEST=true`；不会把真实账号密码写入 Git。
+- 在 Java 对账测试和 Bash 入口双重限制：root/admin 只可用于已明确批准的上述 DataForge FE，其他地址仍拒绝；测试 SQL 仍只进行 SELECT/UNION ALL 合成数据查询，保留 JDBC 只读校验及非跳过报告核验。
+- `DataForgeStarRocksTestAccessTest` 3 项定向权限与地址校验由 GitHub Actions [#321](https://github.com/NJgaoyang/insight-bi/actions/runs/38402539719) **success**；DataForge 专用启动脚本的增量语法工作流 [#322](https://github.com/NJgaoyang/insight-bi/actions/runs/38402709639) **success**。没有执行其他模块全量回归。
+- **实际阻塞**：开发机 Remote Desktop Commander 在设备列表中显示在线，但执行命令、Ping 和文件同步连续超时；运行本环境的模型容器到这两个 FE 地址的 TCP 9030 均显示连接拒绝，不能替代开发机局域网连通性检查。因此截至本次仍**未获得真实 StarRocks JDBC 查询结果或非跳过报告**，P0-05/G4 不可视为完成。不要使用合成 SQL 测试或脚本语法通过冒充真实对账。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
