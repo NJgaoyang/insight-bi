@@ -68,6 +68,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.waitForFunction(()=>document.querySelector('.pipeline-save')?.hasAttribute('disabled'))
   assert.equal(saves.length,1)
   assert.equal(saves[0].steps[0].conditions.length,2)
+  assert.notDeepEqual(saves[0].steps[0].conditions[0],saves[0].steps[0].conditions[1],
+   'New JOIN keys must default to an unused compatible pair')
   assert.equal(saves[0].steps[0].fields.length,2)
   assert.equal(saves[0].steps[0].joinType,'LEFT')
   await page.reload({waitUntil:'domcontentloaded'})
