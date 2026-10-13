@@ -62,6 +62,19 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.deepEqual(before.dimensions.map(d=>d.fieldId),['city','month'])
   assert.deepEqual(before.measures.map(m=>m.fieldId),['revenue','cost'])
 
+  // Metric-specific settings must be independent, persist, and avoid data re-query for visual changes.
+  const settings=page.locator('.v2-measure-setting')
+  assert.equal(await settings.count(),2)
+  const currentQueries=queries.length
+  await settings.nth(1).locator('.el-input-number input').fill('3')
+  await settings.nth(1).locator('.el-input-number input').press('Tab')
+  await settings.nth(1).locator('.el-select').first().click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'右轴'}).first().click()
+  await settings.nth(1).locator('.el-switch').first().click()
+  await page.waitForTimeout(300)
+  assert.equal(queries.length,currentQueries,'Style-only changes must not re-query StarRocks')
+  assert.equal(await settings.nth(1).locator('.el-input-number input').inputValue(),'3')
+
   // Drag a dimension and verify undo/redo changes data-binding order rather than data values.
   await shelves.nth(0).locator('.analysis-chip').nth(0).dragTo(shelves.nth(0).locator('.analysis-chip').nth(1))
   await page.waitForFunction(()=>document.querySelector('.analysis-shelf.v2-shelf .analysis-chip')?.textContent?.includes('月份'))
@@ -77,6 +90,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(saves[0].content.analysisSchemaVersion,2)
   assert.deepEqual(saves[0].content.widgets[0].analysisV2.dimensions.map(d=>d.fieldId),['month','city'])
   assert.deepEqual(saves[0].content.widgets[0].analysisV2.measures.map(m=>m.fieldId),['revenue','cost'])
+  assert.equal(saves[0].content.widgets[0].analysisV2.measures[1].decimals,3)
+  assert.equal(saves[0].content.widgets[0].analysisV2.measures[1].axis,'right')
+  assert.equal(saves[0].content.widgets[0].analysisV2.measures[1].showLabel,true)
   await page.reload()
   await page.locator('.analysis-shelf.v2-shelf .analysis-chip').first().waitFor()
   assert.equal(await shelves.nth(0).locator('.analysis-chip').count(),2)
