@@ -56,8 +56,21 @@ class AnalysisQueryPlannerTest {
     assertTrue(plan.sql().contains("SUM(biq.`profit`) / NULLIF(SUM(biq.`revenue`),0)"));
     assertEquals(new BigDecimal("150"),plan.params().get(0));
     assertEquals(new BigDecimal("150"),plan.params().get(1));
-    assertEquals(30,plan.params().get(2));
+    assertEquals(31,plan.params().get(2),"Planner binds one additional row for accurate truncation");
     assertEquals(5,plan.columns().size());
+  }
+  @Test void dimensionOnlyQueryIsDistinctAndDuplicateDimensionRejected(){
+    var p=new AnalysisQueryPlanner(sample());
+    var req=new HashMap<String,Object>();
+    req.put("dimensions",List.of(Map.of("fieldId","city")));
+    req.put("measures",List.of());
+    req.put("limit",2);
+    var plan=p.compile("SELECT city,revenue FROM sales",req);
+    assertTrue(plan.sql().contains(" GROUP BY biq.`city`"),
+       "dimension-only analysis must collapse source duplicates");
+    assertEquals(3,plan.params().get(plan.params().size()-1));
+    req.put("dimensions",List.of(Map.of("fieldId","city"),Map.of("fieldId","city")));
+    assertThrows(IllegalArgumentException.class,()->p.compile("SELECT city,revenue FROM sales",req));
   }
   @Test void injectionAndWrongTypesAreRejected(){
     var p=new AnalysisQueryPlanner(sample());
