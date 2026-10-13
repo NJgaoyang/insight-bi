@@ -5,6 +5,7 @@ import {api,post,put,remove,csrf,type Dataset} from './api'
 import Designer from './Designer.vue'
 import AnalysisSubject from './AnalysisSubject.vue'
 import PublishedReport from './PublishedReport.vue'
+import PipelineEditor from './PipelineEditor.vue'
 const logged=ref(false),loading=ref(true),username=ref('admin'),password=ref(''),loginBusy=ref(false)
 const route=ref('dashboards'),activeId=ref(''),view=ref(false)
 const connections=ref<any[]>([]),datasets=ref<Dataset[]>([]),dashboards=ref<any[]>([])
@@ -127,11 +128,11 @@ const menu=[
  {key:'datasets',label:'公共数据',icon:'▤'},
  {key:'connections',label:'系统管理',icon:'⚙'}
 ]
-const editor=computed(()=>route.value==='designer'||route.value==='view'||route.value==='analysis')
+const editor=computed(()=>['designer','view','analysis','pipeline'].includes(route.value))
 function handleHash(){
  const hash=window.location.hash.replace(/^#\/?/,'').split('/').filter(Boolean)
  route.value=hash[0]||'dashboards';activeId.value=hash[1]||'';view.value=route.value==='view'
- if(!['designer','view','analysis','datasets','dashboards','connections','catalog'].includes(route.value))route.value='dashboards'
+ if(!['designer','view','analysis','pipeline','datasets','dashboards','connections','catalog'].includes(route.value))route.value='dashboards'
  if(logged.value&&!editor.value)refresh()
 }
 function navigate(path:string){window.location.hash='/'+path;handleHash()}
@@ -287,6 +288,7 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
   </form>
  </div>
  <AnalysisSubject v-else-if="route==='analysis'&&activeId" :key="activeId" :id="activeId" @back="navigate('dashboards')"/>
+ <PipelineEditor v-else-if="route==='pipeline'&&activeId" :key="activeId" :id="activeId" @back="navigate('datasets')"/>
  <PublishedReport v-else-if="route==='view'&&activeId" :key="activeId+route" :id="activeId" @back="navigate('dashboards')"/>
  <Designer v-else-if="editor&&activeId" :key="activeId+route" :id="activeId" :readonly="view" @back="navigate('dashboards')"/>
  <div v-else class="app-shell">
@@ -365,7 +367,7 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
       <div v-else class="resource-table"><table><thead><tr><th>数据集名称</th><th>来源连接</th><th>字段数</th><th>操作</th></tr></thead>
         <tbody><tr v-for="ds in publicDataItems" :key="ds.id"><td><b>{{ds.name}}</b></td>
           <td>{{connections.find(c=>c.id===ds.connection_id)?.name||'未知连接'}}</td><td>{{ds.fields.length}}</td>
-          <td><button @click="showPreview(ds)">预览数据</button><button @click="editDataset(ds)">编辑</button>
+          <td><button @click="showPreview(ds)">预览数据</button><button @click="navigate('pipeline/'+ds.id)">加工</button><button @click="editDataset(ds)">编辑</button>
               <button @click="startMoveData(ds)">移动</button><button class="danger-link" @click="deleteDataset(ds)">删除</button></td>
         </tr></tbody></table></div>
     </template>
