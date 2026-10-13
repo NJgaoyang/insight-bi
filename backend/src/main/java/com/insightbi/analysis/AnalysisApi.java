@@ -59,6 +59,7 @@ public class AnalysisApi {
     List<Map<String,Object>> rows;
     try(AnalysisQueryLimiter.Lease slot=QUERY_LIMITER.acquire();
         Connection c=store.open(store.connection(String.valueOf(ds.get("connection_id"))))){
+      ReadOnlyConnectionPolicy.require(c);
       rows=store.readAnalysisRows(c,plan.sql(),plan.params(),plan.limit());
     }
     boolean truncated=rows.size()>plan.limit();
