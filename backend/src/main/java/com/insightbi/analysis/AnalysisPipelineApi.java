@@ -56,6 +56,8 @@ public final class AnalysisPipelineApi {
     if(!(expected instanceof Integer revision)||revision<0)
       throw new IllegalArgumentException("必须提供加工配置版本号");
     Object steps=body.get("steps");
+    if(!(steps instanceof List<?>))
+      throw new IllegalArgumentException("加工步骤必须是列表");
     // Compile everything, including its forward-only field references, before
     // persisting. No source connection or query executes during Save.
     new AnalysisPipelineCompiler(catalog.fields(id)).compile(
@@ -95,8 +97,12 @@ public final class AnalysisPipelineApi {
   public Map<String,Object> preview(@PathVariable String id,
                                      @RequestBody Map<String,Object> body)throws Exception{
     var ds=store.dataset(id);
-    var plan=new AnalysisPipelineCompiler(catalog.fields(id))
-      .compile(String.valueOf(ds.get("sql_body")),body);
+    String source=String.valueOf(ds.get("sql_body"));
+    var previous=db.queryForList(
+      "SELECT source_sql_hash FROM insight_dataset_pipeline WHERE dataset_id=?",id);
+    if(!previous.isEmpty()&&!sha256(source).equals(previous.get(0).get("source_sql_hash")))
+      throw new IllegalStateException("数据集 SQL 已变更，请重新校验并保存加工步骤后再预览");
+    var plan=new AnalysisPipelineCompiler(catalog.fields(id)).compile(source,body);
     long started=System.nanoTime();
     List<Map<String,Object>> rows;
     try(AnalysisQueryLimiter.Lease lease=LIMITER.acquire();
