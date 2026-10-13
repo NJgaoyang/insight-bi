@@ -15,7 +15,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class DatasetAliasUpdateIntegrationTest {
  @Test void postDatasetRejectsImplicitRenameButAcceptsExplicitMapping() throws Exception{
   String metadata="jdbc:h2:mem:dataset_meta_"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1";
-  String business="jdbc:h2:mem:dataset_data_"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1";
+  String business="jdbc:h2:mem:dataset_data_"+UUID.randomUUID()+";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
   JdbcTemplate db=new JdbcTemplate(new DriverManagerDataSource(metadata,"sa",""));
   JdbcTemplate src=new JdbcTemplate(new DriverManagerDataSource(business,"sa",""));
   src.execute("CREATE TABLE sales(city VARCHAR(50),amount DECIMAL(12,2))");
