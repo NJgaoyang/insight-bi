@@ -32,36 +32,35 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard (id VARCHAR(36) PRIMARY KEY, name VARCHAR(150) NOT NULL, mode VARCHAR(12) NOT NULL, content_json LONGTEXT NOT NULL, published_json LONGTEXT, status VARCHAR(15) NOT NULL, revision INT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard_version (id VARCHAR(36) PRIMARY KEY, dashboard_id VARCHAR(36) NOT NULL, version_no INT NOT NULL, name VARCHAR(150) NOT NULL, mode VARCHAR(12) NOT NULL, content_json LONGTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (dashboard_id,version_no))");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
-  boolean hasFolder=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dashboard","folder_id")){
-      return columns.next();
-    }
-  }));
-  if(!hasFolder)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN folder_id VARCHAR(36)");
-  boolean hasKind=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dashboard","kind")){
-      return columns.next();
-    }
-  }));
-  if(!hasKind)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN kind VARCHAR(15) NOT NULL DEFAULT 'dashboard'");
+  boolean hasFolder=columnExists("insight_dashboard","folder_id");
+   if(!hasFolder)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN folder_id VARCHAR(36)");
+  boolean hasKind=columnExists("insight_dashboard","kind");
+   if(!hasKind)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN kind VARCHAR(15) NOT NULL DEFAULT 'dashboard'");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_data_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
-  boolean hasDataFolder=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dataset","folder_id")){
-      return columns.next();
-    }
-  }));
-  if(!hasDataFolder)jdbc.execute("ALTER TABLE insight_dataset ADD COLUMN folder_id VARCHAR(36)");
+  boolean hasDataFolder=columnExists("insight_dataset","folder_id");
+   if(!hasDataFolder)jdbc.execute("ALTER TABLE insight_dataset ADD COLUMN folder_id VARCHAR(36)");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, source_name VARCHAR(128) NOT NULL, display_name VARCHAR(150) NOT NULL, logical_type VARCHAR(20) NOT NULL, role VARCHAR(20) NOT NULL, ordinal INT NOT NULL, hidden BOOLEAN NOT NULL DEFAULT FALSE, UNIQUE(dataset_id,source_name))");
-  boolean hasFieldHidden=Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
-    try(ResultSet columns=connection.getMetaData().getColumns(connection.getCatalog(),null,"insight_dataset_field","hidden")){
-      return columns.next();
-    }
-  }));
-  if(!hasFieldHidden)jdbc.execute("ALTER TABLE insight_dataset_field ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT FALSE");
+  boolean hasFieldHidden=columnExists("insight_dataset_field","hidden");
+   if(!hasFieldHidden)jdbc.execute("ALTER TABLE insight_dataset_field ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT FALSE");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_calculated_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, name VARCHAR(100) NOT NULL, expression VARCHAR(1500) NOT NULL, phase VARCHAR(20) NOT NULL, output_type VARCHAR(20) NOT NULL, revision INT NOT NULL DEFAULT 1, UNIQUE(dataset_id,name))");
 
 
 
+ }
+ /**
+  * H2 may upper-case identifiers while MySQL preserves table casing.
+  * Check both conventions before running a metadata migration.
+  */
+ private boolean columnExists(String table,String column){
+  return Boolean.TRUE.equals(jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<Boolean>)connection->{
+   var metadata=connection.getMetaData();
+   for(String candidate:List.of(table,table.toUpperCase(Locale.ROOT))){
+    try(ResultSet columns=metadata.getColumns(connection.getCatalog(),null,candidate,"%")){
+     while(columns.next())if(column.equalsIgnoreCase(columns.getString("COLUMN_NAME")))return true;
+    }
+   }
+   return false;
+  }));
  }
  public String json(Object o){try{return mapper.writeValueAsString(o);}catch(Exception e){throw new IllegalArgumentException(e);}}
  public Map<String,Object> map(String json){try{return mapper.readValue(json,new TypeReference<>(){});}catch(Exception e){throw new IllegalArgumentException(e);}}
