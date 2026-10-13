@@ -256,4 +256,6 @@ git diff --check
 | 2026-10-13 | 编写本任务书 | 用 git log --oneline -- docs/FINEBI_ANALYSIS_ENGINE_P0_TASKS.md 查询 | Markdown 链接、JSON 示例、现有接口交叉检查通过 | 不适用 | P0-00 待实施 |
 | 2026-10-13 | 续修 P0-02/03/04：公式依赖及快照保护、只读函数白名单、V2 图表空值与查询取消 | feat/finebi-analysis-engine-p0: 4721a08、3c7b963、fc90416、0280e14、22bd28b、f75ad68、e7d7577 | GitHub Actions #32/#34 的 backend/frontend 均成功；新增 AnalysisFormulaDependencyTest、ReadOnlySqlGuardTest；未执行真实浏览器测试 | **未执行**（开发机离线） | G0 备份与隔离环境仍阻塞；P0-05 尚未验收，禁止直接部署 18110 |
 
+| 2026-10-13 | P0-04 组件分析 UI 增量及开发机浏览器验收 | feat/finebi-analysis-engine-p0: 730c101、012cc5a、3f8d98f、a6ecd64、02c88eb | 隔离预览 npm ci --offline 与 Vue/TS/Vite 构建 PASS；Chromium 多字段拖放/撤销/重做/保存重开 PASS；公式错误/创建/绑定/重开 PASS；旧本地分支定向 Maven PASS | **未执行**，均为模拟 API | 运行服务实际使用 H2；生产 runtime/local.env 缺失；在线 H2 复制不是权威备份；G0/P0-05 仍阻塞，须先安全恢复环境、取得一致性备份及非生产 StarRocks 对账 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
