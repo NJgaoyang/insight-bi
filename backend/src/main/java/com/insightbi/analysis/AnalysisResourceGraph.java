@@ -13,7 +13,8 @@ import java.util.*;
 public final class AnalysisResourceGraph {
   private AnalysisResourceGraph(){}
 
-  public record Graph(List<String> datasetIds,List<String> widgetIds,int widgetCount) {}
+  public record Graph(List<String> datasetIds,List<String> widgetIds,int widgetCount,
+                      List<String> dashboardIds,int dashboardCount) {}
 
   public static Graph of(Object snapshot){
     if(!(snapshot instanceof Map<?,?> root))
@@ -40,7 +41,31 @@ public final class AnalysisResourceGraph {
         throw new IllegalArgumentException("组件数据集 ID 无效："+id);
       datasets.add(datasetId);
     }
-    return new Graph(List.copyOf(datasets),List.copyOf(ids),widgets.size());
+    LinkedHashSet<String> dashboardIds=new LinkedHashSet<>();
+    Object dashboardRaw=root.get("dashboards");
+    if(dashboardRaw!=null){
+      if(!(dashboardRaw instanceof List<?> views)||views.isEmpty()||views.size()>30)
+        throw new IllegalArgumentException("仪表板视图必须为 1 到 30 个");
+      for(Object viewRaw:views){
+        if(!(viewRaw instanceof Map<?,?> view))throw new IllegalArgumentException("仪表板视图必须是对象");
+        Object rawViewId=view.get("id");
+        Object rawViewName=view.get("name");
+        if(!(rawViewId instanceof String viewId)||viewId.isBlank()||viewId.length()>128||
+           !dashboardIds.add(viewId))
+          throw new IllegalArgumentException("仪表板视图 ID 无效或重复");
+        if(!(rawViewName instanceof String name)||name.isBlank()||name.length()>100)
+          throw new IllegalArgumentException("仪表板视图名称无效");
+        Object refs=view.get("widgetIds");
+        if(!(refs instanceof List<?> list))throw new IllegalArgumentException("视图组件必须为列表");
+        Set<String> unique=new HashSet<>();
+        for(Object item:list){
+          if(!(item instanceof String widgetId)||!ids.contains(widgetId)||!unique.add(widgetId))
+            throw new IllegalArgumentException("视图包含不存在或重复的组件 ID");
+        }
+      }
+    }
+    return new Graph(List.copyOf(datasets),List.copyOf(ids),widgets.size(),
+      List.copyOf(dashboardIds),dashboardIds.size());
   }
 
   public static boolean references(Object snapshot,String datasetId){
@@ -57,7 +82,8 @@ public final class AnalysisResourceGraph {
     copy.put("resourceIndex",Map.of(
       "schemaVersion",1,
       "datasetIds",graph.datasetIds(),
-      "widgetIds",graph.widgetIds()));
+      "widgetIds",graph.widgetIds(),
+      "dashboardIds",graph.dashboardIds()));
     return copy;
   }
 
