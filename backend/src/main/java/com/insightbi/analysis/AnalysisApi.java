@@ -39,11 +39,14 @@ public class AnalysisApi {
     long start=System.nanoTime();
     List<Map<String,Object>> rows;
     try(Connection c=store.open(store.connection(String.valueOf(ds.get("connection_id"))))){
-      rows=store.readRows(c,plan.sql(),plan.params(),plan.limit());
+      rows=store.readAnalysisRows(c,plan.sql(),plan.params(),plan.limit());
     }
+    boolean truncated=rows.size()>plan.limit();
+    // Do not expose the sentinel record used only to detect overflow.
+    if(truncated)rows=new ArrayList<>(rows.subList(0,plan.limit()));
     long elapsed=(System.nanoTime()-start)/1_000_000;
     return Map.of("rows",rows,"columns",plan.columns(),"executionMs",elapsed,
-      "truncated",rows.size()>=plan.limit(),"warnings",List.of());
+      "truncated",truncated,"warnings",List.of());
   }
   @GetMapping("/datasets/{id}/calculated-fields")
   public List<Map<String,Object>> formulas(@PathVariable String id){
