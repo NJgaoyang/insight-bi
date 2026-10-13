@@ -98,10 +98,12 @@ public final class DatasetSchemaGuard {
     for(var row:db.queryForList("SELECT content_json FROM insight_dashboard_version"))
       snapshots.add(new Snapshot(row.get("content_json"),"历史分析主题"));
 
+    Set<String> unavailableLegacyNames=new HashSet<>(removedNames);
+    unavailableLegacyNames.addAll(fieldRenames.keySet());
     for(var snap:snapshots){
       if(snap.content()==null)continue;
       Object tree=store.map(String.valueOf(snap.content()));
-      checkSnapshot(tree,datasetId,removedIds,removedNames,next,snap.kind());
+      checkSnapshot(tree,datasetId,removedIds,unavailableLegacyNames,next,snap.kind());
     }
   }
 
@@ -127,11 +129,10 @@ public final class DatasetSchemaGuard {
     }
     if(!(node instanceof Map<?,?> map))return;
     if(datasetId.equals(String.valueOf(map.get("datasetId")))){
-      for(String legacyField:List.of("dimension","measure","secondMeasure")){
-        Object selected=map.get(legacyField);
-        if(selected instanceof String name&&removedNames.contains(name))
-          throw new IllegalArgumentException(snapshotKind+"仍引用被移除的源字段: "+name);
-      }
+      // Old V1 widgets bind physical column names, not immutable field IDs.
+      // Even an explicit V2 ID-preserving rename cannot safely rewrite these
+      // stored names (especially published and historical snapshots).
+      validateLegacyBindings(map,removedNames,snapshotKind);
       Object schema=map.get("analysisV2");
       if(schema instanceof Map<?,?> config){
         ensureSafeReferences(config,removedIds,snapshotKind);
@@ -152,10 +153,47 @@ public final class DatasetSchemaGuard {
              !Set.of("DATE","DATETIME").contains(field.logicalType()))
             throw new IllegalArgumentException(snapshotKind+"的日期分组字段类型已发生变化: "+field.name());
         }
+        // Recompile saved V2 bindings against the proposed types so existing
+        // pre/post filters, date values, aggregation and sorts remain valid.
+        // SELECT 1 is only a placeholder: no data-source query is executed.
+        Map<String,Object> req=AnalysisQueryPlanner.object(config,"已保存分析配置");
+        boolean hasDimensions=req.get("dimensions") instanceof List<?> d&&!d.isEmpty();
+        boolean hasMeasures=req.get("measures") instanceof List<?> m&&!m.isEmpty();
+        if(hasDimensions||hasMeasures){
+          try{
+            new AnalysisQueryPlanner(new ArrayList<>(next.values())).compile("SELECT 1",req);
+          }catch(IllegalArgumentException ex){
+            throw new IllegalArgumentException(snapshotKind+"存在与新字段类型不兼容的查询配置: "+
+              ex.getMessage(),ex);
+          }
+        }
       }
     }
     for(Object child:map.values())if(child instanceof Map<?,?>||child instanceof List<?>)
       checkSnapshot(child,datasetId,removedIds,removedNames,next,snapshotKind);
+  }
+
+  private static void validateLegacyBindings(Map<?,?> widget,Set<String> missingNames,String snapshotKind){
+    // Also check cross-tab and drill lists, legacy sort, and the old filter field.
+    // This is a conservative rejection, never a silent V1->V2 rewrite.
+    for(String key:List.of("dimension","measure","secondMeasure","columnDimension","sort")){
+      Object value=widget.get(key);
+      if(value instanceof String name&&missingNames.contains(name))
+        throw new IllegalArgumentException(snapshotKind+"的旧版字段引用将因源列更名或移除失效: "+name);
+    }
+    for(String key:List.of("columns","drillDimensions","pivotMeasures")){
+      Object value=widget.get(key);
+      if(value instanceof List<?> items)for(Object item:items){
+        if(item instanceof String name&&missingNames.contains(name))
+          throw new IllegalArgumentException(snapshotKind+"的旧版字段列表将因源列更名或移除失效: "+name);
+      }
+    }
+    Object legacyFilters=widget.get("filters");
+    if(legacyFilters instanceof List<?> list)for(Object item:list){
+      if(item instanceof Map<?,?> filter &&
+         filter.get("field") instanceof String name && missingNames.contains(name))
+        throw new IllegalArgumentException(snapshotKind+"的旧版筛选将因源列更名或移除失效: "+name);
+    }
   }
 
   private static void ensureSafeReferences(Object node,Set<String> removedIds,String source){
