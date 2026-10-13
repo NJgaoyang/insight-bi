@@ -1,0 +1,17 @@
+import {ref} from 'vue'
+export const csrf=ref('');
+export async function api<T=any>(path:string,options:RequestInit={}):Promise<T>{
+ const headers:Record<string,string>={...(options.headers as Record<string,string>||{})};
+ if(options.body && !(options.body instanceof FormData))headers['Content-Type']='application/json';
+ if(options.method && !['GET','HEAD'].includes(options.method.toUpperCase()) && csrf.value)headers['X-CSRF-Token']=csrf.value;
+ const res=await fetch('/api'+path,{credentials:'same-origin',...options,headers});
+ if(!res.ok){const type=res.headers.get('content-type')||'';const response=type.includes('application/json')?await res.json().catch(()=>({})):{};if(res.status===401)window.dispatchEvent(new Event('bi-unauthorized'));throw new Error(response.error||('请求失败 HTTP '+res.status));}
+ return res.json();
+}
+export const post=<T=any>(p:string,v:any)=>api<T>(p,{method:'POST',body:JSON.stringify(v)});
+export const put=<T=any>(p:string,v:any)=>api<T>(p,{method:'PUT',body:JSON.stringify(v)});
+export const remove=<T=any>(p:string)=>api<T>(p,{method:'DELETE'});
+export interface Field {name:string;type:string;numeric:boolean}
+export interface Dataset {id:string;name:string;connection_id:string;sql_body:string;fields:Field[]}
+export interface Widget {id:string;type:string;title:string;datasetId:string;dimension:string;columnDimension?:string;measure:string;secondMeasure?:string;agg:string;columns:string[];x:number;y:number;w:number;h:number;px:number;py:number;width:number;height:number;style:Record<string,any>;columnStyles:Record<string,any>;drillDimensions?:string[];pivotMeasures?:string[];sort?:string;direction?:'asc'|'desc';topN?:number}
+export interface Dashboard {id:string;name:string;mode:'grid'|'free';revision:number;status:string;content:{mode:'grid'|'free';widgets:Widget[];theme:string}}

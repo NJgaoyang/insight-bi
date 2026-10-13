@@ -1,0 +1,30 @@
+server:
+  port: ${BI_PORT:18210}
+  address: ${BI_HOST:127.0.0.1}
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        http-only: true
+        same-site: strict
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:file:/opt/insight-bi/runtime/metadata;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
+    hikari:
+      maximum-pool-size: 6
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  web:
+    resources:
+      static-locations: classpath:/static/
+  mvc:
+    pathmatch:
+      matching-strategy: path_pattern_parser
+logging:
+  level:
+    root: WARN
+    com.insightbi: INFO

@@ -1,0 +1,27 @@
+[Unit]
+Description=Insight BI Application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=insight-bi
+WorkingDirectory=/opt/insight-bi/backend
+Environment="BI_HOST=0.0.0.0"
+Environment="BI_PORT=18110"
+Environment="SPRING_DATASOURCE_URL=jdbc:h2:file:/var/lib/insight-bi/metadata;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE"
+EnvironmentFile=/opt/insight-bi/runtime/local.env
+EnvironmentFile=-/opt/insight-bi/runtime/mysql.env
+ExecStart=/usr/local/jdk-21/bin/java -Xms128m -Xmx650m -jar /opt/insight-bi/backend/target/insight-bi-0.1.0.jar
+Restart=on-failure
+RestartSec=4
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+LimitNOFILE=8192
+MemoryMax=900M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+const {chromium}=require('/root/DataForge/frontend-v2/node_modules/playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1600,height:950},acceptDownloads:true});
+ try{
+  const rows=Array.from({length:45},(_,i)=>({城市:'测试城市'+i,销售额:i*100,部门:'部门A'}));
+  await page.route('**/api/datasets',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify([{id:'test-mock',name:'仅浏览器测试的数据集',connection_id:'mock',fields:[{name:'城市',type:'VARCHAR',numeric:false},{name:'销售额',type:'DECIMAL',numeric:true},{name:'部门',type:'VARCHAR',numeric:false}]}])}));
+  await page.route('**/api/query',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({rows})}));
+  await page.goto('http://127.0.0.1:18110/');
+  await page.locator('[autocomplete=username]').fill('admin');
+  await page.locator('[autocomplete=current-password]').fill(process.env.BI_ADMIN_PASSWORD);
+  await page.getByRole('button',{name:'登录工作台'}).click();
+  await page.getByRole('button',{name:/新建报表/}).first().click();
+  await page.getByPlaceholder('请输入报表名称').fill('表格定向测试待清理');
+  await page.getByRole('button',{name:/创建并编辑/}).click();
+  await page.getByRole('button',{name:/明细表/}).first().click();
+  await page.locator('.property-panel .el-select').first().click();
+  await page.getByText('仅浏览器测试的数据集',{exact:true}).last().click();
+  await page.getByText('测试城市0',{exact:true}).first().waitFor({timeout:10000});
+  if(await page.locator('.bi-table tbody tr').count()!==20)throw new Error('incorrect pagination');
+  console.log('PASS_TABLE_ROWS_AND_PAGINATION');
+  await page.getByRole('button',{name:'样式',exact:true}).first().click();
+  await page.getByText('显示本次查询合计').waitFor();
+  const totalSwitch=page.getByText('显示本次查询合计').locator('..').locator('.el-switch');
+  await totalSwitch.click();
+  if(await page.locator('.bi-table tfoot').count()!==1)throw new Error('total not shown');
+  await page.locator('.property-panel .el-select').first().click();
+  await page.getByRole('listbox').getByText('销售额',{exact:true}).first().click();
+  await page.getByText('冻结此列').locator('..').locator('.el-switch').click();
+  if(await page.locator('.bi-table th').filter({hasText:'销售额'}).getAttribute('style')==='')throw new Error('freeze not reflected');
+  console.log('PASS_TABLE_FIELD_STYLE');
+  await page.getByRole('button',{name:'＋ 添加条件格式规则'}).click();
+  const cell=page.locator('.bi-table tbody tr').first().locator('td').nth(1);
+  await cell.waitFor();
+  const bg=await cell.evaluate(el=>getComputedStyle(el).backgroundColor);
+  if(bg!=='rgb(236, 253, 245)')throw new Error('conditional formatting not applied: '+bg);
+  console.log('PASS_CONDITIONAL_FORMAT_RULE');
+  await page.getByRole('button',{name:'复制样式'}).click();
+  await page.getByRole('button',{name:'粘贴样式'}).click();
+  console.log('PASS_STYLE_COPY_PASTE');
+  const download=page.waitForEvent('download');
+  await page.getByRole('button',{name:'导出 CSV'}).click();
+  const downloaded=await download;
+  if(!downloaded.suggestedFilename().endsWith('.csv'))throw new Error('export file extension');
+  console.log('PASS_CSV_EXPORT');
+  await page.locator('.designer-toolbar .toolbar-left .icon-button').click();
+  await page.locator('.dashboard-meta button[title=删除]').first().click();
+  await page.getByRole('button',{name:'OK'}).click().catch(async()=>await page.getByRole('button',{name:'确定'}).click());
+  console.log('PASS_CLEANUP');
+ }catch(e){console.log('FAILED',e.message);process.exitCode=1}
+ finally{await browser.close()}
+})();
