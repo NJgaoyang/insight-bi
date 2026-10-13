@@ -242,6 +242,12 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 隔离开发环境定向测试 6/6 PASS、Vue/TypeScript 构建 PASS、Chromium 页面脚本 PASS；生产 `18110` 没有部署和修改，真实 StarRocks、生产 H2 备份/恢复与发布回滚门禁**仍未完成**。尚未实现 JOIN/UNION 与全功能可复用加工数据集，不可将 P1-02 整阶段标记通过。
 
+### P1-02 第二批（2026-10-14）
+
+在开发分支继续实现 `case` 条件列和仅同连接、仅第一步的 `UNION ALL`；两种步骤都由后端受控 SQL 编译器生成 SQL，不接收用户 SQL 片段，不写业务表。配置的源指纹也检查参与合并的数据集 SQL 变化，阻止对陈旧配置直接执行预览。前端增加中文编辑与同连接数据集选择入口。
+
+定向后端 4 组 **13/13 PASS**、Vue/TypeScript 构建及 Chromium 加工页面测试 PASS，未运行整站回归。真实 DataForge StarRocks、生产 H2 备份恢复和回滚门禁仍未完成，依照用户要求继续不部署生产。详细约束与遗留项见 `docs/P1_IMPLEMENTATION_STATUS.md` 第二批。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
