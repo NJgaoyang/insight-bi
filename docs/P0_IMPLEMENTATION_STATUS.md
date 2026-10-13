@@ -120,6 +120,14 @@ cd ../frontend && npm ci && npm run build
 
 **剩余发布门禁**：恢复生产 `runtime/local.env` 的合法配置、完成 H2 一致性备份并验证恢复；确认独立非生产 StarRocks 的只读账号和连接后启动只读真数对账；再隔离执行 P0-05 兼容/回滚检查。服务器到 GitHub 的 HTTPS 网络仍需单独处理，不直接覆盖现网工作树。
 
+## 2026-10-13 本轮定向验证结果（追加）
+
+- GitHub Actions [#131](https://github.com/NJgaoyang/insight-bi/actions/runs/38375685661) 的 `backend` 与 `frontend` 两个作业均显示 `success`。
+- 独立克隆真实执行的后端 Maven 定向测试退出码 0，包括 `AnalysisQueryBoundaryTest` 的 500/501 行上限和 `COUNT DISTINCT`、`FieldCatalogRefreshTest` 的类型变化与稳定 ID。
+- `StarRocksReadOnlyReconciliationTest` 的 Surefire XML 为 `tests=1, skipped=1, failures=0, errors=0`：**未执行真实 StarRocks**，不能用 Maven exit 0 代替真数对账。
+- 隔离的 Vue/TypeScript/Vite 构建退出码 0；Chromium 多字段/COUNT DISTINCT 保存恢复及计算字段脚本均退出码 0。调用均为模拟 API。
+- 检查完成后已关闭开发机隔离预览端口 `18117`。生产 `18110/api/health` 为 `{"ok":true}`，服务 active，生产工作树干净；未发布代码或重启生产服务。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
