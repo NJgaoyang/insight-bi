@@ -84,6 +84,15 @@ async function saveFormula(){
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'公式保存失败')}
  finally{formulaBusy.value=false}
 }
+function setV2Sort(ref:string){
+ const b=chosen.value?.analysisV2;if(!b)return
+ b.sort=ref?[{ref,direction:b.sort[0]?.direction||'desc'}]:[]
+ mark()
+}
+function setV2Direction(direction:'asc'|'desc'){
+ const b=chosen.value?.analysisV2;if(!b?.sort.length)return
+ b.sort[0].direction=direction;mark()
+}
 const preFilterField=ref(''),preFilterValue=ref(''),postFilterRef=ref(''),postFilterValue=ref('')
 function addV2Filter(stage:'pre'|'post'){
  const b=chosen.value?.analysisV2;if(!b)return
@@ -325,6 +334,15 @@ onMounted(load)
          :key="t.type" :label="t.name" :value="t.type"/>
        </el-select>
        <label>查询行数上限</label><el-input-number v-model="chosen.analysisV2.limit" :min="1" :max="500" @change="mark"/>
+       <label>排序指标</label>
+       <el-select :model-value="chosen.analysisV2.sort[0]?.ref||''" clearable placeholder="不排序"
+         @update:model-value="v=>setV2Sort(String(v||''))">
+        <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
+       </el-select>
+       <el-select v-if="chosen.analysisV2.sort.length" :model-value="chosen.analysisV2.sort[0].direction"
+         @update:model-value="v=>setV2Direction(v as 'asc'|'desc')">
+        <el-option label="降序" value="desc"/><el-option label="升序" value="asc"/>
+       </el-select>
        <label>明细前过滤（≥）</label>
        <el-select v-model="preFilterField" filterable placeholder="选择字段">
         <el-option v-for="f in v2Fields" :key="f.id" :label="f.name" :value="f.id"/>
