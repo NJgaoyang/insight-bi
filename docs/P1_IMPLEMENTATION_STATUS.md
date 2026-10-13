@@ -46,6 +46,28 @@
 - 对修改涉及的页面额外只运行 `finebi_theme_views_ui_smoke.cjs` 与 `finebi_published_views_ui_smoke.cjs`，**均 PASS**。未做整站或全量 Maven 测试。
 - 生产 `18110/api/health` 返回 `{"ok":true}`，工作树 0 改动，测试预览 `18117` 已关闭。未部署生产。
 
+## P1-02 第一批：可保存、有实际 SQL 的顺序数据加工
+
+- 新建 `AnalysisPipelineCompiler`，支持**计算列、明细过滤、一次分组汇总** 3 类有序步骤。过滤可在分组前或汇总后继续执行，SQL 编译顺序取决于步骤位置；原始数据源只接受经过 AST/函数白名单验证的只读 SELECT。
+- 公式仅允许 ROW 阶段，使用现有 `FormulaCompiler` 的受控字段 ID 与表达式 AST，不执行用户任意 SQL 字符串；条件值统一转 JDBC 参数。分组支持最多 3 维度、5 指标和 COUNT(*) / SUM / AVG / COUNT / MIN / MAX，聚合后仅能引用当前步骤结果字段。不重复聚合，不跨数据集写入；每条流水线最多 12 步。
+- 新增 `AnalysisPipelineApi` 接口：
+  - `POST /api/datasets/{id}/pipeline/compile`：只编译 SQL、列与参数数量，不接触数据仓库。
+  - `POST /api/datasets/{id}/pipeline/preview`：从现有数据连接执行只读查询，强制 JDBC 只读、并发/超时、最多 200 行和溢出哨兵；异常时不泄露用户密码。
+  - `GET /api/datasets/{id}/pipeline`：获取步骤列表、版本号，以及原 SQL 变化后产生的 `stale` 状态。
+  - `PUT /api/datasets/{id}/pipeline`：先编译校验再按 revision 保存，避免覆盖其他编辑者的修改；SQL 源变化时旧配置禁止直接预览，必须重新校验保存。
+- 数据库只新增独立的 `insight_dataset_pipeline` 表（`dataset_id`, `config_json`, `source_sql_hash`, `revision`, `updated_at`），`CREATE TABLE IF NOT EXISTS` 幂等，删除数据集时同事务清理。没有修改既有数据集 SQL 或仪表板 JSON；旧版本服务不依赖该表。
+- `PipelineEditor.vue` 新增简洁数据加工页面，从“公共数据 → 加工”进入。支持步骤增加/删除/前移/后移、基本字段与运算符设置、SQL 预览、真实数据预览、保存并重新进入恢复。入口只修改 App 的相关路由，不影响旧数据集编辑。
+- **本批暂未实现**：同源 JOIN / UNION、多个分组汇总、复杂条件列 UI 以及加工结果作为其他分析主题的直接可复用数据集；不将 P1-02 整阶段标记完成。
+- **StarRocks 真数依照用户指示暂缓**，隔离 H2 测试只能证明 SQL 编译与参数语义，不可替代目标数据库 E2E。
+
+### 本批定向测试证据
+
+- `mvn -q -o -Dtest=AnalysisPipelineCompilerTest,AnalysisPipelineApiTest test`：**6/6 PASS**（4 个有序 SQL/H2 语义、2 个保存/陈旧源检测和 JDBC fail-closed）。
+- `npm run build`：Vue 3/TypeScript 与 Vite **PASS**。
+- `node scripts/finebi_pipeline_ui_smoke.cjs`：隔离 Chromium 浏览器 + 模拟 API，**PASS**。验证页面进入、公式/过滤/分组步骤拖前后次序、SQL 编译、数据预览、CAS 保存、重新加载恢复。
+- CI `scripts/p0_scoped_ci.sh` 已配置仅在加工编译器/API 或相关元数据迁移发生变更时运行这两组测试；**未执行全量回归**。
+- 生产 `18110/api/health` 为 `{"ok":true}`、`insight-bi.service` active、生产 Git 工作树 0 改动；预览 `18117` 已关闭。**未部署生产、新增元数据表未在生产执行**。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
