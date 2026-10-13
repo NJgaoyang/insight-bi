@@ -8,7 +8,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
  const browser=await chromium.launch({executablePath,args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1550,height:960}})
-  const errors=[],requests=[],formulaWrites=[],saves=[]
+  const errors=[],requests=[],formulaWrites=[],saves=[],validations=[]
   let version=1,calculated=null,content={mode:'grid',theme:'light',widgets:[]}
   page.on('pageerror',e=>errors.push(e.message))
   await page.route('**/api/**',async route=>{
@@ -24,6 +24,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
     {id:'revenue',name:'收入',sourceColumn:'revenue',logicalType:'DECIMAL',role:'BOTH',numeric:true,calculated:false,phase:'ROW'},
     {id:'cost',name:'成本',sourceColumn:'cost',logicalType:'DECIMAL',role:'BOTH',numeric:true,calculated:false,phase:'ROW'},
     ...(calculated?[calculated]:[])])
+   if(path==='/api/datasets/ds1/calculated-fields/validate'&&method==='POST'){
+    const body=req.postDataJSON();validations.push(body)
+    if(body.expression.includes('CALL_OS'))return send({error:'不支持的公式函数: CALL_OS'},400)
+    assert.equal(body.expression,'[revenue]-[cost]')
+    return send({phase:'ROW',outputType:'DECIMAL',references:['revenue','cost'],
+      canonicalAst:{kind:'binary',operator:'-',left:{kind:'field',fieldId:'revenue'},right:{kind:'field',fieldId:'cost'}}})
+   }
    if(path==='/api/datasets/ds1/calculated-fields'&&method==='POST'){
     const body=req.postDataJSON();formulaWrites.push(body)
     if(body.expression.includes('CALL_OS'))return send({error:'不支持的公式函数: CALL_OS'},400)
@@ -56,7 +63,15 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.locator('.el-dialog__footer .primary-button').click()
   await page.locator('.el-message--error').first().waitFor({timeout:8000})
   assert.equal(await page.locator('.el-dialog:visible').count(),1,'Invalid formula must keep editor open')
+  await page.locator('.el-dialog__footer .subtle-button').filter({hasText:'校验公式'}).click()
+  await page.locator('.v2-formula-error').first().waitFor()
+  assert.equal(validations.length,1)
   await page.locator('.v2-formula-dialog textarea').fill('[revenue]-[cost]')
+  await page.locator('.el-dialog__footer .subtle-button').filter({hasText:'校验公式'}).click()
+  await page.locator('.v2-formula-validation').first().waitFor()
+  assert.ok((await page.locator('.v2-formula-validation').innerText()).includes('DECIMAL'))
+  assert.equal(validations.length,2)
+  assert.equal(formulaWrites.length,1,'Validation endpoint must not persist a formula')
   await page.locator('.el-dialog__footer .primary-button').click()
   await page.locator('.el-dialog').first().waitFor({state:'hidden'})
   assert.equal(formulaWrites.length,2)
