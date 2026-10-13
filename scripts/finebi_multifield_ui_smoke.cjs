@@ -1,7 +1,7 @@
 // P0-04 isolated browser smoke: real UI events, mocked authenticated APIs, no StarRocks writes.
 const assert=require('node:assert/strict')
 const {chromium}=(()=>{try{return require('playwright-core')}catch{return require('/root/.npm/_npx/9b9809298fe40d2c/node_modules/playwright-core')}})()
-const browserPath=process.env.CHROMIUM_BIN||'/root/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64'
+const browserPath=process.env.CHROMIUM_BIN||'/root/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell'
 const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
 
 ;(async()=>{
