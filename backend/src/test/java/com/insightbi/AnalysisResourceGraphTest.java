@@ -173,6 +173,42 @@ class AnalysisResourceGraphTest {
     assertEquals(4,api.get(id,false).get("revision"));
   }
 
+  @Test void independentViewLayoutsPersistPublishRestoreAndRejectInvalidReferences(){
+    String id=String.valueOf(api.create(Map.of("name","独立布局","kind","analysis")).get("id"));
+    var content=new LinkedHashMap<String,Object>(content(widget("a",first),widget("b",second)));
+    content.put("dashboards",List.of(
+      Map.of("id","wide","name","全宽视图","widgetIds",List.of("a","b"),
+        "layout",Map.of("a",Map.of("columns",12,"height",480),"b",Map.of("columns",6,"height",320))),
+      Map.of("id","compact","name","紧凑视图","widgetIds",List.of("b","a"),
+        "layout",Map.of("a",Map.of("columns",6,"height",640),"b",Map.of("columns",12,"height",480)))));
+    api.update(id,Map.of("name","独立布局","mode","grid","revision",1,"content",content));
+    var stored=(Map<?,?>)api.get(id,false).get("content");
+    assertEquals(content.get("dashboards"),stored.get("dashboards"));
+    api.publish(id);
+    assertEquals(content.get("dashboards"),((Map<?,?>)api.get(id,true).get("content")).get("dashboards"));
+    var draft=new LinkedHashMap<String,Object>(content);
+    draft.put("dashboards",List.of(Map.of("id","default","name","重排","widgetIds",List.of("a"))));
+    api.update(id,Map.of("name","独立布局","mode","grid","revision",2,"content",draft));
+    assertEquals(1,api.resources(id,false).get("dashboardCount"));
+    api.restore(id,1,Map.of("revision",3));
+    assertEquals(content.get("dashboards"),((Map<?,?>)api.get(id,false).get("content")).get("dashboards"));
+
+    var invalid=new LinkedHashMap<String,Object>(content);
+    invalid.put("dashboards",List.of(Map.of("id","invalid","name","悬空布局",
+      "widgetIds",List.of("a"),"layout",Map.of("b",Map.of("columns",12,"height",320)))));
+    assertThrows(IllegalArgumentException.class,()->api.update(id,Map.of(
+      "name","独立布局","mode","grid","revision",4,"content",invalid)));
+    invalid.put("dashboards",List.of(Map.of("id","invalid","name","非法宽度",
+      "widgetIds",List.of("a"),"layout",Map.of("a",Map.of("columns",24,"height",320)))));
+    assertThrows(IllegalArgumentException.class,()->api.update(id,Map.of(
+      "name","独立布局","mode","grid","revision",4,"content",invalid)));
+    invalid.put("dashboards",List.of(Map.of("id","invalid","name","浮点高度",
+      "widgetIds",List.of("a"),"layout",Map.of("a",Map.of("columns",6,"height",480.5)))));
+    assertThrows(IllegalArgumentException.class,()->api.update(id,Map.of(
+      "name","独立布局","mode","grid","revision",4,"content",invalid)));
+    assertEquals(4,api.get(id,false).get("revision"));
+  }
+
   @Test void evenCorruptedSavedHistoryFailsClosedOnDatasetDeletion(){
     String id=String.valueOf(api.create(Map.of("name","旧坏版本","kind","analysis")).get("id"));
     api.update(id,Map.of("name","旧坏版本","mode","grid","revision",1,
