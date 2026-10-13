@@ -206,6 +206,11 @@ class AnalysisResourceGraphTest {
       "widgetIds",List.of("a"),"layout",Map.of("a",Map.of("columns",6,"height",480.5)))));
     assertThrows(IllegalArgumentException.class,()->api.update(id,Map.of(
       "name","独立布局","mode","grid","revision",4,"content",invalid)));
+    invalid.put("dashboards",List.of(Map.of("id","invalid","name","溢出宽度",
+      "widgetIds",List.of("a"),"layout",Map.of("a",
+        Map.of("columns",4294967302L,"height",320)))));
+    assertThrows(IllegalArgumentException.class,()->api.update(id,Map.of(
+      "name","独立布局","mode","grid","revision",4,"content",invalid)));
     assertEquals(4,api.get(id,false).get("revision"));
   }
 
