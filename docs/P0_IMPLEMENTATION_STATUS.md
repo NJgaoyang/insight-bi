@@ -128,6 +128,18 @@ cd ../frontend && npm ci && npm run build
 - 隔离的 Vue/TypeScript/Vite 构建退出码 0；Chromium 多字段/COUNT DISTINCT 保存恢复及计算字段脚本均退出码 0。调用均为模拟 API。
 - 检查完成后已关闭开发机隔离预览端口 `18117`。生产 `18110/api/health` 为 `{"ok":true}`，服务 active，生产工作树干净；未发布代码或重启生产服务。
 
+## 2026-10-13 续开发：公式 AST、条件分支、查询并发与组件拆分
+
+本轮根据“仅测试修改部分”执行定向验收：未运行全量 Maven 测试、旧 V1 页面回归或全部 Chromium 用例。所有新增代码提交 `feat/finebi-analysis-engine-p0`，未发布生产环境。
+
+- **P0-03 公式**：新增 `CASE WHEN ... THEN ... ELSE ... END`（最多 8 分支）；支持受控的单引号转义字符串、`NULL/TRUE/FALSE`；比较双方和 `IF/NULLIF/COALESCE` 分支执行兼容类型检查，`MIN/MAX` 返回原字段类型。全 NULL/未知类型输出拒绝保存；公式仍禁止明细与聚合结果混用、未授权字段和危险函数。
+- **公式 AST 契约**：`FormulaCompiler.Compiled` 提供纯 JSON 可序列化 `canonicalAst`，包括 `literal/field/binary/unary/call/case` 节点。仅在已验证的公式解析过程中构建 AST，不执行任意 SQL。公式预检 API `POST /api/datasets/{id}/calculated-fields/validate` 返回 `canonicalAst/phase/outputType/references/sqlPreview`。同时修复 API 原先 180 字符限制覆盖编译器 1500 字符合同的问题。
+- **P0-04 公式编辑**：新增独立 `frontend/src/analysis/FormulaEditor.vue`，从 `AnalysisSubject.vue` 抽离对话框状态、公式验证与保存流程。支持“校验公式”但不保存，内联显示计算阶段、返回类型、字段引用数及受控错误；真正保存后通知父组件按当前数据集重新加载字段元数据，保留既有交互。
+- **P0-02 并发保护**：独立 `AnalysisQueryLimiter` 通过公平 `Semaphore` 控制同时运行的 V2 JDBC 查询最多 4 个，最多等待 250ms，不在等待时占用连接，异常和查询结束都会归还许可。新增仅作用于 `AnalysisApi` 的 `AnalysisErrorHandler`：参数 400、缺失 404、并发 429、版本冲突 409、其余 JDBC/异常 502 并隐藏服务器内部消息；不改变旧 `BiApi` 的错误合同。
+- **修改范围定向测试**（实际执行）：`FormulaCompilerTypedTest` 4 个测试、`AnalysisFormulaValidationTest` 1 个测试，后续仅 `FormulaCompilerTypedTest` 复测全 NULL 输出；`AnalysisQueryLimiterTest` 3 个测试。相关 Maven 指令均为 `mvn -q -o -Dtest=具体测试类 test`，执行退出码 0。
+- **前端修改范围测试**：`npm run build`（Vue TypeScript+Vite）两次均退出码 0；只执行 `node scripts/finebi_formula_ui_smoke.cjs` 的 Chromium 模拟 REST 测试，验证错误公式、独立验证不写数据库、公式保存、刷新字段与重新打开，结果退出码 0。**未对其他界面做整站回归**。
+- **仍阻塞**：P0-05 要求的非生产 StarRocks JDBC 真数对账、H2 元数据一致性备份与恢复测试、独立生产式预览发布和旧版本回滚演练，尚未执行，不能标记 G0/G4/P0-05 全通过。生产 `18110` 服务与其配置保持不变。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
