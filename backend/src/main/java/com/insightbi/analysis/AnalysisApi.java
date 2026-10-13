@@ -22,6 +22,15 @@ public class AnalysisApi {
   @GetMapping("/datasets/{id}/fields")
   public List<FieldCatalog.Field> fields(@PathVariable String id){return catalog.fields(id);}
 
+  @PutMapping("/datasets/{id}/fields/{fieldId}")
+  @Transactional
+  public FieldCatalog.Field renameField(@PathVariable String id,@PathVariable String fieldId,
+      @RequestBody Map<String,Object> body){
+    Object value=body.get("displayName");
+    if(!(value instanceof String label))throw new IllegalArgumentException("展示名称必须为文本");
+    return catalog.renameDisplayName(id,fieldId,label);
+  }
+
   @PostMapping("/analysis/v2/compile")
   public Map<String,Object> compile(@RequestBody Map<String,Object> request){
     String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
