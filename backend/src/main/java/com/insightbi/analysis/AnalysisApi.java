@@ -31,6 +31,15 @@ public class AnalysisApi {
     return catalog.renameDisplayName(id,fieldId,label);
   }
 
+  @PutMapping("/datasets/{id}/fields/{fieldId}/visibility")
+  @Transactional
+  public FieldCatalog.Field setFieldVisibility(@PathVariable String id,@PathVariable String fieldId,
+      @RequestBody Map<String,Object> body){
+    if(!(body.get("hidden") instanceof Boolean hidden))
+      throw new IllegalArgumentException("hidden 必须是布尔值");
+    return catalog.setHidden(id,fieldId,hidden);
+  }
+
   @PostMapping("/analysis/v2/compile")
   public Map<String,Object> compile(@RequestBody Map<String,Object> request){
     String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
