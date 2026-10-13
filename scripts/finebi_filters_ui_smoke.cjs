@@ -71,6 +71,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(queries.at(-1).filters.pre[2].op,'isNull')
   assert.equal(Object.hasOwn(queries.at(-1).filters.pre[2],'value'),false)
   await editor.locator('button[aria-label="移除明细过滤 1"]').click()
+  await page.waitForTimeout(150)
   assert.equal(queries.at(-1).filters.pre.length,2)
 
   await selects.nth(2).click()
