@@ -119,10 +119,34 @@ public class DatabaseStore {
   return rows;
  }
  public List<Map<String,Object>> readRows(Connection c,String sql,List<Object> params,int limit)throws Exception{
-  List<Map<String,Object>> data=new ArrayList<>();try(PreparedStatement ps=c.prepareStatement(sql)){
-   ps.setQueryTimeout(15);ps.setMaxRows(Math.min(500,limit));for(int i=0;i<params.size();i++)ps.setObject(i+1,params.get(i));
-   try(ResultSet rs=ps.executeQuery()){ResultSetMetaData meta=rs.getMetaData();int n=meta.getColumnCount();while(rs.next()&&data.size()<Math.min(500,limit)){Map<String,Object> row=new LinkedHashMap<>();for(int j=1;j<=n;j++){Object x=rs.getObject(j);if(x instanceof java.sql.Date||x instanceof Timestamp||x instanceof Time)x=x.toString();row.put(meta.getColumnLabel(j),x);}data.add(row);}}
-  }return data;
+  // Legacy V1 and previews always retain the original maximum of 500.
+  return readRowsBounded(c,sql,params,limit,500);
+ }
+ /** Internal V2 overflow probe; caller trims the sentinel row before returning data. */
+ public List<Map<String,Object>> readAnalysisRows(Connection c,String sql,List<Object> params,int requestedLimit)throws Exception{
+  if(requestedLimit<1||requestedLimit>500)throw new IllegalArgumentException("分析行数上限无效");
+  return readRowsBounded(c,sql,params,requestedLimit+1,501);
+ }
+ private List<Map<String,Object>> readRowsBounded(Connection c,String sql,List<Object> params,int limit,int cap)throws Exception{
+  int rowCap=Math.min(cap,limit);
+  List<Map<String,Object>> data=new ArrayList<>();
+  try(PreparedStatement ps=c.prepareStatement(sql)){
+   ps.setQueryTimeout(15);ps.setMaxRows(rowCap);
+   for(int i=0;i<params.size();i++)ps.setObject(i+1,params.get(i));
+   try(ResultSet rs=ps.executeQuery()){
+    ResultSetMetaData meta=rs.getMetaData();int n=meta.getColumnCount();
+    while(data.size()<rowCap&&rs.next()){
+     Map<String,Object> row=new LinkedHashMap<>();
+     for(int j=1;j<=n;j++){
+      Object x=rs.getObject(j);
+      if(x instanceof java.sql.Date||x instanceof Timestamp||x instanceof Time)x=x.toString();
+      row.put(meta.getColumnLabel(j),x);
+     }
+     data.add(row);
+    }
+   }
+  }
+  return data;
  }
  public List<Map<String,Object>> readFields(Connection c,String sql)throws Exception{
   try(PreparedStatement ps=c.prepareStatement("SELECT * FROM ("+safeSql(sql)+") insight_meta WHERE 1=0")){
