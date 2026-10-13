@@ -186,3 +186,9 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .analysis-field .analysis-field-rename{margin-left:auto;border:0;background:transparent;color:#8292a8;padding:2px 4px;cursor:pointer;font-size:13px}
 .analysis-field .analysis-field-rename:hover{color:#2b62c4}
 .analysis-field .analysis-field-rename+small{margin-left:0}
+
+.analysis-field.is-hidden{color:#94a1b4;background:#fafbfc;cursor:default}
+.analysis-field .analysis-field-toggle{border:0;background:transparent;color:#7585a0;font-size:11px;padding:2px 4px;cursor:pointer}
+.analysis-field .analysis-field-toggle:hover{color:#2b62c4}
+.analysis-field .analysis-field-toggle+small{margin-left:0}
+.analysis-field-search .el-checkbox{margin-top:5px;margin-bottom:0;font-size:12px}
