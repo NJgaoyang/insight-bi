@@ -22,13 +22,23 @@
 - 旧主题没有 `dashboards` 时，在编辑器内用单一默认视图呈现所有旧组件；首次保存才写入新的 `dashboards` 属性。旧普通仪表板编辑链路不强制升级。
 - UI 遵循简洁中文企业产品风格，仅加紧凑选择器和操作控件，不加入介绍卡片或虚假数据。
 
+## P1-01 第三批：已发布分析主题多视图查看
+
+- 目录中的“查看”过去统一打开 `Designer.vue`，只能按旧 V1 组件渲染。新增独立 `PublishedReport.vue`：先加载 `GET /api/dashboards/{id}?published=true`，发布对象属于分析主题时，按 `content.dashboards[]` 的引用在只读页面显示 `AnalysisV2Chart` 或兼容 `ChartWidget`；提供紧凑的已发布视图切换选择器，不提供保存、更名或删除权限。
+- 普通仪表板仍交由既有 `Designer.vue readonly` 处理，不替换原画布或重写历史数据。
+- 若是旧分析主题发布快照且没有 `dashboards`，自动以单一视图展示全部组件；新旧数据没有强制迁移。
+- 新增 `finebi_published_views_ui_smoke.cjs`，隔离 Chromium + 模拟 API 验证已发布 V2 的两个视图和原普通仪表板只读路由，**PASS**。
+- 新增 `AnalysisResourceGraphTest` 的版本恢复用例：通过既有 `/versions/{version}/restore` 恢复多视图配置和稳定组件/数据集引用，**PASS**。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
-- `mvn -q -o -Dtest=AnalysisResourceGraphTest test`：**6/6 PASS**。覆盖多数据集、视图引用、保存/发布索引、历史数据集删除保护、旧仪表板合同、缺失和伪造引用。
+- `mvn -q -o -Dtest=AnalysisResourceGraphTest test`：**7/7 PASS**。覆盖多数据集、视图引用、保存/发布索引、历史数据集删除保护、旧仪表板合同、缺失和伪造引用。
 - `mvn -q -o -Dtest=AnalysisResourceGraphTest,FineBiWorkspaceFolderTest test`：**成功**，附带只检查相关旧工作区合同。
 - `npm run build`：Vue 3 / TypeScript / Vite **成功**。
 - `node scripts/finebi_theme_views_ui_smoke.cjs`：隔离 Chromium 真实页面操作 + 模拟 REST，**成功**。验证两个视图共享组件、选择/重命名/保存/刷新恢复和删除视图不删组件。
+- `node scripts/finebi_published_views_ui_smoke.cjs`：隔离 Chromium 通过模拟 REST 验证**真实已发布查看路由**（V2 多视图切换与原 V1 Designer），**成功**。
+- 版本恢复测试覆盖：`AnalysisResourceGraphTest` **7/7 PASS**，含从旧版本恢复主题多视图与组件 ID。
 - `bash -n scripts/p0_scoped_ci.sh` 和 `node --check scripts/finebi_theme_views_ui_smoke.cjs`：**成功**。CI 的文件变更测试映射包括 `AnalysisResourceGraphTest`。
 - 未运行全量回归；没有进行 StarRocks 真数或生产发布。
 
