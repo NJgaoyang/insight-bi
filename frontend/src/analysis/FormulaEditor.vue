@@ -72,7 +72,7 @@ async function saveFormula(){
     校验通过 · {{formulaValidation.phase==='AGGREGATE'?'聚合计算':'行级计算'}} · {{formulaValidation.outputType}}
     · 引用 {{formulaValidation.references.length}} 个字段
    </div>
-   <div class="v2-formula-fields"><button v-for="f in fields" :key="f.id" @click="insertFormulaField(f)">{{f.name}}</button></div>
+   <div class="v2-formula-fields"><button v-for="f in fields.filter(x=>!x.hidden)" :key="f.id" @click="insertFormulaField(f)">{{f.name}}</button></div>
   </div>
   <template #footer>
    <button class="subtle-button" @click="opened=false">取消</button>
