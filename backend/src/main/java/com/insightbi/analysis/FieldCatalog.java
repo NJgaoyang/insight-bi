@@ -2,6 +2,7 @@ package com.insightbi.analysis;
 
 import com.insightbi.DatabaseStore;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.sql.Types;
@@ -39,9 +40,16 @@ public class FieldCatalog {
       String type=typeOf(String.valueOf(f.getOrDefault("type","")));
       boolean numeric=Set.of("INTEGER","DOUBLE","DECIMAL").contains(type)||Boolean.TRUE.equals(f.get("numeric"));
       String role=numeric?"BOTH":"DIMENSION";
-      jdbc.update("INSERT INTO insight_dataset_field(id,dataset_id,source_name,display_name,logical_type,role,ordinal) "+
-                  "SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM insight_dataset_field WHERE dataset_id=? AND source_name=?)",
-                  stable,datasetId,name,name,type,role,ordinal++,datasetId,name);
+      // A concurrent /fields request may insert the same stable ID after our
+      // NOT EXISTS check. The composite UNIQUE key is authoritative.
+      try{
+        jdbc.update("INSERT INTO insight_dataset_field(id,dataset_id,source_name,display_name,logical_type,role,ordinal) "+
+                    "SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM insight_dataset_field WHERE dataset_id=? AND source_name=?)",
+                    stable,datasetId,name,name,type,role,ordinal,datasetId,name);
+      }catch(DuplicateKeyException race){
+        // Another request has already created the same dataset field.
+      }
+      ordinal++;
       // A dataset's SELECT may change the physical JDBC type without renaming
       // the selected column. Keep the persisted field ID and custom label,
       // but refresh its logical type/default role so formulas and filters stay safe.
