@@ -69,6 +69,35 @@
 - CI `scripts/p0_scoped_ci.sh` 已配置仅在加工编译器/API 或相关元数据迁移发生变更时运行这两组测试；**未执行全量回归**。
 - 生产 `18110/api/health` 为 `{"ok":true}`、`insight-bi.service` active、生产 Git 工作树 0 改动；预览 `18117` 已关闭。**未部署生产、新增元数据表未在生产执行**。
 
+## P1-02 第二批：条件列 + 同连接上下合并（2026-10-14）
+
+继续按执行计划实现**有序、可保存、后端真实编译的加工步骤**，并遵守用户“只测试修改部分”的要求。
+
+### 条件列
+
+- 后端新增 `case` 步骤：源字段 `sourceFieldId`、比较条件、结果列 `fieldId`、输出类型 `STRING/DECIMAL`、满足与不满足条件的值，编译为 `CASE WHEN ... THEN ? ELSE ? END`，仅允许白名单操作符。
+- 新列与源字段使用不同 ID，数值分支进行类型校验；所有比较值和输出值通过 JDBC 参数绑定。**外层 SELECT 的条件列参数必须排在内层 FROM 子查询参数之前**，已通过 H2 实际执行验证。
+- 支持条件列参与后续过滤、分组，分组之后新增条件列则仅可选择汇总后仍可见的字段。前端提供中文条件列编辑表单并参与步骤保存/恢复。
+
+### 同连接 UNION ALL
+
+- 新增 `union` 步骤：通过 `sourceDatasetId` 选择另一份已保存数据集；后端只根据真实元数据读取 SQL，拒绝客户端任意 SQL、相同数据集、跨连接、列名/字段数/类型不兼容等情况。
+- 第一批限制：**仅允许在第一步执行、一次合并、字段物理名称和逻辑类型一致**；明确采用 `UNION ALL`，保留重复记录，允许后续计算列/过滤/分组。JOIN、多数据源组合和自动字段映射尚未实现。
+- 额外数据集的只读 SELECT 仍经过 `ReadOnlySqlGuard`，投影列由字段目录安全生成；不会创建数据库表或修改业务数据。保存的配置源指纹同时包含第二份数据集的 SQL/结构，关联 SQL 修改后返回 stale 并拒绝旧配置预览。
+- 前端“上下合并”仅显示同连接候选数据集、自动放在第一位，禁止移动到后面。现有公共数据、仪表板和旧加工配置保持兼容。
+
+### 本批定向验证（隔离开发机）
+
+- `mvn -q -o -Dtest=AnalysisPipelineCaseTest,AnalysisPipelineUnionTest,AnalysisPipelineCompilerTest,AnalysisPipelineApiTest test`：**13/13 PASS**（CASE 4、UNION 3、既有 Compiler 4、Api 2；均无跳过）。
+- `npm run build`：TypeScript 类型检查 + Vite 构建 PASS。
+- `node scripts/finebi_pipeline_ui_smoke.cjs`：Chromium 页面操作 + 模拟 REST PASS，新增条件列/同连接上下合并的创建、固定顺序、保存和重开。
+- `scripts/p0_scoped_ci.sh` 增加两个新测试类的按变更触发映射，`bash -n` PASS。
+- **没有做全量回归、没有执行 DataForge StarRocks 真库对账、没有部署生产 `18110`。** 本阶段 H2 与模拟 API 结果不代表 StarRocks 实库验收。
+
+### 仍未完成
+
+P1-02 的同连接 JOIN（重名字段与多对多语义）、多源 UNION 映射与去重可选项、多级汇总以及加工结果作为分析主题可复用数据集仍待实现。P0-05/G4 的真实 StarRocks 与生产备份、恢复及发布门禁继续暂缓/未通过。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
