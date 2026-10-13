@@ -42,6 +42,12 @@ public class FieldCatalog {
       jdbc.update("INSERT INTO insight_dataset_field(id,dataset_id,source_name,display_name,logical_type,role,ordinal) "+
                   "SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM insight_dataset_field WHERE dataset_id=? AND source_name=?)",
                   stable,datasetId,name,name,type,role,ordinal++,datasetId,name);
+      // A dataset's SELECT may change the physical JDBC type without renaming
+      // the selected column. Keep the persisted field ID and custom label,
+      // but refresh its logical type/default role so formulas and filters stay safe.
+      jdbc.update("UPDATE insight_dataset_field SET logical_type=?,role=? "+
+                  "WHERE dataset_id=? AND source_name=? AND logical_type<>?",
+                  type,role,datasetId,name,type);
     }
     for(Map<String,Object> f:jdbc.queryForList("SELECT id,source_name,display_name,logical_type,role FROM insight_dataset_field WHERE dataset_id=? ORDER BY ordinal",datasetId)){
       String source=String.valueOf(f.get("source_name"));
