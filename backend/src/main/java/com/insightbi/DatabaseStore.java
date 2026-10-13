@@ -43,6 +43,8 @@ public class DatabaseStore {
   boolean hasFieldHidden=columnExists("insight_dataset_field","hidden");
    if(!hasFieldHidden)jdbc.execute("ALTER TABLE insight_dataset_field ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT FALSE");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_calculated_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, name VARCHAR(100) NOT NULL, expression VARCHAR(1500) NOT NULL, phase VARCHAR(20) NOT NULL, output_type VARCHAR(20) NOT NULL, revision INT NOT NULL DEFAULT 1, UNIQUE(dataset_id,name))");
+  // P1-02: an isolated, reversible metadata table. Never modifies dataset SQL.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_pipeline (dataset_id VARCHAR(36) PRIMARY KEY, config_json LONGTEXT NOT NULL, source_sql_hash VARCHAR(64) NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
 
 
 
