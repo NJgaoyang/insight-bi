@@ -79,8 +79,8 @@ public final class AnalysisResourceGraph {
             if(!(columns instanceof Number cw)||!(height instanceof Number ch)||
                 !(cw instanceof Integer||cw instanceof Long)||
                 !(ch instanceof Integer||ch instanceof Long)||
-                !(cw.intValue()==6||cw.intValue()==12)||
-                !(ch.intValue()==320||ch.intValue()==480||ch.intValue()==640))
+                !(cw.longValue()==6||cw.longValue()==12)||
+                !(ch.longValue()==320||ch.longValue()==480||ch.longValue()==640))
               throw new IllegalArgumentException("布局列宽或高度超出允许范围");
           }
         }
