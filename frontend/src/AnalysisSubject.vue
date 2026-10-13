@@ -118,7 +118,7 @@ async function load(){
 function mark(){dirty.value=true}
 function addComponent(){
  const index=components.value.length+1
- const widget:Widget={
+ const widget:AnalysisWidgetV2={
   id:crypto.randomUUID(),type:'bar',title:'组件'+index,datasetId:'',dimension:'',measure:'',agg:'SUM',columns:[],
   analysisV2:{dimensions:[],measures:[],filters:{pre:[],post:[]},sort:[],limit:200},
   x:0,y:0,w:5,h:5,px:0,py:0,width:600,height:340,
