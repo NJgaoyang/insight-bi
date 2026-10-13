@@ -26,11 +26,12 @@ public final class AnalysisQueryPlanner {
     Map<String,Metric> metrics=new HashMap<>();
     List<Map<String,Object>> columns=new ArrayList<>();
     List<Object> params=new ArrayList<>();
-    Set<String> aliases=new HashSet<>();
+    Set<String> aliases=new HashSet<>(),selectedDimensions=new HashSet<>();
 
     int index=0;
     for(Map<String,Object> d:dims){
       String id=required(d,"fieldId");
+      if(!selectedDimensions.add(id))throw new IllegalArgumentException("同一维度不能重复选择: "+id);
       FieldCatalog.Field f=field(id);
       String phase=f.calculated()?formulas.compile(f.expression()).phase():"ROW";
       if(!phase.equals("ROW"))throw new IllegalArgumentException("聚合计算字段不能作为分组维度");
@@ -93,7 +94,10 @@ public final class AnalysisQueryPlanner {
     StringBuilder sql=new StringBuilder("SELECT ").append(String.join(", ",select))
         .append(" FROM (").append(from).append(") biq");
     if(!where.isEmpty())sql.append(" WHERE ").append(String.join(" AND ",where));
-    if(!group.isEmpty()&&!measures.isEmpty())sql.append(" GROUP BY ").append(String.join(", ",group));
+    // Dimension-only analysis must produce unique dimension combinations,
+    // not duplicate source rows. Keep the same GROUP BY semantics as a
+    // dimension + measure query.
+    if(!group.isEmpty())sql.append(" GROUP BY ").append(String.join(", ",group));
     if(!having.isEmpty()){
       if(measures.isEmpty())throw new IllegalArgumentException("结果过滤必须先选择指标");
       sql.append(" HAVING ").append(String.join(" AND ",having));
@@ -109,7 +113,9 @@ public final class AnalysisQueryPlanner {
     int limit=number(request.get("limit"),200);
     if(limit<1||limit>500)throw new IllegalArgumentException("返回行数必须在 1~500 之间");
     sql.append(" LIMIT ?");
-    params.add(limit);
+    // Fetch one sentinel row, while exposing at most the requested number
+    // of records to clients. This makes 'truncated' factual even at 500.
+    params.add(limit+1);
     return new Plan(sql.toString(),Collections.unmodifiableList(new ArrayList<>(params)),List.copyOf(columns),limit);
   }
   private FieldCatalog.Field field(String id){
