@@ -22,7 +22,9 @@ for path in "${paths[@]}"; do
    case "$path" in
     backend/src/test/java/*Test.java) name="${path##*/}";add_test "${name%.java}";;
     */DatabaseStore.java|*/BiApi.java)
-      add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest;add_test BiQueryInTest;;
+      add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest
+      add_test BiQueryInTest;add_test AnalysisResourceGraphTest;;
+    */AnalysisResourceGraph.java) add_test AnalysisResourceGraphTest;;
     */FieldCatalog.java)
       add_test FieldVisibilityTest;add_test FieldCatalogRefreshTest;add_test FieldCatalogConcurrencyTest;;
     */DatasetSchemaGuard.java)
