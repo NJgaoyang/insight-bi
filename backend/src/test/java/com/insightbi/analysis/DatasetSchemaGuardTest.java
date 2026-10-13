@@ -75,6 +75,44 @@ class DatasetSchemaGuardTest {
   assertDoesNotThrow(()->f.guard.check(f.dataset,
     columns("city","VARCHAR","amount","DECIMAL","new_city","VARCHAR")));
  }
+ @Test void explicitSourceAliasRenameKeepsIdentityFormulasAndSavedWidgets(){
+  var f=fixture();
+  var formula=new AnalysisApi(f.store,f.db,new FieldCatalog(f.store,f.db));
+  String calc=String.valueOf(formula.addFormula(f.dataset,Map.of(
+    "name","北京标志","expression","IF(["+f.city+"]='北京',1,0)")).get("id"));
+  String saved=f.store.json(Map.of("widgets",List.of(Map.of("datasetId",f.dataset,
+    "analysisV2",Map.of("dimensions",List.of(Map.of("fieldId",f.city)),
+      "measures",List.of(Map.of("fieldId",f.amount,"id","m1","aggregate","SUM")))))));
+  snapshot(f,saved,saved);
+  f.db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",
+    UUID.randomUUID().toString(),"saved-dashboard",1,"以前版本","grid",saved);
+
+  var incoming=columns("region","VARCHAR","amount","DECIMAL");
+  assertThrows(IllegalArgumentException.class,()->f.guard.check(f.dataset,incoming),
+    "Renames must never be inferred from similar column types or positions");
+  Map<String,String> mapping=Map.of("city","region");
+  assertDoesNotThrow(()->f.guard.check(f.dataset,incoming,mapping));
+  f.guard.applyRenames(f.dataset,mapping);
+  f.db.update("UPDATE insight_dataset SET fields_json=? WHERE id=?",f.store.json(incoming),f.dataset);
+
+  var catalog=new FieldCatalog(f.store,f.db);
+  var region=catalog.fields(f.dataset).stream().filter(x->"region".equals(x.sourceColumn())).findFirst().orElseThrow();
+  assertEquals(f.city,region.id(),"Column identity survives an explicit alias rename");
+  assertEquals("city",region.name(),"Presentation label remains unchanged until separately edited");
+  assertEquals(2,f.db.queryForObject(
+    "SELECT COUNT(*) FROM insight_dataset_field WHERE dataset_id=?",Integer.class,f.dataset));
+  var validated=new FormulaCompiler(FieldCatalog.index(catalog.fields(f.dataset))).compile("["+calc+"]");
+  assertTrue(validated.sql().contains("biq.`region`"));
+  var query=new AnalysisQueryPlanner(catalog.fields(f.dataset)).compile(
+    "SELECT region,amount FROM sales",
+    Map.of("dimensions",List.of(Map.of("fieldId",f.city)),
+      "measures",List.of(Map.of("fieldId",f.amount,"id","m1","aggregate","SUM"))));
+  assertTrue(query.sql().contains("biq.`region`"));
+
+  // Disallow alias mapping to an already-existing active source column.
+  assertThrows(IllegalArgumentException.class,()->f.guard.check(f.dataset,
+    columns("region","VARCHAR","amount","DECIMAL"),Map.of("region","amount")));
+ }
  @Test void legacyFieldAndDateGroupingTypeChangeAreAlsoProtected(){
   var f=fixture();
   snapshot(f,f.store.json(Map.of("widgets",List.of(Map.of("datasetId",f.dataset,
