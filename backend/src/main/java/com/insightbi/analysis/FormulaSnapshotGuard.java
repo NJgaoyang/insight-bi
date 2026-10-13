@@ -48,24 +48,21 @@ public final class FormulaSnapshotGuard {
   Set<String> transitiveDependents(String datasetId,String targetId){
     List<Map<String,Object>> formulas=db.queryForList(
       "SELECT id,expression FROM insight_calculated_field WHERE dataset_id=?",datasetId);
+    Map<String,FieldCatalog.Field> all=FieldCatalog.index(new FieldCatalog(store,db).fields(datasetId));
     Set<String> affected=new HashSet<>();
     affected.add(targetId);
-    boolean changed;
-    do{
-      changed=false;
-      for(var formula:formulas){
-        String id=String.valueOf(formula.get("id"));
-        if(affected.contains(id))continue;
-        String expr=String.valueOf(formula.get("expression"));
-        for(String dependency:affected){
-          if(expr.contains("["+dependency+"]")){
-            affected.add(id);
-            changed=true;
-            break;
-          }
-        }
+    // The compiler's actual references exclude quoted string literals that
+    // happen to contain "[field-id]". It also expands multi-layer formulas.
+    for(var formula:formulas){
+      String id=String.valueOf(formula.get("id"));
+      final FormulaCompiler.Compiled compiled;
+      try{
+        compiled=new FormulaCompiler(all).compile(String.valueOf(formula.get("expression")));
+      }catch(IllegalArgumentException ex){
+        throw new IllegalStateException("计算字段依赖无法校验，请修复元数据后再操作");
       }
-    }while(changed);
+      if(compiled.references().contains(targetId))affected.add(id);
+    }
     return Set.copyOf(affected);
   }
 
