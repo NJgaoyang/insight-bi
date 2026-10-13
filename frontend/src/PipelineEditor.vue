@@ -12,11 +12,17 @@ type Measure={id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX'
 type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
 type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
  op:string;value?:string;outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
-type Step=FormulaStep|FilterStep|GroupStep|CaseStep
+type UnionStep={id:string;type:'union';sourceDatasetId:string}
+type Step=FormulaStep|FilterStep|GroupStep|CaseStep|UnionStep
 type Column={id:string;name:string;label:string;type:string;numeric:boolean}
 
 const loading=ref(true),busy=ref(false),dirty=ref(false),stale=ref(false)
 const datasetName=ref('数据加工'),revision=ref(0)
+type DatasetOption={id:string;name:string;connection_id:string}
+const availableDatasets=ref<DatasetOption[]>([])
+const primaryConnection=ref('')
+const unionCandidates=computed(()=>availableDatasets.value.filter(d=>
+ d.id!==props.id&&d.connection_id===primaryConnection.value))
 const baseFields=ref<FieldV2[]>([])
 const steps=ref<Step[]>([])
 const queryLimit=ref(30)
@@ -63,6 +69,14 @@ function addFormula(){
  steps.value.push({id,type:'formula',fieldId:nextId('field'),name:'计算列',expression:''})
  changed()
 }
+function addUnion(){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ if(steps.value.some(x=>x.type==='union')){ElMessage.warning('首批仅支持一次上下合并');return}
+ const candidate=unionCandidates.value[0]
+ if(!candidate){ElMessage.warning('没有相同数据连接的其他数据集');return}
+ steps.value.unshift({id:nextId('s'),type:'union',sourceDatasetId:candidate.id})
+ changed()
+}
 function addCase(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
  const source=selectable(steps.value.length)[0]
@@ -94,6 +108,10 @@ function addMeasure(step:GroupStep,index:number){
 function move(index:number,delta:number){
  const next=index+delta
  if(next<0||next>=steps.value.length)return
+ if((index===0&&steps.value[index]?.type==='union')||
+    (next===0&&steps.value[0]?.type==='union')){
+  ElMessage.warning('上下合并需要保留在第一步');return
+ }
  const [item]=steps.value.splice(index,1)
  steps.value.splice(next,0,item)
  changed()
@@ -108,7 +126,10 @@ async function load(){
    api<FieldV2[]>('/datasets/'+encodeURIComponent(props.id)+'/fields'),
    api<{steps:Step[];revision:number;stale:boolean}>('/datasets/'+encodeURIComponent(props.id)+'/pipeline')
   ])
-  datasetName.value=all.find(x=>x.id===props.id)?.name||'数据加工'
+  const source=all.find(x=>x.id===props.id)
+  datasetName.value=source?.name||'数据加工'
+  primaryConnection.value=(source as DatasetOption|undefined)?.connection_id||''
+  availableDatasets.value=all as DatasetOption[]
   baseFields.value=fields
   steps.value=structuredClone(config.steps)
   revision.value=config.revision;stale.value=config.stale
@@ -180,18 +201,28 @@ onMounted(load)
       <button @click="addFormula">＋ 计算列</button>
       <button @click="addFilter">＋ 过滤</button>
       <button @click="addCase">＋ 条件列</button>
+      <button :disabled="steps.some(x=>x.type==='union')||!unionCandidates.length"
+       @click="addUnion">＋ 上下合并</button>
       <button :disabled="isGroupPresent" @click="addGroup">＋ 分组汇总</button>
      </div>
     </div>
     <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
     <section v-for="(step,index) in steps" :key="step.id" class="pipeline-step">
      <header class="pipeline-step-header">
-      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':'分组汇总'}}</strong>
-      <button title="步骤前移" :disabled="index===0" @click="move(index,-1)">↑</button>
-      <button title="步骤后移" :disabled="index===steps.length-1" @click="move(index,1)">↓</button>
+      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':step.type==='union'?'上下合并':'分组汇总'}}</strong>
+      <button title="步骤前移" :disabled="index===0||(index===1&&steps[0]?.type==='union')" @click="move(index,-1)">↑</button>
+      <button title="步骤后移" :disabled="index===steps.length-1||step.type==='union'" @click="move(index,1)">↓</button>
       <button title="删除步骤" @click="removeStep(index)">删除</button>
      </header>
-     <div v-if="step.type==='formula'" class="pipeline-fields">
+     <div v-if="step.type==='union'" class="pipeline-fields">
+      <label>需要追加的数据集</label>
+      <el-select v-model="step.sourceDatasetId" filterable @change="changed">
+       <el-option v-for="source in unionCandidates" :key="source.id"
+        :label="source.name" :value="source.id"/>
+      </el-select>
+      <small>仅支持同一数据连接、输出字段名称和类型相同的数据集；保留重复行。</small>
+     </div>
+     <div v-else-if="step.type==='formula'" class="pipeline-fields">
       <label>列名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>
       <label>计算表达式</label><el-input v-model="step.expression" type="textarea" :rows="2"
        placeholder="选择下方字段插入引用，例如：[字段ID]-[字段ID]" @input="changed"/>
