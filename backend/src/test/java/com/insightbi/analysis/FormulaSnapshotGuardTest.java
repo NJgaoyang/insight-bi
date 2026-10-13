@@ -90,6 +90,19 @@ class FormulaSnapshotGuardTest {
     assertThrows(IllegalStateException.class,()->f.api.deleteFormula(f.dataset,id));
   }
 
+  @Test void quotedFormulaTextDoesNotCreatePhantomDependency(){
+    var f=fixture();
+    String base=formula(f,"基础金额","["+f.amount+"]+1");
+    // A string literal may mention another field ID without referencing it.
+    String note=formula(f,"静态文字","IF(TRUE, 'note ["+base+"]', 'other')");
+    dashboard(f,"{}",f.store.json(Map.of("widgets",List.of(Map.of(
+      "analysisV2",Map.of("dimensions",List.of(Map.of("fieldId",note))))))));
+    assertEquals(Set.of(base),
+      new FormulaSnapshotGuard(f.store,f.db).transitiveDependents(f.dataset,base));
+    assertEquals(2,f.api.updateFormula(f.dataset,base,
+      Map.of("name","基础金额","expression","["+f.amount+"]+2","revision",1)).get("revision"));
+  }
+
   @Test void corruptPublishedSnapshotFailsClosed(){
     var f=fixture();
     String id=formula(f,"有快照","["+f.amount+"]+1");
