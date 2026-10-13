@@ -175,6 +175,10 @@ cd ../frontend && npm ci && npm run build
 
 **P0-05 仍未通过的实际阻塞**：生产 `runtime/local.env` 缺失；生产 H2 一致性备份与恢复没有执行；独立非生产 StarRocks 的真实 JDBC 只读账号及对账尚未提供/启用；生产式隔离部署及回滚演练没有进行。参见 `docs/P0_RELEASE_GATE.md`；未满足前不会发布到 `18110` 或合并成正式完成。
 
+### GitHub Actions 修复记录
+
+GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398263323) 曾在 `AnalysisQueryBoundaryTest` 失败：H2 MySQL 兼容测试连接不会报告 JDBC 只读状态，而新的 V2 查询门禁会正确拒绝这个连接。已仅调整该 H2 查询边界用例，模拟支持只读的 JDBC 状态；拒绝非只读连接的生产策略没有放宽，并由 `ReadOnlyConnectionPolicyTest` 单独验证。开发机定向 `AnalysisQueryBoundaryTest` 通过；GitHub Actions [#305](https://github.com/NJgaoyang/insight-bi/actions/runs/38399054252) **success**。修复提交 `15f6182`。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
