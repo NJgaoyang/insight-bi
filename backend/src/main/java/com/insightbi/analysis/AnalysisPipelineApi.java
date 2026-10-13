@@ -103,7 +103,17 @@ public final class AnalysisPipelineApi {
     if(sources.isEmpty())return sha256(sql); // preserve previous pipeline revisions
     var fingerprint=new StringBuilder(sql);
     for(var entry:sources.entrySet()){
-      fingerprint.append("\\nRELATED:").append(entry.getKey()).append(':')
+      // Preserve the original UNION fingerprint so existing configurations
+      // do not become stale merely because JOIN support was introduced.
+      String kind="UNION";
+      if(steps instanceof List<?> items){
+        for(Object raw:items){
+          if(raw instanceof Map<?,?> item&&
+              Objects.equals(entry.getKey(),item.get("sourceDatasetId"))&&
+              "join".equals(item.get("type"))){kind="JOIN";break;}
+        }
+      }
+      fingerprint.append("\\n").append(kind).append(':').append(entry.getKey()).append(':')
         .append(entry.getValue().sourceSql());
       for(var field:entry.getValue().fields()){
         if(!field.calculated())fingerprint.append("|").append(field.sourceColumn())
