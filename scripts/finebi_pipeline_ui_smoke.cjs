@@ -94,7 +94,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const savedCondition=lastSave.steps.at(-1)
   assert.equal(savedCondition.type,'case')
   assert.ok(savedCondition.fieldId.startsWith('field_'))
-  assert.equal(savedCondition.sourceFieldId,'revenue')
+  assert.ok(lastSave.steps[2].measures.some(m=>m.id===savedCondition.sourceFieldId),
+   'Condition after group must bind an available grouped measure, not an unavailable base field')
   assert.notEqual(savedCondition.fieldId,savedCondition.sourceFieldId)
   assert.equal(savedCondition.thenValue,'达标')
   await page.reload({waitUntil:'domcontentloaded'})
