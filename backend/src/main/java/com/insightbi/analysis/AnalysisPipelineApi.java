@@ -81,7 +81,8 @@ public final class AnalysisPipelineApi {
     if(!(rawSteps instanceof List<?> steps))return Map.of();
     Map<String,AnalysisPipelineCompiler.UnionSource> sources=new LinkedHashMap<>();
     for(Object raw:steps){
-      if(!(raw instanceof Map<?,?> step)||!"union".equals(step.get("type")))continue;
+      if(!(raw instanceof Map<?,?> step)||
+         !Set.of("union","join").contains(step.get("type")))continue;
       Object value=step.get("sourceDatasetId");
       if(!(value instanceof String id)||id.isBlank()||id.equals(primaryId))
         throw new IllegalArgumentException("请选择另一个合法的数据集进行上下合并");
@@ -91,7 +92,7 @@ public final class AnalysisPipelineApi {
       sources.put(id,new AnalysisPipelineCompiler.UnionSource(
         String.valueOf(secondary.get("sql_body")),catalog.fields(id)));
     }
-    if(sources.size()>1)throw new IllegalArgumentException("首批只支持一个上下合并数据源");
+    if(sources.size()>1)throw new IllegalArgumentException("首批只支持一个合并或关联数据源");
     return Map.copyOf(sources);
   }
 
@@ -102,7 +103,7 @@ public final class AnalysisPipelineApi {
     if(sources.isEmpty())return sha256(sql); // preserve previous pipeline revisions
     var fingerprint=new StringBuilder(sql);
     for(var entry:sources.entrySet()){
-      fingerprint.append("\\nUNION:").append(entry.getKey()).append(':')
+      fingerprint.append("\\nRELATED:").append(entry.getKey()).append(':')
         .append(entry.getValue().sourceSql());
       for(var field:entry.getValue().fields()){
         if(!field.calculated())fingerprint.append("|").append(field.sourceColumn())
