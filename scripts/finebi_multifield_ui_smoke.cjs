@@ -98,6 +98,22 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(await shelves.nth(0).locator('.analysis-chip').count(),2)
   assert.equal(await shelves.nth(1).locator('.analysis-chip').count(),2)
   assert.deepEqual(queries.at(-1).dimensions.map(d=>d.fieldId),['month','city'])
+
+  // A STRING dimension can also be dragged/clicked as COUNT and made distinct.
+  await page.locator('.analysis-field').filter({hasText:'城市'}).last().click()
+  const countChip=shelves.nth(1).locator('.analysis-chip').last()
+  await countChip.locator('.el-checkbox').click()
+  await page.waitForFunction(()=>!!document.querySelector('.v2-query-meta'))
+  await page.waitForTimeout(100)
+  assert.equal(queries.at(-1).measures.at(-1).fieldId,'city')
+  assert.equal(queries.at(-1).measures.at(-1).aggregate,'COUNT')
+  assert.equal(queries.at(-1).measures.at(-1).distinct,true)
+  await page.locator('.analysis-header-actions .analysis-primary').click()
+  await page.waitForFunction(()=>document.querySelector('.analysis-save-indicator')?.textContent?.includes('已保存'))
+  assert.equal(saves.at(-1).content.widgets[0].analysisV2.measures.at(-1).distinct,true)
+  await page.reload()
+  await page.locator('.analysis-shelf.v2-shelf .analysis-chip').first().waitFor()
+  assert.equal(queries.at(-1).measures.at(-1).distinct,true)
   assert.deepEqual(errors,[])
   console.log('PASS P0 V2 UI: two dimensions, two measures, drag reorder, undo, redo, save, refresh/restore')
  }finally{await browser.close()}
