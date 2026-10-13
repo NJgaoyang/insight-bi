@@ -14,17 +14,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  */
 @EnabledIfEnvironmentVariable(named="P0_STARROCKS_E2E",matches="true")
 class StarRocksReadOnlyReconciliationTest {
-  private static final String SOURCE=String.join(" UNION ALL ",
-    row("北京","2026-01-05",100,90,10),
-    row("北京","2026-01-10",200,150,50),
-    row("上海","2026-01-05",50,40,10),
-    row("南京","2026-01-05",0,-5,5));
-  private static String row(String city,String day,int revenue,int cost,int profit){
-    return "SELECT '"+city+"' AS city, CAST('"+day+"' AS DATE) AS order_date, "+
-      "CAST("+revenue+" AS DECIMAL(18,2)) AS revenue, "+
-      "CAST("+cost+" AS DECIMAL(18,2)) AS cost, "+
-      "CAST("+profit+" AS DECIMAL(18,2)) AS profit";
-  }
+  private static final String SOURCE=StarRocksInlineFixture.SOURCE;
   private static final List<FieldCatalog.Field> FIELDS=List.of(
     new FieldCatalog.Field("f_city","城市","city","STRING","DIMENSION",false,false,"ROW",null),
     new FieldCatalog.Field("f_date","日期","order_date","DATE","DIMENSION",false,false,"ROW",null),
@@ -103,11 +93,7 @@ class StarRocksReadOnlyReconciliationTest {
 
       // Extra fixture rows exercise repeated values, a NULL decimal and NULL date.
       // The SQL remains an inline SELECT-only derived dataset.
-      String edgeSource=SOURCE+" UNION ALL "+
-        row("上海","2026-01-05",50,40,10)+
-        " UNION ALL SELECT '上海' AS city, CAST(NULL AS DATE) AS order_date, "+
-        "CAST(NULL AS DECIMAL(18,2)) AS revenue, CAST(NULL AS DECIMAL(18,2)) AS cost, "+
-        "CAST(NULL AS DECIMAL(18,2)) AS profit";
+      String edgeSource=StarRocksInlineFixture.EDGE_SOURCE;
       Map<String,Object> counts=Map.of("dimensions",List.of(),"measures",List.of(
         Map.of("id","count_city","fieldId","f_city","aggregate","COUNT"),
         Map.of("id","count_revenue","fieldId","f_revenue","aggregate","COUNT"),
