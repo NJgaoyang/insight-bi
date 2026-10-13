@@ -65,5 +65,10 @@ jobs:
             case "$file" in
               *.cjs|*.js) node --check "$file";;
               *.sh) bash -n "$file";;
+              *.java)
+                scratch="$(mktemp -d)"
+                javac -d "$scratch" "$file"
+                rm -rf "$scratch"
+                ;;
             esac
           done < <(git diff --name-only "$BASE" HEAD -- scripts/)
