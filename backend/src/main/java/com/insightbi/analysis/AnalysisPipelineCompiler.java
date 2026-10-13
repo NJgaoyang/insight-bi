@@ -50,6 +50,7 @@ public final class AnalysisPipelineCompiler {
         case "filter"->filter(state,step);
         case "case"->caseColumn(state,step);
         case "union"->union(state,step,index);
+        case "join"->join(state,step,index);
         case "group"->group(state,step);
         default->throw new IllegalArgumentException("未实现的加工步骤："+type);
       };
@@ -103,6 +104,84 @@ public final class AnalysisPipelineCompiler {
     String sql="SELECT "+String.join(", ",lhs)+" FROM ("+state.sql()+") biq "+
       "UNION ALL SELECT "+String.join(", ",rhs)+" FROM ("+secondary+") bis";
     return new State(sql,state.fields(),state.params(),false);
+  }
+
+  /**
+   * An explicit same-connection, first-step equi-JOIN. Exactly named right
+   * fields are projected under new stable IDs; never SELECT * from both sides.
+   * One-to-many fan-out is possible for non-unique keys and must be explicitly
+   * acknowledged by the editor/user. No cross join, ON expression or SQL input.
+   */
+  private State join(State state,Map<String,Object> step,int position){
+    if(position!=1)throw new IllegalArgumentException("关联只能放在加工步骤第一位");
+    String sourceId=required(step,"sourceDatasetId");
+    UnionSource source=unionSources.get(sourceId);
+    if(source==null)throw new IllegalArgumentException("关联数据集不存在或不属于当前数据连接");
+    String joinType=required(step,"joinType").toUpperCase(Locale.ROOT);
+    if(!Set.of("INNER","LEFT").contains(joinType))
+      throw new IllegalArgumentException("只支持 INNER 和 LEFT JOIN");
+    if(!Boolean.TRUE.equals(step.get("acknowledgeFanout")))
+      throw new IllegalArgumentException("关联键可能重复并扩大行数，请明确确认行数放大风险");
+
+    List<FieldCatalog.Field> left=initial.stream().filter(f->!f.calculated()).toList();
+    List<FieldCatalog.Field> right=source.fields().stream().filter(f->!f.calculated()).toList();
+    if(left.isEmpty()||left.size()>100||right.isEmpty()||right.size()>100)
+      throw new IllegalArgumentException("关联字段目录不存在或超过限制");
+    Map<String,FieldCatalog.Field> leftFields=new LinkedHashMap<>();
+    for(var f:left)leftFields.put(f.id(),f);
+    Map<String,FieldCatalog.Field> rightFields=new LinkedHashMap<>();
+    for(var f:right)rightFields.put(f.id(),f);
+    if(leftFields.size()!=left.size()||rightFields.size()!=right.size())
+      throw new IllegalArgumentException("关联数据集存在重复字段 ID");
+
+    Object rawConditions=step.get("conditions"),rawFields=step.get("fields");
+    if(!(rawConditions instanceof List<?> conditions)||conditions.isEmpty()||conditions.size()>4)
+      throw new IllegalArgumentException("关联必须包含 1~4 个等值条件");
+    if(!(rawFields instanceof List<?> projected)||projected.isEmpty()||projected.size()>30)
+      throw new IllegalArgumentException("关联必须选择 1~30 个右表输出字段");
+    List<String> on=new ArrayList<>();
+    Set<String> keys=new HashSet<>();
+    for(Object raw:conditions){
+      if(!(raw instanceof Map<?,?> m))throw new IllegalArgumentException("关联条件格式无效");
+      Map<String,Object> condition=object(m);
+      String lid=required(condition,"leftFieldId"),rid=required(condition,"rightFieldId");
+      FieldCatalog.Field l=leftFields.get(lid),r=rightFields.get(rid);
+      if(l==null||r==null||!l.logicalType().equals(r.logicalType()))
+        throw new IllegalArgumentException("关联键不存在或类型不一致");
+      if(!keys.add(lid+":"+rid))throw new IllegalArgumentException("关联条件不能重复");
+      on.add("biq."+FormulaCompiler.quote(l.sourceColumn())+
+        " = bis."+FormulaCompiler.quote(r.sourceColumn()));
+    }
+    var fields=new LinkedHashMap<>(state.fields());
+    List<String> columns=new ArrayList<>();
+    Set<String> aliases=new HashSet<>();
+    for(var f:left){
+      String physical=f.sourceColumn();
+      if(!aliases.add(physical))
+        throw new IllegalArgumentException("左表存在重复物理字段名");
+      columns.add("biq."+FormulaCompiler.quote(physical)+" AS "+FormulaCompiler.quote(physical));
+    }
+    for(Object raw:projected){
+      if(!(raw instanceof Map<?,?> m))throw new IllegalArgumentException("关联输出字段格式无效");
+      Map<String,Object> requested=object(m);
+      String srcId=required(requested,"sourceFieldId"),id=required(requested,"fieldId"),
+        name=required(requested,"name");
+      if(!id.matches("[A-Za-z_][A-Za-z0-9_]{0,48}")||fields.containsKey(id)||
+         name.length()>100)
+        throw new IllegalArgumentException("关联输出 ID 或名称无效/冲突");
+      FieldCatalog.Field sourceField=rightFields.get(srcId);
+      if(sourceField==null)throw new IllegalArgumentException("关联输出字段不存在");
+      String alias="join_"+id;
+      if(!aliases.add(alias))throw new IllegalArgumentException("关联输出物理字段名冲突");
+      columns.add("bis."+FormulaCompiler.quote(sourceField.sourceColumn())+
+        " AS "+FormulaCompiler.quote(alias));
+      fields.put(id,new FieldCatalog.Field(id,name,alias,sourceField.logicalType(),
+        "BOTH",sourceField.numeric(),false,"ROW",null));
+    }
+    String sql="SELECT "+String.join(", ",columns)+" FROM ("+state.sql()+") biq "+
+      joinType+" JOIN ("+ReadOnlySqlGuard.validate(source.sourceSql())+") bis ON "+
+      String.join(" AND ",on);
+    return new State(sql,fields,state.params(),false);
   }
 
   private State formula(State state,Map<String,Object> step){
