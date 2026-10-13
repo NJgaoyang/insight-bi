@@ -1,6 +1,6 @@
 # P0 实战任务书：FineBI 式自助分析计算引擎（StarRocks 直连）
 
-**状态：待实施；本文是开发指令与验收契约，不代表已经实现。**
+**状态：P0 核心代码开发中，尚未完成 G0/G1～G4 和 P0-05 真实环境验收；本文同时记录已实施改动与发布门禁。**
 
 - 总体目标：回到 [总计划](../FINEBI_DEVELOPMENT_EXECUTION_PLAN.md)。
 - 以现有仓库的 `8ac5a03` 为基线，P0 只覆盖字段模型、行级/聚合计算、前后过滤、多维多指标、可靠 SQL 编译、组件体验与真实 StarRocks 对账。
@@ -254,5 +254,6 @@ git diff --check
 | 日期 | 任务 | 分支/commit | 定向测试及结果 | StarRocks 对账 | 阻塞/下步 |
 |---|---|---|---|---|---|
 | 2026-10-13 | 编写本任务书 | 用 git log --oneline -- docs/FINEBI_ANALYSIS_ENGINE_P0_TASKS.md 查询 | Markdown 链接、JSON 示例、现有接口交叉检查通过 | 不适用 | P0-00 待实施 |
+| 2026-10-13 | 续修 P0-02/03/04：公式依赖及快照保护、只读函数白名单、V2 图表空值与查询取消 | feat/finebi-analysis-engine-p0: 4721a08、3c7b963、fc90416、0280e14、22bd28b、f75ad68、e7d7577 | GitHub Actions #32/#34 的 backend/frontend 均成功；新增 AnalysisFormulaDependencyTest、ReadOnlySqlGuardTest；未执行真实浏览器测试 | **未执行**（开发机离线） | G0 备份与隔离环境仍阻塞；P0-05 尚未验收，禁止直接部署 18110 |
 
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
