@@ -19,7 +19,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Targeted API, compiler and compatibility tests
         working-directory: backend
-        run: mvn -B -q -Dtest=BiQueryInTest,FineBiWorkspaceFolderTest,AnalysisQueryPlannerTest test
+        run: mvn -B -q -Dtest=BiQueryInTest,FineBiWorkspaceFolderTest,AnalysisQueryPlannerTest,AnalysisEngineSqlExecutionTest test
   frontend:
     runs-on: ubuntu-latest
     steps:
