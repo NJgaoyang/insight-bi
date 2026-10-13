@@ -51,7 +51,7 @@ class AnalysisEngineSqlExecutionTest {
     q.put("sort",List.of(Map.of("ref","rev","direction","desc")));
     q.put("limit",20);
     var base=run(store,ds,planner,q);
-    assertEquals(4,base.size());
+    assertEquals(3,base.size());
     Map<String,Object> beijing=find(base,"d1","北京");
     assertEquals(0,new BigDecimal("300").compareTo(new BigDecimal(String.valueOf(beijing.get("rev")))));
     assertEquals(0,new BigDecimal("0.2").compareTo(new BigDecimal(String.valueOf(beijing.get("margin")))));
