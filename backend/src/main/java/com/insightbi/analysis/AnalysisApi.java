@@ -82,12 +82,49 @@ public class AnalysisApi {
     List<Map<String,Object>> existing=db.queryForList(
        "SELECT revision FROM insight_calculated_field WHERE dataset_id=? AND id=?",id,formulaId);
     if(existing.isEmpty())throw new NoSuchElementException("计算字段不存在");
-    var result=new FormulaCompiler(FieldCatalog.index(catalog.fields(id))).compile(expression);
+    rejectPublishedSnapshotMutation(formulaId);
+    var result=checkFormulaUpdate(id,formulaId,expression);
     int count=db.update("UPDATE insight_calculated_field SET name=?,expression=?,phase=?,output_type=?,revision=revision+1 WHERE dataset_id=? AND id=? AND revision=?",
        name,expression,result.phase(),result.outputType(),id,formulaId,revision);
     if(count!=1)throw new IllegalStateException("计算字段已被其他操作修改");
     return Map.of("id",formulaId,"revision",revision+1,"phase",result.phase());
   }
+  /**
+   * Validate the prospective field graph before committing. Compiling against the old
+   * expression allowed self-reference to pass validation and persist a cycle.
+   */
+  private FormulaCompiler.Compiled checkFormulaUpdate(String datasetId,String formulaId,String expression){
+    List<FieldCatalog.Field> all=catalog.fields(datasetId);
+    Map<String,FieldCatalog.Field> indexed=FieldCatalog.index(all);
+    FieldCatalog.Field old=indexed.get(formulaId);
+    if(old==null||!old.calculated())throw new NoSuchElementException("计算字段不存在");
+    indexed.put(formulaId,new FieldCatalog.Field(old.id(),old.name(),null,old.logicalType(),
+        old.role(),old.numeric(),true,old.phase(),expression));
+    var changed=new FormulaCompiler(indexed).compile(expression);
+    indexed.put(formulaId,new FieldCatalog.Field(old.id(),old.name(),null,changed.outputType(),
+        old.role(),Set.of("INTEGER","DECIMAL","DOUBLE").contains(changed.outputType()),
+        true,changed.phase(),expression));
+    for(FieldCatalog.Field dependent:all){
+      if(!dependent.calculated()||dependent.id().equals(formulaId))continue;
+      var compiled=new FormulaCompiler(indexed).compile(dependent.expression());
+      if(!dependent.phase().equals(compiled.phase())||
+         !dependent.logicalType().equals(compiled.outputType()))
+        throw new IllegalArgumentException("修改会破坏计算字段依赖: "+dependent.name());
+    }
+    return changed;
+  }
+
+  /** Published and historical snapshots must not silently acquire new formula semantics. */
+  private void rejectPublishedSnapshotMutation(String formulaId){
+    String pattern="%"+formulaId+"%";
+    Integer published=db.queryForObject(
+        "SELECT COUNT(*) FROM insight_dashboard WHERE published_json LIKE ?",Integer.class,pattern);
+    Integer history=db.queryForObject(
+        "SELECT COUNT(*) FROM insight_dashboard_version WHERE content_json LIKE ?",Integer.class,pattern);
+    if((published!=null&&published>0)||(history!=null&&history>0))
+      throw new IllegalStateException("计算字段存在已发布或历史版本引用，请新建计算字段以保留历史结果");
+  }
+
   @DeleteMapping("/datasets/{id}/calculated-fields/{formulaId}")
   @Transactional
   public Map<String,Object> deleteFormula(@PathVariable String id,@PathVariable String formulaId){
@@ -97,6 +134,7 @@ public class AnalysisApi {
     String ref="%["+formulaId+"]%";
     Integer used=db.queryForObject("SELECT COUNT(*) FROM insight_calculated_field WHERE expression LIKE ? AND id<>?",Integer.class,ref,formulaId);
     if(used!=null&&used>0)throw new IllegalStateException("此计算字段仍被其他公式引用");
+    rejectPublishedSnapshotMutation(formulaId);
     for(var report:db.queryForList("SELECT content_json,published_json FROM insight_dashboard")){
       for(String key:List.of("content_json","published_json")){
         Object raw=report.get(key);
