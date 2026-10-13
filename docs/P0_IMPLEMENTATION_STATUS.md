@@ -248,6 +248,10 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 定向后端 4 组 **13/13 PASS**、Vue/TypeScript 构建及 Chromium 加工页面测试 PASS，未运行整站回归。真实 DataForge StarRocks、生产 H2 备份恢复和回滚门禁仍未完成，依照用户要求继续不部署生产。详细约束与遗留项见 `docs/P1_IMPLEMENTATION_STATUS.md` 第二批。
 
+### P1-02 第三批：多键 JOIN 与被引用数据集保护（2026-10-14）
+
+本轮开发 `JOIN` 加工步骤，限制同数据连接、INNER/LEFT、1–4 等值键、右表显式投影和新字段稳定 ID、重复键放大需显式确认；原 UNION 加工及数据集 SQL 指纹保留兼容。同步新增数据集删除保护，检查其他加工配置是否实际引用待删除数据集。只执行相关后端 **17+3 项 PASS**，前端 Vue/TypeScript 构建 PASS，JOIN 及既有加工 Chromium 定向测试 PASS。生产 `18110` 未部署，真实 StarRocks 继续暂缓，生产 H2 备份/恢复/发布门禁未完成。更多细节见 `docs/P1_IMPLEMENTATION_STATUS.md` 第三批。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
