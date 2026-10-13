@@ -201,3 +201,12 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .analysis-dashboard-head>button:hover{border-color:#9caec8;color:#244d82}
 .analysis-view-components{display:flex;align-items:center;gap:10px;margin:-4px 0 16px;font-size:12px;color:#64748b}
 .analysis-view-components-picker{width:min(440px,calc(100% - 90px))}
+
+.analysis-published-view{min-height:100vh;background:#f5f7fa;display:flex;flex-direction:column}
+.analysis-published-header{display:flex;align-items:center;gap:14px;min-height:58px;padding:10px 24px;background:#fff;border-bottom:1px solid #e2e8f1}
+.analysis-published-header>strong{color:#24344a;font-size:16px;font-weight:600}
+.analysis-published-header>span{font-size:12px;color:#64748b}
+.analysis-published-header .analysis-view-picker{margin-left:auto;width:200px}
+.analysis-published-body{padding:22px;flex:1;overflow:auto}
+.analysis-published-loading,.analysis-published-error{padding:40px;color:#64748b}
+.analysis-published-error{display:flex;gap:15px;align-items:center}
