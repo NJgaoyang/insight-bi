@@ -271,4 +271,6 @@ git diff --check
 
 | 2026-10-13 | P0-03/05：历史快照间接公式依赖、真实引用 AST 检测、StarRocks 手工 SQL 与 NULL/重复值对账 | feat/finebi-analysis-engine-p0: 8e5797f、a9b7d4e、0a18e89、2695b2d、0f17f91、924ce24 | `FormulaSnapshotGuardTest` 5 个定向用例及原有依赖测试；CI 按变动文件选取；扩展的 StarRocks JUnit 只进行编译（默认 skip） | **尚未连接 DataForge 真库**：开发机 Ping 有延迟响应，但远程命令超时；真实 JUnit 和手写 SQL 对账报告均未取得 | P0-05/G4 不可勾选；生产 H2 一致性备份、恢复凭据和生产回滚仍需现场验收 |
 
+| 2026-10-13 | P0-05 本地复用 DataForge 真数对账夹具，修复旧公式快照中引号引用误判 | feat/finebi-analysis-engine-p0: 80550fd、8524c2a、f0198f4、7c2dbad、3b92849、62ee493、96d3ffd | 开发机只运行 StarRocksInlineFixtureTest（2/2）、FormulaSnapshotGuardTest（6/6），均 PASS；生产 18110 健康，未执行其他回归 | DataForge FE 172.17.0.12:9030 TCP open；**JDBC 未认证成功/未取得实际查询结果**，不可标记真库验收 | G4/P0-05 仍待真实 StarRocks 只读对账及生产 H2 一致性恢复演练 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
