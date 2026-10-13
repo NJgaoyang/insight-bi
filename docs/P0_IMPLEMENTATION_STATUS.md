@@ -212,6 +212,18 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 **剩余发布阻塞不变：** 需要 DataForge StarRocks 有效的 JDBC 身份信息以执行真实只读对账；生产 H2 一致性备份与独立恢复、生产式隔离部署及回滚演练均未执行。在这些门禁有有效证据之前保留 P0-05 未完成。生产 `18110` 保持不变。
 
+## 2026-10-13：按使用者要求暂缓 StarRocks，转入 P1-01 增量
+
+使用者要求将 **DataForge StarRocks 真实 JDBC 对账暂时搁置**，继续执行其他计划。P0-05/G4 及生产 H2 备份、恢复、回滚门禁**仍未完成、不视为自动通过**，生产服务 `18110` 未部署或重启。
+
+本轮在现有 `feat/finebi-analysis-engine-p0` 分支开展 P1-01 兼容性底座：
+
+- 结构化主题 → 组件 → 数据集资源图与 `GET /api/dashboards/{id}/resources`；草稿、发布快照、历史版本的数据集删除保护，去除原始 JSON 字符串误判。
+- 主题 `content.dashboards[]` 多仪表板视图：每个视图按稳定 `widgetIds[]` 复用当前主题已有组件；前端可新建、重命名、切换、删除视图并多选组件。无视图属性的旧分析主题默认按单视图全部组件展示，普通仪表板历史合同不修改。
+- 保存时验证资源引用、重新生成索引；发布前校验，避免无效数据集及悬空组件进入新版本；不新增数据库表。
+- 只运行 `AnalysisResourceGraphTest` 与相关 `FineBiWorkspaceFolderTest`，隔离 Vue/TypeScript 构建和 `finebi_theme_views_ui_smoke.cjs` Chromium 测试；**全部成功，未执行全量回归**。CI 规则加入新测试映射。
+- 详细实现证据和 P1-01 未完成部分见 `docs/P1_IMPLEMENTATION_STATUS.md`。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
