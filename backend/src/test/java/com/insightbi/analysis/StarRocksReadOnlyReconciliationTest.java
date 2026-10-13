@@ -41,8 +41,8 @@ class StarRocksReadOnlyReconciliationTest {
     String url=requiredEnv("P0_STARROCKS_JDBC_URL");
     if(!url.startsWith("jdbc:mysql://"))throw new IllegalArgumentException("仅允许 StarRocks MySQL 协议 JDBC URL");
     String username=requiredEnv("P0_STARROCKS_USER");
-    if(Set.of("root","admin","administrator").contains(username.toLowerCase(Locale.ROOT)))
-      throw new IllegalStateException("真数对账必须使用专用的非生产只读账号");
+    DataForgeStarRocksTestAccess.require(url,username,
+      "true".equals(System.getenv("P0_DATAFORGE_STARROCKS_TEST")));
     try(Connection conn=DriverManager.getConnection(url,username,
             requiredEnv("P0_STARROCKS_PASSWORD"))){
       ReadOnlyConnectionPolicy.require(conn);
