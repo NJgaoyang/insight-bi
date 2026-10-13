@@ -26,6 +26,48 @@ const v2Dimensions=computed(()=>v2Fields.value.filter(f=>!f.calculated||f.phase=
 const v2Metrics=computed(()=>v2Fields.value.filter(f=>f.numeric).filter(f=>f.name.includes(fieldSearch.value)))
 const v2DimensionLabels=computed(()=>chosen.value?.analysisV2?.dimensions.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
 const v2MeasureLabels=computed(()=>chosen.value?.analysisV2?.measures.map(binding=>({binding,field:v2Fields.value.find(f=>f.id===binding.fieldId)}))??[])
+/** Local undo/redo snapshots never change server data before Save. */
+type EditorSnapshot={name:string;components:AnalysisWidgetV2[];selectedId:string}
+const undoStack=ref<string[]>([]),redoStack=ref<string[]>([])
+let historyCurrent='',savedFingerprint=''
+function fingerprint(){return JSON.stringify({name:name.value.trim(),components:components.value})}
+function snapshot(){return JSON.stringify({name:name.value,components:components.value,selectedId:selectedId.value})}
+function resetHistory(){
+ historyCurrent=snapshot();savedFingerprint=fingerprint();undoStack.value=[];redoStack.value=[]
+}
+function mark(){
+ const updated=snapshot()
+ if(historyCurrent&&updated!==historyCurrent){
+  undoStack.value.push(historyCurrent)
+  if(undoStack.value.length>40)undoStack.value.shift()
+  redoStack.value=[]
+ }
+ historyCurrent=updated;dirty.value=fingerprint()!==savedFingerprint
+}
+function restoreHistory(serialized:string){
+ const state=JSON.parse(serialized) as EditorSnapshot
+ name.value=state.name;components.value=state.components
+ selectedId.value=components.value.some(w=>w.id===state.selectedId)?state.selectedId:(components.value[0]?.id??'')
+ currentTab.value='component';historyCurrent=serialized
+ dirty.value=fingerprint()!==savedFingerprint
+}
+function undo(){
+ if(!undoStack.value.length||busy.value)return
+ redoStack.value.push(historyCurrent);restoreHistory(undoStack.value.pop()!)
+}
+function redo(){
+ if(!redoStack.value.length||busy.value)return
+ undoStack.value.push(historyCurrent);restoreHistory(redoStack.value.pop()!)
+}
+function moveV2Binding(kind:'dimension'|'metric',position:number,offset:number){
+ const config=chosen.value?.analysisV2
+ if(!config)return
+ const arr=kind==='dimension'?config.dimensions:config.measures
+ const next=position+offset
+ if(next<0||next>=arr.length)return
+ const [item]=arr.splice(position,1)
+ arr.splice(next,0,item);mark()
+}
 let fieldRequest=0
 watch(()=>chosen.value?.datasetId,async id=>{
  const revision=++fieldRequest;v2Fields.value=[]
@@ -120,11 +162,10 @@ async function load(){
   report.value=item;datasets.value=available;name.value=item.name
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   selectedId.value=components.value[0]?.id??''
-  dirty.value=false
+  dirty.value=false;resetHistory()
  }catch(e:any){ElMessage.error(e.message||'加载分析主题失败')}
  finally{busy.value=false}
 }
-function mark(){dirty.value=true}
 function addComponent(){
  const index=components.value.length+1
  const widget:AnalysisWidgetV2={
@@ -134,7 +175,7 @@ function addComponent(){
   style:{background:'#fff',color:'#24344a',chartColor:'#2867db',legend:true,legendPosition:'bottom',dataLabel:false,
     showXAxis:true,showYAxis:true,showGrid:true,showTitle:true,fontSize:13,radius:0,padding:8},columnStyles:{}
  }
- components.value.push(widget);selectedId.value=widget.id;currentTab.value='component';dirty.value=true
+ components.value.push(widget);selectedId.value=widget.id;currentTab.value='component';mark()
 }
 function removeComponent(){
  if(!chosen.value)return
@@ -182,11 +223,14 @@ async function save():Promise<boolean>{
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
  busy.value=true
  try{
+  const savedContent=fingerprint()
   const updated=await put<{revision:number}>('/dashboards/'+props.id,{
    name:name.value.trim(),mode:'grid',revision:report.value.revision,
    content:{mode:'grid',theme:'light',editorKind:'analysis',analysisSchemaVersion:2,widgets:components.value}
   })
-  report.value.revision=updated.revision;dirty.value=false
+  report.value.revision=updated.revision;savedFingerprint=savedContent
+  dirty.value=fingerprint()!==savedFingerprint
+  if(!dirty.value)resetHistory()
   ElMessage.success('分析主题已保存');return true
  }catch(e:any){ElMessage.error(e.message||'保存失败');return false}
  finally{busy.value=false}
@@ -209,6 +253,8 @@ onMounted(load)
    <div class="analysis-header-actions">
     <button @click="currentTab='component'" :class="{active:currentTab==='component'}">组件分析</button>
     <button @click="currentTab='dashboard'" :class="{active:currentTab==='dashboard'}">仪表板预览</button>
+    <button title="撤销上一步操作" :disabled="busy||!undoStack.length" @click="undo">撤销</button>
+    <button title="重做上一步操作" :disabled="busy||!redoStack.length" @click="redo">重做</button>
     <button class="analysis-primary" :disabled="busy" @click="save">保存</button>
     <button :disabled="busy" @click="publish">发布</button>
    </div>
@@ -260,24 +306,28 @@ onMounted(load)
      <div v-if="chosen?.analysisV2" class="analysis-field-shelves">
       <div class="analysis-shelf v2-shelf" @dragover.prevent @drop="onV2Drop($event,'dimension')">
        <span>维度</span>
-       <span v-for="item in v2DimensionLabels" :key="item.binding.fieldId" class="analysis-chip">
+       <span v-for="(item,i) in v2DimensionLabels" :key="item.binding.fieldId" class="analysis-chip">
         {{item.field?.name||'字段已删除'}}
         <el-select v-if="['DATE','DATETIME'].includes(item.field?.logicalType||'')" v-model="item.binding.granularity"
          size="small" style="width:78px" placeholder="原始" clearable @change="mark">
          <el-option label="年" value="year"/><el-option label="月" value="month"/><el-option label="日" value="day"/>
         </el-select>
-        <button @click="removeV2Field(item.binding.fieldId,'dimension')">×</button>
+        <button :disabled="i===0" title="维度前移" @click="moveV2Binding('dimension',i,-1)">↑</button>
+        <button :disabled="i===v2DimensionLabels.length-1" title="维度后移" @click="moveV2Binding('dimension',i,1)">↓</button>
+        <button title="移除维度" @click="removeV2Field(item.binding.fieldId,'dimension')">×</button>
        </span>
        <span v-if="!v2DimensionLabels.length" class="analysis-empty-shelf">拖入维度，可添加多个</span>
       </div>
       <div class="analysis-shelf v2-shelf" @dragover.prevent @drop="onV2Drop($event,'metric')">
        <span>指标</span>
-       <span v-for="item in v2MeasureLabels" :key="item.binding.id" class="analysis-chip">
+       <span v-for="(item,i) in v2MeasureLabels" :key="item.binding.id" class="analysis-chip">
         {{item.field?.name||'字段已删除'}}
         <el-select v-model="item.binding.aggregate" size="small" style="width:82px" @change="mark">
          <el-option v-for="agg in ['SUM','AVG','COUNT','MIN','MAX']" :key="agg" :value="agg" :label="agg"/>
         </el-select>
-        <button @click="removeV2Field(item.binding.id,'metric')">×</button>
+        <button :disabled="i===0" title="指标前移" @click="moveV2Binding('metric',i,-1)">↑</button>
+        <button :disabled="i===v2MeasureLabels.length-1" title="指标后移" @click="moveV2Binding('metric',i,1)">↓</button>
+        <button title="移除指标" @click="removeV2Field(item.binding.id,'metric')">×</button>
        </span>
        <span v-if="!v2MeasureLabels.length" class="analysis-empty-shelf">拖入指标，可添加多个</span>
       </div>
