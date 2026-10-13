@@ -72,6 +72,18 @@ public class FieldCatalog {
     }
     return result;
   }
+  /** Update only the presentation label; physical source and immutable field ID stay unchanged. */
+  public Field renameDisplayName(String datasetId,String fieldId,String displayName){
+    if(displayName==null||displayName.isBlank()||displayName.trim().length()>150)
+      throw new IllegalArgumentException("展示名称必须为 1 到 150 个字符");
+    List<Field> known=fields(datasetId);
+    if(known.stream().noneMatch(f->f.id().equals(fieldId)&&!f.calculated()))
+      throw new NoSuchElementException("可重命名的源字段不存在");
+    int updated=jdbc.update("UPDATE insight_dataset_field SET display_name=? WHERE dataset_id=? AND id=?",
+       displayName.trim(),datasetId,fieldId);
+    if(updated!=1)throw new NoSuchElementException("源字段不存在");
+    return fields(datasetId).stream().filter(f->f.id().equals(fieldId)).findFirst().orElseThrow();
+  }
   public static Map<String,Field> index(List<Field> list){
     Map<String,Field> map=new LinkedHashMap<>();
     for(Field f:list)if(map.putIfAbsent(f.id(),f)!=null)throw new IllegalArgumentException("重复字段标识");
