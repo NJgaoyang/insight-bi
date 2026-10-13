@@ -23,8 +23,11 @@ for path in "${paths[@]}"; do
     backend/src/test/java/*Test.java) name="${path##*/}";add_test "${name%.java}";;
     */DatabaseStore.java|*/BiApi.java)
       add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest
-      add_test BiQueryInTest;add_test AnalysisResourceGraphTest;;
+      add_test BiQueryInTest;add_test AnalysisResourceGraphTest
+      add_test AnalysisPipelineApiTest;;
     */AnalysisResourceGraph.java) add_test AnalysisResourceGraphTest;;
+    */AnalysisPipelineCompiler.java|*/AnalysisPipelineApi.java)
+      add_test AnalysisPipelineCompilerTest;add_test AnalysisPipelineApiTest;;
     */FieldCatalog.java)
       add_test FieldVisibilityTest;add_test FieldCatalogRefreshTest;add_test FieldCatalogConcurrencyTest;;
     */DatasetSchemaGuard.java)
