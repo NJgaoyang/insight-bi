@@ -28,7 +28,10 @@ for path in "${paths[@]}"; do
     */DatasetSchemaGuard.java)
       add_test DatasetSchemaGuardTest;add_test DatasetAliasUpdateIntegrationTest;;
     */AnalysisApi.java)
-      add_test AnalysisFormulaValidationTest;add_test FieldDisplayNameTest;;
+      add_test AnalysisFormulaValidationTest;add_test AnalysisFormulaDependencyTest
+      add_test FormulaSnapshotGuardTest;add_test FieldDisplayNameTest;;
+    */FormulaSnapshotGuard.java)
+      add_test FormulaSnapshotGuardTest;add_test AnalysisFormulaDependencyTest;;
     */FormulaCompiler.java)
       add_test FormulaCompilerTypedTest;add_test FormulaComplexityTest;;
     */AnalysisQueryPlanner.java)
