@@ -275,4 +275,6 @@ git diff --check
 
 | 2026-10-13 | 用户授权先暂缓 G4 StarRocks，继续 P1-01 主题资源关系、共享组件多仪表板、已发布 V2 多视图查看及历史恢复 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | 只测 AnalysisResourceGraphTest（7）与相关 FineBiWorkspaceFolderTest；Vue TypeScript/Vite 构建；Chromium 编辑多视图及发布多视图两个脚本 PASS | DataForge StarRocks 真 JDBC 暂缓，不以 H2/模拟 REST 充当真数验收 | P0-05/G4 和生产 H2 备份/回滚仍待执行；P1-01 其余布局/权限依赖仍未完成 |
 
+| 2026-10-13 | P1-01 多仪表板独立布局：每个视图组件顺序、半宽/全宽、三档高度；已发布视图与历史恢复 | feat/finebi-analysis-engine-p0；docs/P1_IMPLEMENTATION_STATUS.md 第四批 | 只运行 AnalysisResourceGraphTest（8/8）、Vue/TypeScript/Vite 构建、3 个关联 Chromium 视图脚本，全部 PASS | DataForge StarRocks 真实 SQL 对账按用户指示暂缓；未以模拟数据冒充生产验收 | P1-01 独立视图发布策略、多主题资源复用尚未完成；生产 H2 备份/发布门禁不变 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
