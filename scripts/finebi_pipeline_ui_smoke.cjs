@@ -18,7 +18,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
     status,contentType:'application/json',body:JSON.stringify(value)})
    if(path==='/api/me')return send({user:'admin',csrf:'csrf'})
    if(path==='/api/datasets'&&method==='GET')return send([
-    {id:'ds1',name:'销售测试数据集',connection_id:'conn',sql_body:'SELECT revenue,cost,city FROM sales',fields:[]}])
+    {id:'ds1',name:'销售测试数据集',connection_id:'conn',sql_body:'SELECT revenue,cost,city FROM sales',fields:[]},
+    {id:'archive',name:'历史销售数据集',connection_id:'conn',sql_body:'SELECT revenue,cost,city FROM archive',fields:[]},
+    {id:'isolated',name:'其他连接数据集',connection_id:'other',sql_body:'SELECT revenue FROM foreign',fields:[]}])
    if(path==='/api/datasets/ds1/fields'&&method==='GET')return send([
     {id:'revenue',name:'收入',sourceColumn:'revenue',logicalType:'DECIMAL',numeric:true,calculated:false,phase:'ROW'},
     {id:'cost',name:'成本',sourceColumn:'cost',logicalType:'DECIMAL',numeric:true,calculated:false,phase:'ROW'},
@@ -101,7 +103,18 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.reload({waitUntil:'domcontentloaded'})
   await page.locator('.pipeline-step').last().waitFor()
   assert.equal(await page.locator('.pipeline-step').count(),4)
+  await page.locator('.pipeline-toolbar button').filter({hasText:'上下合并'}).click()
+  assert.equal(await page.locator('.pipeline-step').count(),5)
+  assert.ok((await page.locator('.pipeline-step').first().innerText()).includes('上下合并'))
+  assert.equal(await page.locator('.pipeline-step').first()
+   .locator('button[title="步骤后移"]').isDisabled(),true)
+  await page.locator('.pipeline-save').click()
+  await page.waitForFunction(()=>document.querySelector('.pipeline-save')?.hasAttribute('disabled'))
+  assert.equal(saves.at(-1).steps[0].sourceDatasetId,'archive')
+  await page.reload({waitUntil:'domcontentloaded'})
+  await page.locator('.pipeline-step').first().waitFor()
+  assert.equal(await page.locator('.pipeline-step').count(),5)
   assert.deepEqual(errors,[])
-  console.log('PASS P1-02 pipeline UI: ordered formula/filter/group/case, compile, preview, save and reload')
+  console.log('PASS P1-02 pipeline UI: formula/filter/group/case/union, ordered save/preview/reload')
  }finally{await browser.close()}
 })().catch(e=>{console.error('FAIL P1-02 pipeline UI',e.stack||e);process.exitCode=1})
