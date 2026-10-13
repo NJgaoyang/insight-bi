@@ -224,6 +224,12 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 - 只运行 `AnalysisResourceGraphTest` 与相关 `FineBiWorkspaceFolderTest`，隔离 Vue/TypeScript 构建和 `finebi_theme_views_ui_smoke.cjs` Chromium 测试；**全部成功，未执行全量回归**。CI 规则加入新测试映射。
 - 详细实现证据和 P1-01 未完成部分见 `docs/P1_IMPLEMENTATION_STATUS.md`。
 
+### P1-01 已发布查看与版本恢复补充
+
+`App.vue` 中原 `#/view/{id}` 统一进入旧 `Designer`，无法显示已发布分析主题的 V2 多视图。新增 `PublishedReport.vue` 并按服务端 `kind` 分流：分析主题通过已发布快照只读展示多个 `dashboards[]` 和 V2 图表；普通旧仪表板仍使用原 `Designer readonly`，不改变其编辑或发布合同。旧分析快照没有多视图属性时维持单仪表板兼容。增加 `finebi_published_views_ui_smoke.cjs` 定向浏览器测试，PASS。
+
+还补充版本恢复测试：原有 `/versions/{version}/restore` 直接恢复完整多视图快照和稳定组件引用。开发机 `AnalysisResourceGraphTest` **7/7 PASS**、相关 `FineBiWorkspaceFolderTest` **4/4 PASS**；前端 `vue-tsc`、Vite 构建及编辑、发布两个独立 Chromium 脚本 PASS。生产 `18110` 健康、无工作树改动；开发预览 `18117` 已关闭。P0-05 StarRocks 真数与生产 H2 备份门禁继续暂缓且未完成。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
