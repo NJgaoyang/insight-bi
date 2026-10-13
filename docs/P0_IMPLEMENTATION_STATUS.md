@@ -161,6 +161,20 @@ cd ../frontend && npm ci && npm run build
 
 **未完成与限制**：P0-00 生产 H2 的事务一致性备份及恢复演练；P0-05 非生产 StarRocks JDBC 真数、最小只读权限及真实慢查询验证；生产 `runtime/local.env` 缺失与 GitHub 网络同步异常；尚未发布，不能据这些定向测试判定 P0 完成。
 
+## 2026-10-13 继续推进：V1 兼容、查询只读、H2 恢复演练及 P0 发布门禁
+
+本批功能只提交到 `feat/finebi-analysis-engine-p0`，仅在 `/opt/insight-bi-p0-preview` 执行本次涉及的 Maven 测试和 Bash 模拟；**生产 `18110` 未重启、未部署，生产 H2 未更改**。
+
+- **遗留 V1 兼容修复**：`DatasetSchemaGuard` 的 V1 草稿、已发布快照、历史版本检查扩展到 `dimension/measure/secondMeasure/columnDimension/sort`、`columns/drillDimensions/pivotMeasures` 和旧筛选字段。因为这些数据仍直接引用源列名，明确的旧→新 SQL 别名映射不能安全地自动改写旧快照，所以在存在 V1 引用时拒绝更名。V2 保存配置使用候选字段重新编译，检查明细 WHERE、聚合 HAVING、维度粒度、聚合类型和排序在源列变更后是否仍合法。对应 `DatasetSchemaGuardTest` **8 个测试，exit=0**。
+- **V2 JDBC 只读 fail-closed**：新增 `ReadOnlyConnectionPolicy`，每次新 V2 查询开始前尝试 `setReadOnly(true)` 并核对 `isReadOnly()`，驱动拒绝、忽略或报 SQLException 则拒绝执行且不会调用查询函数。原 V1 查询合同未改；此检查**仍不是数据库权限隔离的替代品**。对应 `ReadOnlyConnectionPolicyTest` **2 个测试，exit=0**。
+- **H2 一致性备份/恢复机制的隔离验证**：`MetadataRecoveryRehearsalTest` 在临时 H2 文件型数据库执行真实 `BACKUP TO`，生成 ZIP、校验 SHA-256，解压后用独立连接恢复，核对字段 ID/隐藏属性、公式、数据集 SQL、发布快照与历史版本，**1 个测试，exit=0**。仅测试库；**并未对现网 H2 获取一致性备份**。
+- **可执行的恢复核验和发布检查**：新增 `scripts/P0MetadataRestoreVerify.java`、`p0_verify_h2_restore.sh`，只读打开私有 ZIP 恢复到临时目录后的 H2 副本，验证必要元数据表，再签发 SHA-256 凭据；`p0_release_preflight.sh` 验证真实 ZIP/凭据、实际未跳过的 StarRocks Surefire XML、服务器环境/JAR、生产健康。发布时必须同时有显式 `P0_APPROVE_DEPLOY=true`。
+- **减少停服风险**：`scripts/deploy.sh` 改为先完成前端构建与独立 Maven 打包，再备份旧 JAR、停服切换并执行健康检查；故障时尝试自动回滚旧 JAR。**未执行生产发布/回滚演练**。
+- **真实 StarRocks 测试准入**：`p0_starrocks_readonly_e2e.sh` 默认拒绝，无专用非生产只读账号、缺启用标记或使用 root/admin 账号均拒绝。JUnit 内部重复检测账号和 JDBC 只读状态；脚本仅在测试实际运行、`tests>0` 且 `skipped=failures=errors=0` 时才归档 XML。**本次仅编译检查，真实 StarRocks 测试仍为 skipped，不能算通过**。
+- **仅变动范围的实际验证**：`DatasetSchemaGuardTest`、`ReadOnlyConnectionPolicyTest`、`MetadataRecoveryRehearsalTest` 分别定向 PASS；`test_p0_release_safety.sh` 在纯合成 H2 数据验证恢复凭据、模拟成功验收报告与缺省/篡改/跳过拒绝条件 PASS；`deploy.sh` 未授权退出码 2，现网 `18110/api/health` 仍返回 `{"ok":true}`。所有新脚本通过 `bash -n`，Java 恢复检验器编译运行成功。**无全量回归**。
+
+**P0-05 仍未通过的实际阻塞**：生产 `runtime/local.env` 缺失；生产 H2 一致性备份与恢复没有执行；独立非生产 StarRocks 的真实 JDBC 只读账号及对账尚未提供/启用；生产式隔离部署及回滚演练没有进行。参见 `docs/P0_RELEASE_GATE.md`；未满足前不会发布到 `18110` 或合并成正式完成。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
