@@ -114,6 +114,11 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.reload()
   await page.locator('.analysis-shelf.v2-shelf .analysis-chip').first().waitFor()
   assert.equal(queries.at(-1).measures.at(-1).distinct,true)
+
+  // Incompatible chart switches should not silently discard three measure bindings.
+  await page.locator('.analysis-chart-types button[title="饼图"]').click()
+  assert.ok((await page.locator('.analysis-chart-types button[title="柱状图"]').getAttribute('class')).includes('active'))
+  assert.equal(await shelves.nth(1).locator('.analysis-chip').count(),3)
   assert.deepEqual(errors,[])
   console.log('PASS P0 V2 UI: two dimensions, two measures, drag reorder, undo, redo, save, refresh/restore')
  }finally{await browser.close()}
