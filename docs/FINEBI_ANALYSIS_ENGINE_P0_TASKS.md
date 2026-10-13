@@ -279,4 +279,6 @@ git diff --check
 
 | 2026-10-13 | P1-02 第一批：数据集加工有序步骤引擎（行计算列、过滤、分组汇总），真实 SQL 编译/预览、持久化版本控制、旧 SQL 变化检测和页面编辑 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | AnalysisPipelineCompilerTest 4/4、AnalysisPipelineApiTest 2/2、Vue TS/Vite build、finebi_pipeline_ui_smoke.cjs Chromium PASS；仅验证变动范围 | DataForge StarRocks 真数仍按用户要求暂缓，本次 H2/REST 模拟不视为真库对账 | P1-02 JOIN/UNION/复杂条件列 UI 及结果复用尚未完成；P0-05/H2 生产备份发布门禁继续未通过 |
 
+| 2026-10-14 | P1-02 第二批：条件列 CASE + 相同数据连接下物理字段匹配的 UNION ALL；扩展 SQL/元数据版本指纹、只读编译与页面表单 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | 定向 AnalysisPipelineCaseTest 4、AnalysisPipelineUnionTest 3、CompilerTest 4、ApiTest 2，共 13/13 PASS；前端构建/Chromium 加工步骤脚本 PASS | 真实 StarRocks 继续按要求暂缓；只读 H2 测试不代替真库验收 | P1-02 JOIN/多源高级映射/跨主题加工结果复用仍未完成；P0-05/G4 与生产备份门禁未关闭 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
