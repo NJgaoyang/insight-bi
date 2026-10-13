@@ -21,9 +21,31 @@ public final class DatasetSchemaGuard {
   }
 
   public void check(String datasetId,List<Map<String,Object>> proposed){
+    check(datasetId,proposed,Map.of());
+  }
+
+  public void check(String datasetId,List<Map<String,Object>> proposed,Map<String,String> fieldRenames){
     List<FieldCatalog.Field> previous=new FieldCatalog(store,db).fields(datasetId);
     Map<String,FieldCatalog.Field> previousPhysical=new HashMap<>();
     for(var f:previous)if(!f.calculated())previousPhysical.put(f.sourceColumn(),f);
+
+    Set<String> requestedNames=new HashSet<>();
+    for(Map<String,Object> col:proposed)requestedNames.add(String.valueOf(col.get("name")));
+    // Explicit mappings only: never guess whether a removed alias and a new
+    // alias describe the same underlying SQL expression.
+    Set<String> targets=new HashSet<>();
+    if(fieldRenames.size()>50)throw new IllegalArgumentException("字段更名映射最多支持 50 项");
+    for(var pair:fieldRenames.entrySet()){
+      String old=pair.getKey(),target=pair.getValue();
+      if(old==null||target==null||old.isBlank()||target.isBlank()||
+         !previousPhysical.containsKey(old)||requestedNames.contains(old)||
+         !requestedNames.contains(target)||previousPhysical.containsKey(target)||
+         !targets.add(target)||target.length()>128)
+        throw new IllegalArgumentException("源字段更名映射无效: "+old+" -> "+target);
+    }
+    Map<String,FieldCatalog.Field> renamedTargets=new HashMap<>();
+    for(var pair:fieldRenames.entrySet())
+      renamedTargets.put(pair.getValue(),previousPhysical.get(pair.getKey()));
 
     Set<String> seenNames=new HashSet<>();
     List<FieldCatalog.Field> candidate=new ArrayList<>();
@@ -34,6 +56,7 @@ public final class DatasetSchemaGuard {
       String type=FieldCatalog.typeOf(String.valueOf(col.get("type")));
       boolean numeric=Set.of("INTEGER","DOUBLE","DECIMAL").contains(type);
       FieldCatalog.Field old=previousPhysical.get(name);
+      if(old==null)old=renamedTargets.get(name);
       String id=old==null?UUID.nameUUIDFromBytes((datasetId+"\u0000"+name)
         .getBytes(StandardCharsets.UTF_8)).toString():old.id();
       candidate.add(new FieldCatalog.Field(id,old==null?name:old.name(),name,type,
@@ -43,7 +66,7 @@ public final class DatasetSchemaGuard {
     Map<String,FieldCatalog.Field> next=FieldCatalog.index(candidate);
     Set<String> removedIds=new HashSet<>(),removedNames=new HashSet<>();
     for(var old:previousPhysical.values()){
-      if(!seenNames.contains(old.sourceColumn())){
+      if(!seenNames.contains(old.sourceColumn())&&!fieldRenames.containsKey(old.sourceColumn())){
         removedIds.add(old.id());removedNames.add(old.sourceColumn());
       }
     }
@@ -79,6 +102,16 @@ public final class DatasetSchemaGuard {
       if(snap.content()==null)continue;
       Object tree=store.map(String.valueOf(snap.content()));
       checkSnapshot(tree,datasetId,removedIds,removedNames,next,snap.kind());
+    }
+  }
+
+  /** Persist validated alias mapping without replacing field IDs or display labels. */
+  public void applyRenames(String datasetId,Map<String,String> fieldRenames){
+    for(var entry:fieldRenames.entrySet()){
+      int changed=db.update(
+        "UPDATE insight_dataset_field SET source_name=? WHERE dataset_id=? AND source_name=?",
+        entry.getValue(),datasetId,entry.getKey());
+      if(changed!=1)throw new IllegalStateException("字段更名映射已失效，请刷新数据集重试");
     }
   }
 
