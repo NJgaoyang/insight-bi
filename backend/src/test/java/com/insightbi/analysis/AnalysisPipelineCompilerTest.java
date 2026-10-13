@@ -138,10 +138,10 @@ class AnalysisPipelineCompilerTest {
         "values",List.of("上海",sqlInjection)))));
     assertFalse(plan.sql().contains(sqlInjection));
     assertEquals(sqlInjection,plan.params().get(1));
-    try(var c=sample())assertEquals(2,execute(c,plan).size());
+    try(var c=sample()){assertEquals(2,execute(c,plan).size());}
     var nulls=engine.compile(SOURCE,Map.of("steps",List.of(
       Map.of("id","n","type","filter","fieldId","cost","op","isNull"))));
-    try(var c=sample())assertEquals(0,execute(c,nulls).size());
+    try(var c=sample()){assertEquals(0,execute(c,nulls).size());}
     var contains=engine.compile(SOURCE,Map.of("steps",List.of(
       Map.of("id","c","type","filter","fieldId","city","op","contains","value","%_"))));
     assertEquals("%!%!_%",contains.params().get(0));
