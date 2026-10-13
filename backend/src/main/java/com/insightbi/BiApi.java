@@ -128,6 +128,7 @@ class BiApi {
  }
  @DeleteMapping("/datasets/{id}")@Transactional Map<String,Object> deleteDataset(@PathVariable String id){
   AnalysisResourceGraph.rejectDatasetDeletion(id,s,db);
+  db.update("DELETE FROM insight_dataset_pipeline WHERE dataset_id=?",id);
   db.update("DELETE FROM insight_dataset WHERE id=?",id);return Map.of("ok",true);
  }
  @GetMapping("/datasets/{id}/preview")Map<String,Object> preview(@PathVariable String id,@RequestParam(defaultValue="50")int limit)throws Exception{
