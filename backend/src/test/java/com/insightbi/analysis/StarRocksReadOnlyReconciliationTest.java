@@ -40,9 +40,12 @@ class StarRocksReadOnlyReconciliationTest {
       throw new IllegalStateException("必须明确设置 P0_STARROCKS_NONPROD_CONFIRMED=true 才能对账");
     String url=requiredEnv("P0_STARROCKS_JDBC_URL");
     if(!url.startsWith("jdbc:mysql://"))throw new IllegalArgumentException("仅允许 StarRocks MySQL 协议 JDBC URL");
-    try(Connection conn=DriverManager.getConnection(url,requiredEnv("P0_STARROCKS_USER"),
+    String username=requiredEnv("P0_STARROCKS_USER");
+    if(Set.of("root","admin","administrator").contains(username.toLowerCase(Locale.ROOT)))
+      throw new IllegalStateException("真数对账必须使用专用的非生产只读账号");
+    try(Connection conn=DriverManager.getConnection(url,username,
             requiredEnv("P0_STARROCKS_PASSWORD"))){
-      conn.setReadOnly(true);
+      ReadOnlyConnectionPolicy.require(conn);
       var planner=new AnalysisQueryPlanner(FIELDS);
       var query=new HashMap<String,Object>();
       query.put("dimensions",List.of(Map.of("fieldId","f_city"),Map.of("fieldId","f_date","granularity","month")));
