@@ -256,3 +256,7 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .pipeline-table-wrap th,.pipeline-table-wrap td{border-bottom:1px solid #e7edf4;text-align:left;padding:8px 10px;white-space:nowrap}
 .pipeline-table-wrap th{background:#f7f9fc;color:#687c94}
 @media(max-width:850px){.pipeline-header{flex-wrap:wrap}.pipeline-actions{margin-left:0}.pipeline-content{display:flex;flex-direction:column;overflow:auto}.pipeline-steps,.pipeline-result{overflow:visible}}
+
+.pipeline-formula-fields{display:flex;flex-wrap:wrap;gap:5px;max-height:115px;overflow:auto}
+.pipeline-formula-fields>button{border:1px solid #dce5f1;background:#f8faff;color:#456384;font-size:11px;border-radius:4px;padding:4px 7px;cursor:pointer}
+.pipeline-formula-fields>button:hover{border-color:#9eb7da;color:#2358a0}
