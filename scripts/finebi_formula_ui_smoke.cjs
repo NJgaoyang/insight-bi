@@ -46,7 +46,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
    }
    return send({error:'Unexpected '+method+' '+path},404)
   })
-  await page.goto(origin+'/#/analysis/analysis-a')
+  await page.goto(origin+'/#/analysis/analysis-a',{waitUntil:'domcontentloaded'})
   await page.locator('.analysis-add-tab').click()
   await page.locator('.analysis-source-selector .el-select').click()
   await page.locator('.el-select-dropdown__item:visible').filter({hasText:'销售数据集'}).first().click()
