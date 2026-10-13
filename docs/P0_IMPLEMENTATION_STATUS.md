@@ -230,6 +230,12 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 还补充版本恢复测试：原有 `/versions/{version}/restore` 直接恢复完整多视图快照和稳定组件引用。开发机 `AnalysisResourceGraphTest` **7/7 PASS**、相关 `FineBiWorkspaceFolderTest` **4/4 PASS**；前端 `vue-tsc`、Vite 构建及编辑、发布两个独立 Chromium 脚本 PASS。生产 `18110` 健康、无工作树改动；开发预览 `18117` 已关闭。P0-05 StarRocks 真数与生产 H2 备份门禁继续暂缓且未完成。
 
+### P1-01 视图独立布局补充（StarRocks 仍按要求暂缓）
+
+视图 `dashboards[].layout` 现在可按组件 ID 保存 6/12 列宽与 320/480/640px 高度，`widgetIds[]` 为显示排序依据；多视图共享分析组件的字段、公式与查询配置但各自保存布局。后端强制校验布局的目标组件必须属于当前视图、宽高必须为有效整数；前端支持调整顺序、宽高、保存后恢复、已发布查看和移动端单列。既有无布局的旧主题继续原默认显示。
+
+开发机隔离定向 `AnalysisResourceGraphTest` **8/8 PASS**、Vue/TypeScript 构建 PASS、`finebi_view_layout_ui_smoke.cjs` 及原多视图编辑/已发布路由两个相关 Chromium 测试 PASS；生产 `18110` 服务 active、健康 `{"ok":true}`，无 Git 工作区改动，预览 `18117` 已关闭。未执行整站回归、未部署生产、未执行真实 StarRocks 对账。详见 `docs/P1_IMPLEMENTATION_STATUS.md` 第四批。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
