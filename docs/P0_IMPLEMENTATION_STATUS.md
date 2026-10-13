@@ -98,6 +98,13 @@ cd ../frontend && npm ci && npm run build
 - 隔离开发机离线 npm/TypeScript/Vite 构建 **PASS**；`finebi_multifield_ui_smoke.cjs` 已验证两个指标独立设置持久化、数值轴、三位小数、数据标签与样式修改不重查数据 **PASS**；`finebi_formula_ui_smoke.cjs` 再次 **PASS**。这些浏览器测试依旧使用模拟 API。
 - 涉及提交：`715b3bf`、`e6322fb`、`acc3081`、`7e7951f`、`6f05f2e`、`a878024`、`40d2765`、`2b8884e`、`65eb6c8`。尚待 StarRocks 图表实际数值对账、浏览器多组合类型边界和真数权限检查，G4/P0-05 继续未通过。
 
+## 2026-10-13 最新隔离后端定向回归
+
+- 从 GitHub P0 分支将最新 `AnalysisApi.java`、`ReadOnlySqlGuard.java` 及 `AnalysisFormulaDependencyTest.java`、`ReadOnlySqlGuardTest.java` 同步到 **独立预览克隆** `/opt/insight-bi-p0-preview`，未修改生产源码工作树。
+- 执行 `(cd /opt/insight-bi-p0-preview/backend && mvn -q -o -Dtest=BiQueryInTest,AnalysisQueryPlannerTest,AnalysisEngineSqlExecutionTest,AnalysisFormulaDependencyTest,ReadOnlySqlGuardTest test)`，**退出码 0，PASS**。仅出现 Mockito 动态代理警告，不影响测试结果。
+- GitHub Actions 工作流 #86 `backend`、`frontend` 均为 **success**，包括前端构建、后端定向单元测试与脚本语法检查。
+- 至此本轮代码级回归与隔离的模拟浏览器交互均成功；**仍未执行真实非生产 StarRocks 查询对账及在线元数据一致性备份**，不要将 G0/P0-05 勾选为完成。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
