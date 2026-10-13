@@ -341,7 +341,7 @@ function resizeDashboardWidget(widgetId:string,kind:'columns'|'height'){
  const updated:WidgetLayout={
   columns:kind==='columns'?(current.columns===6?12:6):current.columns,
   height:kind==='height'?(current.height===320?480:current.height===480?640:320)
-   :(current.height===380?320:current.height)
+   :(current.height===480?480:current.height===640?640:320)
  }
  view.layout={...view.layout,[widgetId]:updated}
  mark()
