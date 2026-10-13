@@ -46,6 +46,11 @@ function changed(){
  sqlPreview.value='';previewRows.value=[];previewColumns.value=[]
 }
 function nextId(prefix:string){return prefix+'_'+crypto.randomUUID().replace(/-/g,'').slice(0,12)}
+function insertFormulaField(step:FormulaStep,id:string){
+ step.expression+=(step.expression&&!step.expression.endsWith(' ')?' ':'')+'['+id+']'
+ changed()
+}
+
 function addFormula(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
  const id=nextId('s')
@@ -174,8 +179,12 @@ onMounted(load)
      <div v-if="step.type==='formula'" class="pipeline-fields">
       <label>列名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>
       <label>计算表达式</label><el-input v-model="step.expression" type="textarea" :rows="2"
-       placeholder="例如：[revenue]-[cost]，引用字段 ID" @input="changed"/>
-      <small>可使用当前步骤之前的字段；公式在后端校验，不执行任意 SQL。</small>
+       placeholder="选择下方字段插入引用，例如：[字段ID]-[字段ID]" @input="changed"/>
+      <div class="pipeline-formula-fields">
+       <button v-for="field in selectable(index)" :key="field.id"
+        :title="'插入字段：'+field.label" @click="insertFormulaField(step,field.id)">＋ {{field.label}}</button>
+      </div>
+      <small>点击字段插入稳定 ID；公式在后端校验，不执行任意 SQL。</small>
      </div>
      <div v-else-if="step.type==='filter'" class="pipeline-fields">
       <label>字段</label><el-select v-model="step.fieldId" filterable @change="changed">
