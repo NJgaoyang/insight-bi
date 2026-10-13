@@ -87,12 +87,13 @@ public final class FormulaSnapshotGuard {
     if(expression==null||impactedIds.isEmpty())return false;
     for(int i=0;i<expression.length();){
       char c=expression.charAt(i);
-      if(c=='\\''||c=='"'||c=='`'){
+      // ASCII 39/34/96: single quote, double quote and backtick.
+      if(c==39||c==34||c==96){
         char quote=c;
         i++;
         while(i<expression.length()){
           char next=expression.charAt(i++);
-          if(next=='\\\\'&&i<expression.length()){i++;continue;}
+          if(next==92&&i<expression.length()){i++;continue;}
           if(next==quote){
             if(i<expression.length()&&expression.charAt(i)==quote){i++;continue;}
             break;
@@ -102,7 +103,7 @@ public final class FormulaSnapshotGuard {
       }
       if(c=='-'&&i+1<expression.length()&&expression.charAt(i+1)=='-'){
         i+=2;
-        while(i<expression.length()&&expression.charAt(i)!='\\n')i++;
+        while(i<expression.length()&&expression.charAt(i)!=10)i++;
         continue;
       }
       if(c=='/'&&i+1<expression.length()&&expression.charAt(i+1)=='*'){
