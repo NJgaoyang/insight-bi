@@ -147,6 +147,27 @@ async function refreshFormulaFields(){
   if(version===fieldRequest)ElMessage.error(e instanceof Error?e.message:'字段刷新失败')
  }
 }
+async function renamePhysicalField(field:FieldV2){
+ if(field.calculated)return
+ const datasetId=chosen.value?.datasetId
+ if(!datasetId)return
+ try{
+  const {value}=await ElMessageBox.prompt('修改字段展示名称，不影响源列及计算字段引用','字段重命名',{
+   inputValue:field.name,
+   inputValidator:(value:string)=>value.trim().length>0&&value.trim().length<=150||
+      '展示名称须为 1 到 150 个字符',
+   confirmButtonText:'保存',cancelButtonText:'取消'
+  })
+  await put('/datasets/'+encodeURIComponent(datasetId)+'/fields/'+encodeURIComponent(field.id),{
+   displayName:String(value).trim()
+  })
+  await refreshFormulaFields()
+  ElMessage.success('字段展示名称已更新')
+ }catch(e:unknown){
+  if(e==='cancel'||e==='close')return
+  ElMessage.error(e instanceof Error?e.message:'字段重命名失败')
+ }
+}
 function setV2Sort(ref:string){
  const b=chosen.value?.analysisV2;if(!b)return
  b.sort=ref?[{ref,direction:b.sort[0]?.direction||'desc'}]:[]
@@ -290,12 +311,15 @@ onMounted(load)
      <div class="analysis-field-header">维度 <small>{{v2Dimensions.length}}</small></div>
      <div v-for="f in v2Dimensions" :key="f.id" class="analysis-field" draggable="true"
        @dragstart="onV2Drag($event,f,'dimension')" @click="addV2Field(f,'dimension')">
-       <span class="field-dimension">{{f.logicalType==='DATE'||f.logicalType==='DATETIME'?'D':'A'}}</span>{{f.name}}<small>⋮⋮</small>
+       <span class="field-dimension">{{f.logicalType==='DATE'||f.logicalType==='DATETIME'?'D':'A'}}</span>{{f.name}}
+        <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button><small>⋮⋮</small>
      </div>
      <div class="analysis-field-header">数值指标 <small>{{v2Metrics.length}}</small></div>
      <div v-for="f in v2Metrics" :key="f.id" class="analysis-field" draggable="true"
        @dragstart="onV2Drag($event,f,'metric')" @click="addV2Field(f,'metric')">
-       <span class="field-metric">∑</span>{{f.name}}<small>{{f.calculated?'ƒ':'⋮⋮'}}</small>
+       <span class="field-metric">∑</span>{{f.name}}
+        <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
+        <small>{{f.calculated?'ƒ':'⋮⋮'}}</small>
      </div>
      <div v-if="v2CountFields.length" class="analysis-field-header">可计数字段 <small>{{v2CountFields.length}}</small></div>
       <div v-for="f in v2CountFields" :key="'cnt-'+f.id" class="analysis-field" draggable="true"
