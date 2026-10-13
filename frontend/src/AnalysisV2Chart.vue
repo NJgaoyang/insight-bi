@@ -98,7 +98,7 @@ const queryKey=computed(()=>{
  const b=bindings.value
  return JSON.stringify([props.widget.datasetId,b?{
    dimensions:b.dimensions,
-   measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,alias:m.alias})),
+   measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,distinct:m.distinct,alias:m.alias})),
    filters:b.filters,sort:b.sort,limit:b.limit
  }:null])
 })
