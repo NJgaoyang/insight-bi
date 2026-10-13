@@ -36,6 +36,7 @@ for path in "${paths[@]}"; do
       add_test FormulaCompilerTypedTest;add_test FormulaComplexityTest;;
     */AnalysisQueryPlanner.java)
       add_test AnalysisQueryPlannerTest;add_test AnalysisFilterOperatorTest;;
+    */StarRocksInlineFixture.java) add_test StarRocksInlineFixtureTest;;
     */ReadOnlySqlGuard.java) add_test ReadOnlySqlGuardTest;;
     */ReadOnlyConnectionPolicy.java) add_test ReadOnlyConnectionPolicyTest;;
     */AnalysisQueryLimiter.java|*/AnalysisErrorHandler.java) add_test AnalysisQueryLimiterTest;;
