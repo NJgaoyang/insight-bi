@@ -4,10 +4,10 @@ import {api,type Dashboard,type Dataset,type AnalysisWidgetV2} from './api'
 import Designer from './Designer.vue'
 import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
+import {cardStyle,orderedViewWidgets,type DashboardView} from './analysis/dashboardLayout'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
-type DashboardView={id:string;name:string;widgetIds:string[]}
 const loading=ref(true),error=ref('')
 const report=ref<Dashboard|null>(null)
 const kind=ref<'analysis'|'dashboard'|null>(null)
@@ -16,7 +16,7 @@ const datasets=ref<Dataset[]>([])
 const dashboardViews=ref<DashboardView[]>([])
 const selectedViewId=ref('')
 const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
-const visibleWidgets=computed(()=>widgets.value.filter(w=>activeView.value?.widgetIds.includes(w.id)))
+const visibleWidgets=computed(()=>orderedViewWidgets(activeView.value,widgets.value))
 
 async function load(){
  try{
@@ -27,7 +27,7 @@ async function load(){
   widgets.value=Array.isArray(saved.content?.widgets)?saved.content.widgets:[]
   const stored=(saved.content as typeof saved.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds]}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:widgets.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   datasets.value=await api<Dataset[]>('/datasets')
@@ -55,8 +55,9 @@ onMounted(load)
   </header>
   <main class="analysis-published-body">
    <div v-if="!visibleWidgets.length" class="analysis-stage-empty">当前视图没有展示组件</div>
-   <div v-else class="analysis-dashboard-grid">
-    <div v-for="widget in visibleWidgets" :key="widget.id" class="analysis-dashboard-card">
+   <div v-else class="analysis-view-grid">
+    <div v-for="widget in visibleWidgets" :key="widget.id" class="analysis-dashboard-card"
+     :data-widget-id="widget.id" :style="cardStyle(activeView,widget.id)">
      <strong>{{widget.title}}</strong>
      <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
