@@ -17,9 +17,15 @@ public final class AnalysisPipelineCompiler {
                      int limit,int stepCount) {}
   private record State(String sql, LinkedHashMap<String,FieldCatalog.Field> fields,
                        List<Object> params,boolean grouped) {}
+  /** Authorized sources are resolved by the API, not supplied as SQL by clients. */
+  public record UnionSource(String sourceSql,List<FieldCatalog.Field> fields) {}
   private static final int MAX_STEPS=12,MAX_SQL=160000;
   private final List<FieldCatalog.Field> initial;
-  public AnalysisPipelineCompiler(List<FieldCatalog.Field> initial){this.initial=List.copyOf(initial);}
+  private final Map<String,UnionSource> unionSources;
+  public AnalysisPipelineCompiler(List<FieldCatalog.Field> initial){this(initial,Map.of());}
+  public AnalysisPipelineCompiler(List<FieldCatalog.Field> initial,Map<String,UnionSource> unionSources){
+    this.initial=List.copyOf(initial);this.unionSources=Map.copyOf(unionSources);
+  }
 
   public Plan compile(String sourceSql,Map<String,Object> request){
     if(request==null)throw new IllegalArgumentException("加工请求不能为空");
@@ -43,6 +49,7 @@ public final class AnalysisPipelineCompiler {
         case "formula"->formula(state,step);
         case "filter"->filter(state,step);
         case "case"->caseColumn(state,step);
+        case "union"->union(state,step,index);
         case "group"->group(state,step);
         default->throw new IllegalArgumentException("未实现的加工步骤："+type);
       };
@@ -61,6 +68,41 @@ public final class AnalysisPipelineCompiler {
     }
     String sql="SELECT * FROM ("+state.sql()+") biq LIMIT ?";
     return new Plan(sql,List.copyOf(params),List.copyOf(cols),limit,steps.size());
+  }
+
+  /**
+   * UNION ALL of two pre-existing SELECT datasets on the same configured
+   * connection. The API resolves source IDs and enforces connection identity.
+   * First-step only: otherwise a join-like row shape mismatch would silently
+   * discard calculated columns and duplicate filter semantics.
+   */
+  private State union(State state,Map<String,Object> step,int position){
+    if(position!=1)throw new IllegalArgumentException("上下合并只能放在加工步骤第一位");
+    String sourceId=required(step,"sourceDatasetId");
+    UnionSource source=unionSources.get(sourceId);
+    if(source==null)throw new IllegalArgumentException("合并数据集不存在或不属于当前数据连接");
+    List<FieldCatalog.Field> left=initial.stream().filter(f->!f.calculated()).toList();
+    List<FieldCatalog.Field> right=source.fields().stream().filter(f->!f.calculated()).toList();
+    if(left.isEmpty()||left.size()>100||right.size()!=left.size())
+      throw new IllegalArgumentException("上下合并的数据集字段结构不一致");
+    Map<String,FieldCatalog.Field> matching=new HashMap<>();
+    for(var f:right){
+      if(matching.put(f.sourceColumn(),f)!=null)
+        throw new IllegalArgumentException("上下合并数据集存在重名字段");
+    }
+    List<String> lhs=new ArrayList<>(),rhs=new ArrayList<>();
+    for(var l:left){
+      FieldCatalog.Field r=matching.get(l.sourceColumn());
+      if(r==null||!l.logicalType().equals(r.logicalType()))
+        throw new IllegalArgumentException("上下合并字段名称或类型不一致："+l.name());
+      String col=FormulaCompiler.quote(l.sourceColumn());
+      lhs.add("biq."+col+" AS "+col);
+      rhs.add("bis."+FormulaCompiler.quote(r.sourceColumn())+" AS "+col);
+    }
+    String secondary=ReadOnlySqlGuard.validate(source.sourceSql());
+    String sql="SELECT "+String.join(", ",lhs)+" FROM ("+state.sql()+") biq "+
+      "UNION ALL SELECT "+String.join(", ",rhs)+" FROM ("+secondary+") bis";
+    return new State(sql,state.fields(),state.params(),false);
   }
 
   private State formula(State state,Map<String,Object> step){
