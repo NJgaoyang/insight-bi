@@ -50,6 +50,8 @@ class FormulaCompilerTypedTest {
 
   @Test void rejectUnsafeOrIncompatibleExpressions(){
     var p=compiler();
+    assertThrows(IllegalArgumentException.class,()->p.compile("NULL"));
+    assertThrows(IllegalArgumentException.class,()->p.compile("COALESCE(NULL,NULL)"));
     assertThrows(IllegalArgumentException.class,()->p.compile("IF(TRUE,[city],[revenue])"));
     assertThrows(IllegalArgumentException.class,()->p.compile("COALESCE([city],[revenue])"));
     assertThrows(IllegalArgumentException.class,()->p.compile("NULLIF([city],[revenue])"));
