@@ -10,7 +10,7 @@
 | P0-01 | **核心代码完成，迁移待线上验证** | `FieldCatalog`、MySQL `insight_dataset_field` 和 `insight_calculated_field` 两张增量表、`GET /api/datasets/{id}/fields` | 真实 StarRocks JDBC 类型元数据与旧数据持久化验收、字段重命名引用迁移 |
 | P0-02 | **核心代码完成，AST 只读校验已加入，生产安全尚需审计** | `AnalysisQueryPlanner`、`POST /api/analysis/v2/compile`、`.../query`；最多 3 维度/5 指标；分组、日期粒度、排序、结果上限 | JSqlParser SELECT 校验外已增加首批 SQL 函数白名单，未知调用拒绝；仍需 StarRocks 真实兼容性、只读权限、查询取消与并发限制验收 |
 | P0-03 | **基础公式与前后过滤完成，高级语义待完善** | `FormulaCompiler`、行级/聚合阶段、WHERE/HAVING、参数绑定、公式新增/修改/删除/验证 | 已补公式更新的自引用、循环及依赖阶段检查；仍缺完整类型推断、复杂表达式依赖管理和 CASE/日期/窗口能力 |
-| P0-04 | **基础 UI 已接入，浏览器联调待执行** | 新组件 V2 字段列表/多槽拖拽、计算字段输入、过滤、排序、图表渲染与保存；原 V1 组件保留 | 真实浏览器多字段拖拽测试、撤销/重做、饼图与多指标互斥提示优化、更多图形属性 |
+| P0-04 | **基础 UI 已接入，浏览器联调待执行** | 新组件 V2 字段列表/多槽拖拽、计算字段输入、过滤、排序、图表渲染与保存；原 V1 组件保留 | 多字段与公式 UI 的模拟 API 浏览器测试已通过；仍缺真实 StarRocks E2E、完整按指标样式及其他图表边界验收 |
 | P0-05 | **未完成** | 已有 H2 数据执行验证与 GitHub CI | 非生产 StarRocks 真数对账、部署前数据库备份、生产/预览启动后 UI 检查、回滚演练 |
 
 ## 已实现接口（均经过原有会话与 CSRF 拦截器）
@@ -65,6 +65,26 @@ cd ../frontend && npm ci && npm run build
 - **验证状态**：GitHub Actions 工作流 #32 与 #34 均显示 backend、frontend 成功（#34 见 https://github.com/NJgaoyang/insight-bi/actions/runs/38367420381）；包含两项新增 Java 测试。开发机仍离线，尚无真实浏览器、MySQL 备份与 StarRocks 真数对账，故不能标注 P0-05 通过。
 - V2 分析图表另修复过期请求未取消、NULL/无效数值被强制转为零的问题；提交 `f75ad68`，由工作流 #34 验证前端构建通过。该 CI 不代表真实浏览器拖放或 StarRocks 验收。
 - **发布门禁**：G0 与 P0-05 均未通过；保留原 `18110` 运行环境；不得据此直接发布。需独立备份 `insight_` 元数据、旧 JAR，验证自动建表及 SQL 白名单对现有数据集的兼容性。
+
+
+## 2026-10-13 开发机复连后的 P0-04 增量与真实执行证据
+
+**代码分支：** `feat/finebi-analysis-engine-p0`。GitHub 是当前最新版本来源；开发机本地 Git 分支起始仍在 `36732c4`，服务器直连 GitHub HTTPS 超时，未强行重置或覆盖。使用本地共享克隆 `/opt/insight-bi-p0-preview` 和从 GitHub 获取的前端文件进行隔离验证，绝不在生产 `18110` 上开发热替换。
+
+- 分析主题本地编辑历史：撤销、重做，包含字段增删、组件创建/删除、字段绑定变更；保存成功后重置历史。维度与指标可通过箭头或 HTML5 Drag & Drop 调整槽位排序。
+- `scripts/finebi_multifield_ui_smoke.cjs`：Chromium 真浏览器执行，选择 2 个维度和 2 个指标，拖动换序、撤销、重做、保存并刷新重进；**PASS / 退出码 0**。模拟登录和 V2 查询 API，不接真实 StarRocks。
+- `scripts/finebi_formula_ui_smoke.cjs`：错误公式返回 400 后对话框仍保留，正确公式保存成功、字段重新发现、绑定到指标并刷新恢复；**PASS / 退出码 0**。模拟 REST 响应，不代表真实公式数据对账。
+- 开发机隔离前端 `npm ci --offline --no-audit --no-fund && npm run build` **PASS / 退出码 0**（Vue TypeScript 与 Vite）；旧本地分支针对 `BiQueryInTest,AnalysisQueryPlannerTest,AnalysisEngineSqlExecutionTest` 的 `mvn -q -o -Dtest=... test` **PASS / 退出码 0**。本地旧分支测试不等于新提交后端测试，后者由 GitHub Actions 验证。
+- GitHub Actions #42 和 #50 后端、前端均为成功；浏览器脚本另外纳入 Node 语法检查。浏览器本身是在开发机执行，而非 GitHub Actions。
+- 相关提交：`730c101`（撤销/重做）、`012cc5a`（字段槽拖动换序）、`cf98c35` 与 `3f8d98f`（多字段浏览器脚本）、`2489d0f` 与 `a6ecd64`（公式浏览器脚本）、`02c88eb`（CI 语法检查）。
+
+### P0-00 / P0-05 仍未通过：实际运行状态与恢复约束
+
+- 开发机 `VM-0-13-tencentos` 已连通，生产 `insight-bi.service` 在 `18110` 运行。现网 systemd 实际配置的数据源为 **H2 文件 `/var/lib/insight-bi/metadata`**，不是 README 假定的 MySQL；禁止未核实直接执行 MySQL 迁移。
+- 检查发现原目录 `runtime/` 缺失、线上所依赖的原始运行 JAR 被删除。已通过仍在运行的 JVM 文件描述符恢复原始约 37 MB 的 JAR，置于 `runtime/recovery-20261013-162336/`，同时恢复到 `backend/target/insight-bi-0.1.0.jar` 的原启动路径。备份 systemd 服务配置，以上私有备份文件权限 600，`runtime/` 受 Git 忽略。
+- 复制了一份正在使用的 H2 `metadata.mv.db` 到同一恢复目录，但**在线文件复制无法证明事务一致性**，不视为通过 G0 的权威备份；正式升级前应通过受支持的方式完成一致性备份并验证恢复。
+- 当前 `runtime/local.env` 原配置文件仍缺失，systemd 服务依赖该文件；**未经恢复与检查，不允许停止或重启现有服务**。不把敏感凭据放入仓库、日志或此交接文档。
+- 最新 GitHub 代码尚未同步到服务器工作分支，也没有发布到生产。后续恢复网络后先检查工作树、拉取分支、做一致性备份、在独立端口验证并跑 StarRocks 非生产对账，完成 G0～G4 与 P0-05 后方可部署。
 
 ## 后续优先事项
 
