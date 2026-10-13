@@ -62,6 +62,28 @@ public final class AnalysisResourceGraph {
           if(!(item instanceof String widgetId)||!ids.contains(widgetId)||!unique.add(widgetId))
             throw new IllegalArgumentException("视图包含不存在或重复的组件 ID");
         }
+        // Optional, per-view layout. Legacy views without layout are unchanged.
+        // Layout keys must refer to widgets selected in THIS view, not merely
+        // other widgets somewhere in the same theme.
+        Object layoutRaw=view.get("layout");
+        if(layoutRaw!=null){
+          if(!(layoutRaw instanceof Map<?,?> layout))
+            throw new IllegalArgumentException("视图布局必须为组件 ID 映射");
+          for(var placement:layout.entrySet()){
+            if(!(placement.getKey() instanceof String widgetId)||!unique.contains(widgetId))
+              throw new IllegalArgumentException("布局引用了当前视图之外的组件");
+            if(!(placement.getValue() instanceof Map<?,?> cell)||
+                cell.size()!=2||!cell.containsKey("columns")||!cell.containsKey("height"))
+              throw new IllegalArgumentException("布局项必须包含列宽和高度");
+            Object columns=cell.get("columns"),height=cell.get("height");
+            if(!(columns instanceof Number cw)||!(height instanceof Number ch)||
+                !(cw instanceof Integer||cw instanceof Long)||
+                !(ch instanceof Integer||ch instanceof Long)||
+                !(cw.intValue()==6||cw.intValue()==12)||
+                !(ch.intValue()==320||ch.intValue()==480||ch.intValue()==640))
+              throw new IllegalArgumentException("布局列宽或高度超出允许范围");
+          }
+        }
       }
     }
     return new Graph(List.copyOf(datasets),List.copyOf(ids),widgets.size(),
