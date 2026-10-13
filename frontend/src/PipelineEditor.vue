@@ -142,7 +142,15 @@ async function changeJoinSource(step:JoinStep,id:string){
 }
 function addJoinKey(step:JoinStep){
  if(step.conditions.length>=4)return
- step.conditions.push(joinKeyFor(step.sourceDatasetId));changed()
+ const used=new Set(step.conditions.map(k=>k.leftFieldId+':'+k.rightFieldId))
+ const right=rightFields(step.sourceDatasetId)
+ const choices=baseColumns().flatMap(l=>right
+  .filter(r=>l.type===r.type&&!used.has(l.id+':'+r.id))
+  .map(r=>({leftFieldId:l.id,rightFieldId:r.id,matchingName:l.name===r.name})))
+ const next=choices.find(x=>x.matchingName)||choices[0]
+ if(!next){ElMessage.warning('没有更多类型兼容的关联字段组合');return}
+ step.conditions.push({leftFieldId:next.leftFieldId,rightFieldId:next.rightFieldId})
+ changed()
 }
 function addJoinOutput(step:JoinStep){
  if(step.fields.length>=30)return
