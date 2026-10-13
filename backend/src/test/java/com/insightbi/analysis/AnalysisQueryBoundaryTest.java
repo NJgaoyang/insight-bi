@@ -29,7 +29,14 @@ class AnalysisQueryBoundaryTest {
     jdbc.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json) VALUES(?,?,?,?,?)",
        dataset,"Boundary","conn","SELECT city,revenue FROM sales",fieldsJson);
     doReturn(Map.of("id","conn")).when(store).connection("conn");
-    doAnswer(inv->DriverManager.getConnection(url,"sa","")).when(store).open(anyMap());
+    // H2 MySQL mode ignores JDBC's readOnly hint. This planner/boundary test
+    // uses a spy reporting readOnly, while ReadOnlyConnectionPolicyTest separately
+    // proves that a real driver returning false is rejected before execution.
+    doAnswer(inv->{
+      var session=spy(DriverManager.getConnection(url,"sa",""));
+      doReturn(true).when(session).isReadOnly();
+      return session;
+    }).when(store).open(anyMap());
     var catalog=new FieldCatalog(store,jdbc);
     String city=catalog.fields(dataset).stream().filter(f->"city".equals(f.sourceColumn()))
       .findFirst().orElseThrow().id();
