@@ -171,3 +171,11 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .v2-table-wrap table{width:100%;border-collapse:collapse;font-size:12px}
 .v2-table-wrap th,.v2-table-wrap td{border-bottom:1px solid #e8ebef;padding:8px 12px;text-align:left;white-space:nowrap}
 .v2-table-wrap th{background:#f7f9fb;color:#65748b;position:sticky;top:0}
+
+/* P0 V2 per-measure settings. Compact and visually separate from global chart options. */
+.v2-measure-setting{border:1px solid #e8edf5;border-radius:6px;padding:10px;margin:6px 0 12px;display:flex;flex-direction:column;gap:8px;background:#fff}
+.v2-measure-setting>strong{font-size:12px;color:#405371}
+.v2-measure-inline{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.v2-measure-inline>span{font-size:12px;color:#66768e;white-space:nowrap}
+.v2-measure-inline .el-select{width:125px}
+.v2-measure-inline .el-input-number{width:125px}
