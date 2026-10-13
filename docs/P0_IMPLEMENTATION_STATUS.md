@@ -89,6 +89,15 @@ cd ../frontend && npm ci && npm run build
 - 所有上述浏览器用例完成后已停止隔离预览 Vite（`18117`），线上 `18110/api/health` 返回 `{"ok":true}`，生产服务保持 active。
 
 
+## 2026-10-13 组件指标级样式增量与回归
+
+- V2 `MeasureV2` 新增可选配置：`seriesType`、`axis`、`decimals`、`color`、`showLabel`；旧 `Widget`、无上述属性的 V2 JSON 继续可读。新属性不参与后端聚合 SQL 语义。
+- `AnalysisSubject.vue` 每个指标独立配置别名、小数位、颜色、左右轴、组合图系列类型、数值标签。只在相关图表类型展示会生效的控制项。
+- `AnalysisV2Chart.vue` 在 ECharts 系列、双轴、tooltip、数据标签及表格/指标卡数值格式上实际应用设置；样式变更只调用图表重渲染，不重新调用 V2 查询接口。空值仍保持 NULL，而不是变成零。
+- 去除首屏对不可访问的 Google Fonts CSS 依赖，避免隔离环境浏览器 `load` 等待超时。
+- 隔离开发机离线 npm/TypeScript/Vite 构建 **PASS**；`finebi_multifield_ui_smoke.cjs` 已验证两个指标独立设置持久化、数值轴、三位小数、数据标签与样式修改不重查数据 **PASS**；`finebi_formula_ui_smoke.cjs` 再次 **PASS**。这些浏览器测试依旧使用模拟 API。
+- 涉及提交：`715b3bf`、`e6322fb`、`acc3081`、`7e7951f`、`6f05f2e`、`a878024`、`40d2765`、`2b8884e`、`65eb6c8`。尚待 StarRocks 图表实际数值对账、浏览器多组合类型边界和真数权限检查，G4/P0-05 继续未通过。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
