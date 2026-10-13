@@ -17,7 +17,7 @@ public final class AnalysisQueryPlanner {
   }
   public Plan compile(String sourceSql,Map<String,Object> request){
     if(request==null)throw new IllegalArgumentException("查询参数不能为空");
-    String from=DatabaseStore.safeSql(sourceSql);
+    String from=ReadOnlySqlGuard.validate(sourceSql);
     List<Map<String,Object>> dims=objects(request.get("dimensions"),3,"维度");
     List<Map<String,Object>> measures=objects(request.get("measures"),5,"指标");
     if(dims.isEmpty()&&measures.isEmpty())throw new IllegalArgumentException("至少选择一个维度或指标");
