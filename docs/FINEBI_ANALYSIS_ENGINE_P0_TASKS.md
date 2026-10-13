@@ -281,4 +281,6 @@ git diff --check
 
 | 2026-10-14 | P1-02 第二批：条件列 CASE + 相同数据连接下物理字段匹配的 UNION ALL；扩展 SQL/元数据版本指纹、只读编译与页面表单 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md | 定向 AnalysisPipelineCaseTest 4、AnalysisPipelineUnionTest 3、CompilerTest 4、ApiTest 2，共 13/13 PASS；前端构建/Chromium 加工步骤脚本 PASS | 真实 StarRocks 继续按要求暂缓；只读 H2 测试不代替真库验收 | P1-02 JOIN/多源高级映射/跨主题加工结果复用仍未完成；P0-05/G4 与生产备份门禁未关闭 |
 
+| 2026-10-14 | P1-02 第三批：同连接 INNER/LEFT 多键 JOIN、指定右表字段新别名、重复键行数放大显式确认、已保存 JOIN/UNION 数据集删除依赖保护 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md 第三批 | JOIN/UNION/CASE/Compiler/Api 相关定向测试共 17/17 PASS，PipelineDependencyGuardTest 3/3 PASS；Vue TS/Vite build 与两个加工页 Chromium 定向脚本 PASS | StarRocks 真数按用户要求继续暂缓；没有进行全量回归 | P1-02 加工结果复用、关联键唯一性统计、更多多源映射待完成；P0-05/G4 与生产 H2 备份/回滚依旧未通过 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
