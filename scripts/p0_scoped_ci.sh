@@ -28,7 +28,8 @@ for path in "${paths[@]}"; do
     */AnalysisResourceGraph.java) add_test AnalysisResourceGraphTest;;
     */AnalysisPipelineCompiler.java|*/AnalysisPipelineApi.java)
       add_test AnalysisPipelineCompilerTest;add_test AnalysisPipelineApiTest
-      add_test AnalysisPipelineCaseTest;add_test AnalysisPipelineUnionTest;;
+      add_test AnalysisPipelineCaseTest;add_test AnalysisPipelineUnionTest
+      add_test AnalysisPipelineJoinTest;;
     */FieldCatalog.java)
       add_test FieldVisibilityTest;add_test FieldCatalogRefreshTest;add_test FieldCatalogConcurrencyTest;;
     */DatasetSchemaGuard.java)
