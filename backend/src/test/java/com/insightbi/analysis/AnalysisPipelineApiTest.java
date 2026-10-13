@@ -47,6 +47,9 @@ class AnalysisPipelineApiTest {
     db.update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
       "SELECT revenue,city FROM new_sales",dataset);
     assertEquals(true,api.get(dataset).get("stale"));
+    var stale=assertThrows(IllegalStateException.class,()->api.preview(dataset,
+      Map.of("steps",steps,"limit",20)));
+    assertTrue(stale.getMessage().contains("重新校验"));
     // Staleness does not execute a changed source and is revalidated on save.
     api.save(dataset,Map.of("steps",steps,"revision",2));
     assertEquals(false,api.get(dataset).get("stale"));
