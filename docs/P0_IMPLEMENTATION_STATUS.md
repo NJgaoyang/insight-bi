@@ -8,7 +8,7 @@
 |---|---|---|---|
 | P0-00 | **部分完成** | GitHub 分支建立，旧代码/API 检查完成 | 由于实行“GitHub 开发、自行拉取部署”，生产 MySQL/JAR 备份和独立预览环境由部署者操作；本次未操作远程服务器 |
 | P0-01 | **核心代码完成，迁移待线上验证** | `FieldCatalog`、MySQL `insight_dataset_field` 和 `insight_calculated_field` 两张增量表、`GET /api/datasets/{id}/fields` | 真实 StarRocks JDBC 类型元数据与旧数据持久化验收、字段重命名引用迁移 |
-| P0-02 | **核心代码完成，SQL 只读校验仍需增强** | `AnalysisQueryPlanner`、`POST /api/analysis/v2/compile`、`.../query`；最多 3 维度/5 指标；分组、日期粒度、排序、结果上限 | 完整 SQL AST / 自定义 SQL 数据集白名单验证；查询取消、并发限制 |
+| P0-02 | **核心代码完成，AST 只读校验已加入，生产安全尚需审计** | `AnalysisQueryPlanner`、`POST /api/analysis/v2/compile`、`.../query`；最多 3 维度/5 指标；分组、日期粒度、排序、结果上限 | JSqlParser 已校验 SQL 根节点为 SELECT，但危险函数清单、权限/来源白名单及查询取消和并发限制还需完善 |
 | P0-03 | **基础公式与前后过滤完成，高级语义待完善** | `FormulaCompiler`、行级/聚合阶段、WHERE/HAVING、参数绑定、公式新增/修改/删除/验证 | 完整计算字段类型推断、循环引用和表达式依赖管理的复杂场景；CASE/日期/窗口/同环比按后续批次 |
 | P0-04 | **基础 UI 已接入，浏览器联调待执行** | 新组件 V2 字段列表/多槽拖拽、计算字段输入、过滤、排序、图表渲染与保存；原 V1 组件保留 | 真实浏览器多字段拖拽测试、撤销/重做、饼图与多指标互斥提示优化、更多图形属性 |
 | P0-05 | **未完成** | 已有 H2 数据执行验证与 GitHub CI | 非生产 StarRocks 真数对账、部署前数据库备份、生产/预览启动后 UI 检查、回滚演练 |
@@ -29,7 +29,8 @@
 3. `filters.pre` 生成 `WHERE`，`filters.post` 生成 `HAVING`；不允许在明细过滤直接引用聚合字段。
 4. 字段标识符仅由服务器元数据映射，排序只允许本次维度/指标引用，过滤值参数化；不接受前端自由 SQL 字符串。
 5. 单个图表最多 3 个维度、5 个指标，查询默认 200 行、最高 500 行。
-6. GitHub Actions 持续运行 `BiQueryInTest`、`FineBiWorkspaceFolderTest`、`AnalysisQueryPlannerTest`、`AnalysisEngineSqlExecutionTest` 及 Vue 的 TypeScript + Vite 构建。
+6. V2 数据集来源 SQL 先通过 JSqlParser AST SELECT 根节点验证；`SELECT ... FOR UPDATE` 与多语句拒绝，底层仍需要 StarRocks 只读账号。
+7. GitHub Actions 持续运行 `BiQueryInTest`、`FineBiWorkspaceFolderTest`、`AnalysisQueryPlannerTest`、`AnalysisEngineSqlExecutionTest` 及 Vue 的 TypeScript + Vite 构建。
 7. 仓库 `frontend/package-lock.json` 已从仅在腾讯云可访问的镜像改为公开 npm 下载地址，依赖版本和完整性校验值未变。
 
 **限制**：数据集来源 SQL 当前沿用 `DatabaseStore.safeSql` 的字符串限制，还不是完整 SQL AST 语法校验；平台管理员自定义 SQL 仍必须使用只读数据库账号。**未通过真实 StarRocks 环境测试前不要把这一版标为生产完成版。**
