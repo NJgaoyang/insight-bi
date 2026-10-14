@@ -23,7 +23,8 @@ class AnalysisPipelineReuseTest {
     "UNION ALL SELECT '北京',CAST(80 AS DECIMAL(12,2)) "+
     "UNION ALL SELECT '上海',CAST(200 AS DECIMAL(12,2))";
 
-  private record Fixture(JdbcTemplate db,AnalysisPipelineApi pipeline,AnalysisApi analysis) {}
+  private record Fixture(JdbcTemplate db,AnalysisPipelineApi pipeline,AnalysisApi analysis,
+                         DatabaseStore store,FieldCatalog catalog) {}
   private static Fixture fixture(){
     JdbcTemplate db=new JdbcTemplate(new DriverManagerDataSource(
       "jdbc:h2:mem:reuse_"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa",""));
@@ -35,7 +36,7 @@ class AnalysisPipelineReuseTest {
     FieldCatalog catalog=mock(FieldCatalog.class);
     when(catalog.fields("ds1")).thenReturn(INPUT);
     return new Fixture(db,new AnalysisPipelineApi(store,catalog,db),
-      new AnalysisApi(store,db,catalog));
+      new AnalysisApi(store,db,catalog),store,catalog);
   }
   private static List<Map<String,Object>> steps(){
     return List.of(
@@ -101,6 +102,32 @@ class AnalysisPipelineReuseTest {
     assertEquals("高",rows.get(0).get("d1"));
     assertEquals(0,new BigDecimal(String.valueOf(rows.get(0).get("sum")))
       .compareTo(new BigDecimal("120")));
+  }
+
+  @Test void liveEndpointBindsPipelineParametersBeforeAnalysisAndClosesReadonlyConnection()throws Exception{
+    Fixture fx=fixture();
+    fx.pipeline.save("ds1",Map.of("revision",0,"steps",steps()));
+    var spyStore=spy(fx.store);
+    Connection conn=mock(Connection.class);
+    doReturn(Map.of("id","conn")).when(spyStore).connection("conn");
+    doReturn(conn).when(spyStore).open(anyMap());
+    when(conn.isReadOnly()).thenReturn(true);
+    var responseRows=List.<Map<String,Object>>of(
+      Map.of("d1","高","sum",new BigDecimal("120")));
+    doAnswer(invocation->{
+      String generatedSql=invocation.getArgument(1);
+      List<?> values=invocation.getArgument(2);
+      assertTrue(generatedSql.startsWith("SELECT"));
+      assertEquals(List.of(new BigDecimal("100"),"高","低","北京",new BigDecimal("100"),11),values);
+      assertEquals(10,((Integer)invocation.getArgument(3)).intValue());
+      return responseRows;
+    }).when(spyStore).readAnalysisRows(eq(conn),anyString(),anyList(),eq(10));
+    var api=new AnalysisApi(spyStore,fx.db,fx.catalog);
+    Map<String,Object> result=api.query(widgetRequest(1));
+    assertEquals(responseRows,result.get("rows"));
+    assertEquals(false,result.get("truncated"));
+    verify(conn).setReadOnly(true);
+    verify(conn).close();
   }
 
   @Test void refusesUnsavedStaleAndWrongRevisionWithoutOpeningDataConnection(){
