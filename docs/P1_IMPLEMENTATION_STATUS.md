@@ -137,6 +137,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 已添加 `.github/workflows/p1-processed-analysis-scoped.yml` 和 `scripts/p0_scoped_ci.sh` 映射，仅执行关联 H2/合同用例及前端类型构建；没有添加任何数据库秘密到 GitHub。
 - 生产 `18110` 未部署本次修改；P0-05/G4 真库、生产 H2 备份恢复与发布回滚门禁仍未通过。进一步进度以此节为准，不把 P1-02 其它 JOIN 扩展、多级汇总和高阶数据处理项标记完成。
 
+## P1-02 第五批：UNION 显式列映射（2026-10-14）
+
+- 后端加工步骤 `union` 新增可选 `mappings: [{leftFieldId,rightFieldId}]`。不同物理列名的数据集可经字段目录一对一映射后执行 `UNION ALL`，输出列名和稳定字段 ID 仍使用左表定义。
+- 服务器校验：映射覆盖全部左侧物理字段、不得重用左侧/右侧字段、ID 必须属于实际数据集目录、逻辑类型严格相同。数据源继续限制为当前连接上的已有 SELECT 数据集，值与列名均不接受原始客户端 SQL。
+- 未指定 `mappings` 的历史加工步骤保持原有按物理列名精确匹配行为，不触发配置迁移；`UNION ALL` 继续保留重复数据。本批先交付编译器和定向 H2 执行测试，**前端字段映射选择器尚未实施**，真实 StarRocks 对账亦未实施。
+- 定向 CI 见 [P0 Changed-Area Checks](https://github.com/NJgaoyang/insight-bi/actions?query=branch%3Afeat%2Ffinebi-analysis-engine-p0)，测试结论以对应 commit 的实际工作流为准；不宣称未完成的 CI 通过。
+- 生产 18110 未部署，生产 H2 备份、回滚和 P0-05 仍为发布阻塞项。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
