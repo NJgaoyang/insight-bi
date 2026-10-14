@@ -342,7 +342,7 @@ onMounted(load)
          <el-option v-for="right in rightFields(step.sourceDatasetId).filter(r=>
           r.type===baseColumns().find(f=>f.id===mapping.leftFieldId)?.type)"
           :key="right.id" :label="right.label+' ('+right.name+')'" :value="right.id"
-          :disabled="step.mappings.some(x=>x!==mapping&&x.rightFieldId===right.id)"/>
+          :disabled="step.mappings?.some(x=>x!==mapping&&x.rightFieldId===right.id)"/>
         </el-select>
        </div>
        <button @click="disableUnionMapping(step)">恢复同名字段匹配</button>
