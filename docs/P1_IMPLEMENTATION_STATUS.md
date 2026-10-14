@@ -145,6 +145,13 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 定向 CI 见 [P0 Changed-Area Checks](https://github.com/NJgaoyang/insight-bi/actions?query=branch%3Afeat%2Ffinebi-analysis-engine-p0)，测试结论以对应 commit 的实际工作流为准；不宣称未完成的 CI 通过。
 - 生产 18110 未部署，生产 H2 备份、回滚和 P0-05 仍为发布阻塞项。
 
+## P1-02 第七批：JOIN 右表关联键重复风险诊断（2026-10-14）
+
+- 新增 `POST /api/datasets/{id}/pipeline/join-key-profile`，由服务端解析现有 JOIN 步骤并复用编译器验证键、类型、关联源及同连接限制。
+- 在源数据库上执行带 10 秒超时的只读聚合：统计右表重复关联键组数 `duplicateGroups` 和右表重复组中超出首行的记录数 `extraRightRows`。无 INSERT/UPDATE/DDL，配置保存接口不触发扫描。
+- 前端关联编辑器新增按需检查按钮和统计结果；条件修改时清空旧统计。该诊断**不是最终 JOIN 行数预测**，不取消已有行数放大确认机制；连接拒绝只读、超时或查询失败时不报告成功。
+- 增加关联键重复的 H2 定向单测，测试与前端编译以 GitHub Actions 对相应提交的最终结果为准。未直接验证 StarRocks，生产 18110 未部署。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
