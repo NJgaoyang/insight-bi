@@ -190,6 +190,46 @@ public final class AnalysisQueryPlanner {
       columns.add(Map.of("id",runningId,"name",runningId,"label","累计值","type","DECIMAL","kind","measure"));
       sortable.put(runningId,runningId);
     }
+    // P2 period-over-period comparison. Requires a single date dimension.
+    // LAG compares the preceding available bucket; sparse dates are not filled.
+    Object compareRequest=request.get("periodCompare");
+    if(compareRequest!=null){
+      Map<String,Object> compare=object(compareRequest,"周期比较");
+      if(dims.size()!=1)throw new IllegalArgumentException("周期比较只支持一个日期维度");
+      FieldCatalog.Field periodField=field(required(dims.get(0),"fieldId"));
+      if(!Set.of("DATE","DATETIME").contains(periodField.logicalType()))
+        throw new IllegalArgumentException("周期比较必须选择日期维度");
+      String granularity=string(dims.get(0).get("granularity"),"day");
+      if(!Set.of("day","month","year").contains(granularity))
+        throw new IllegalArgumentException("周期比较日期粒度无效");
+      String mode=required(compare,"mode");
+      if(!Set.of("mom","yoy").contains(mode))
+        throw new IllegalArgumentException("周期比较模式无效");
+      int lag="mom".equals(mode)?1:switch(granularity){
+        case "month"->12;case "day"->365;default->1;
+      };
+      String metricId=required(compare,"ref");
+      Metric metric=metrics.get(metricId);
+      if(metric==null||!Set.of("INTEGER","DECIMAL","DOUBLE").contains(metric.type()))
+        throw new IllegalArgumentException("周期比较必须引用数值指标");
+      String compareId=string(compare.get("id"),"bi_period_change");
+      if(!compareId.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")||
+          sortable.containsValue(compareId)||aliases.contains(compareId)||
+          columns.stream().anyMatch(c->compareId.equals(c.get("name"))))
+        throw new IllegalArgumentException("周期比较列 ID 无效或冲突");
+      if(compare.size()>3||compare.keySet().stream().anyMatch(k->!Set.of("ref","mode","id").contains(k)))
+        throw new IllegalArgumentException("周期比较配置含不支持的字段");
+      String inner=sql.toString(),col=FormulaCompiler.quote(metricId);
+      String previous="LAG(bic."+col+","+lag+") OVER (ORDER BY bic.`d1` ASC)";
+      sql=new StringBuilder("SELECT bip.*, (bip.").append(col)
+        .append(" - bip.`bi_previous`) / NULLIF(bip.`bi_previous`,0) AS ")
+        .append(FormulaCompiler.quote(compareId))
+        .append(" FROM (SELECT bic.*, ").append(previous)
+        .append(" AS `bi_previous` FROM (").append(inner)
+        .append(") bic) bip");
+      columns.add(Map.of("id",compareId,"name",compareId,"label","同比环比","type","DECIMAL","kind","measure"));
+      sortable.put(compareId,compareId);
+    }
     for(Map<String,Object> order:objects(request.get("sort"),4,"排序")){
       String ref=required(order,"ref"),alias=sortable.get(ref);
       if(alias==null)throw new IllegalArgumentException("排序字段不属于本次分析");
