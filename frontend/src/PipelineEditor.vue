@@ -38,6 +38,8 @@ const baseColumns=():Column[]=>baseFields.value.filter(f=>!f.calculated)
 const steps=ref<Step[]>([])
 const queryLimit=ref(30)
 const sqlPreview=ref('')
+const joinProfile=ref<{duplicateGroups:number;extraRightRows:number;hasDuplicateKeys:boolean}|null>(null)
+const profiling=ref(false)
 const previewRows=ref<Record<string,unknown>[]>([])
 const previewColumns=ref<Column[]>([])
 const truncated=ref(false)
@@ -72,6 +74,7 @@ const selectable=(index:number):Column[]=>{
 }
 const isGroupPresent=computed(()=>steps.value.some(s=>s.type==='group'))
 function changed(){
+ joinProfile.value=null
  dirty.value=JSON.stringify(steps.value)!==savedSteps
  sqlPreview.value='';previewRows.value=[];previewColumns.value=[]
 }
@@ -246,6 +249,14 @@ async function load(){
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取步骤失败')}
  finally{loading.value=false}
 }
+async function checkJoinKeys(step:JoinStep){
+ profiling.value=true;joinProfile.value=null
+ try{
+  joinProfile.value=await post<{duplicateGroups:number;extraRightRows:number;hasDuplicateKeys:boolean}>(
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/join-key-profile',{step})
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关联键检查失败')}
+ finally{profiling.value=false}
+}
 async function compile(){
  busy.value=true
  try{
@@ -387,6 +398,15 @@ onMounted(load)
         title="删除右表输出字段" @click="step.fields.splice(fi,1);changed()">×</button>
       </div>
       <button :disabled="step.fields.length>=30" @click="addJoinOutput(step)">＋ 添加输出字段</button>
+      <button :disabled="profiling||busy" @click="checkJoinKeys(step)">
+       {{profiling?'检查中…':'检查右表关联键重复'}}
+      </button>
+      <small v-if="joinProfile">
+       {{joinProfile.hasDuplicateKeys
+        ?'发现 '+joinProfile.duplicateGroups+' 组重复键，右表多出 '+joinProfile.extraRightRows+' 行重复匹配候选'
+        :'右表未发现重复关联键'}}
+       （仅统计右表，不代表 JOIN 最终行数）
+      </small>
       <el-checkbox v-model="step.acknowledgeFanout" @change="changed">
        我已了解：右表关联键重复可能放大结果行数
       </el-checkbox>
