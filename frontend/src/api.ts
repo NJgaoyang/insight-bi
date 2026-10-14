@@ -31,6 +31,7 @@ export interface AnalysisV2Bindings {
   rank?:{ref:string;id?:string;direction?:'asc'|'desc'}
   share?:{ref:string;id?:string}
   running?:{ref:string;id?:string;direction?:'asc'|'desc'}
+  periodCompare?:{ref:string;mode:'mom'|'yoy';id?:string}
   sort:{ref:string;direction:'asc'|'desc'}[]
   limit:number
 }
