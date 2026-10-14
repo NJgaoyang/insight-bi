@@ -82,14 +82,72 @@ function moveV2Binding(kind:'dimension'|'metric',position:number,offset:number){
  arr.splice(next,0,item);mark()
 }
 let fieldRequest=0
-watch(()=>chosen.value?.datasetId,async id=>{
- const revision=++fieldRequest;v2Fields.value=[]
+const pipelineLoading=ref(false)
+const pipelineError=ref('')
+type ProcessedFields={fields:FieldV2[];revision:number}
+watch(()=>[chosen.value?.datasetId,chosen.value?.analysisV2?.usePipeline,
+ chosen.value?.analysisV2?.pipelineRevision],async ([id,usePipeline,pinned])=>{
+ const sequence=++fieldRequest;v2Fields.value=[];pipelineError.value=''
  if(!id||!chosen.value?.analysisV2)return
  try{
-  const fields=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')
-  if(revision===fieldRequest)v2Fields.value=fields
- }catch(e:unknown){if(revision===fieldRequest)ElMessage.error(e instanceof Error?e.message:'字段元数据获取失败')}
+  if(usePipeline){
+   const result=await api<ProcessedFields>('/datasets/'+encodeURIComponent(String(id))+'/pipeline/fields')
+   if(sequence!==fieldRequest)return
+   if(result.revision!==pinned){
+    pipelineError.value='加工步骤已有新版本，请更新绑定后重新选择字段'
+    return
+   }
+   v2Fields.value=result.fields
+  }else{
+   const fields=await api<FieldV2[]>('/datasets/'+encodeURIComponent(String(id))+'/fields')
+   if(sequence===fieldRequest)v2Fields.value=fields
+  }
+ }catch(e:unknown){
+  if(sequence===fieldRequest)pipelineError.value=e instanceof Error?e.message:'字段元数据获取失败'
+ }
 },{immediate:true})
+function resetAnalysisSlots(){
+ const config=chosen.value?.analysisV2
+ if(!config)return
+ config.dimensions=[];config.measures=[]
+ config.filters={pre:[],post:[]};config.sort=[]
+}
+async function togglePipelineMode(enabled:boolean){
+ const config=chosen.value?.analysisV2,id=chosen.value?.datasetId
+ if(!config||!id||pipelineLoading.value)return
+ pipelineLoading.value=true
+ try{
+  if(enabled){
+   const result=await api<ProcessedFields>('/datasets/'+encodeURIComponent(id)+'/pipeline/fields')
+   config.usePipeline=true;config.pipelineRevision=result.revision
+   resetAnalysisSlots();v2Fields.value=result.fields
+   ElMessage.success('已选择加工结果，请重新选择分析字段')
+  }else{
+   config.usePipeline=false;delete config.pipelineRevision
+   resetAnalysisSlots();v2Fields.value=[]
+  }
+  pipelineError.value='';mark()
+ }catch(e:unknown){
+  pipelineError.value=e instanceof Error?e.message:'切换加工数据源失败'
+  ElMessage.error(pipelineError.value)
+ }finally{pipelineLoading.value=false}
+}
+async function refreshPipelineVersion(){
+ const config=chosen.value?.analysisV2,id=chosen.value?.datasetId
+ if(!config||!id||!config.usePipeline||pipelineLoading.value)return
+ pipelineLoading.value=true
+ try{
+  const result=await api<ProcessedFields>('/datasets/'+encodeURIComponent(id)+'/pipeline/fields')
+  if(result.revision!==config.pipelineRevision){
+   resetAnalysisSlots()
+   config.pipelineRevision=result.revision
+   ElMessage.warning('已更新加工版本，请重新选择维度和指标')
+  }
+  v2Fields.value=result.fields
+  pipelineError.value='';mark()
+ }catch(e:unknown){pipelineError.value=e instanceof Error?e.message:'加工版本刷新失败';ElMessage.error(pipelineError.value)}
+ finally{pipelineLoading.value=false}
+}
 function addV2Field(field:FieldV2,kind:'dimension'|'metric'){
  const b=chosen.value?.analysisV2;if(!b)return
  if(kind==='dimension'){
@@ -151,6 +209,12 @@ async function refreshFormulaFields(){
  if(!id)return
  const version=++fieldRequest
  try{
+  if(chosen.value?.analysisV2?.usePipeline){
+   const result=await api<ProcessedFields>('/datasets/'+encodeURIComponent(id)+'/pipeline/fields')
+   if(version===fieldRequest&&result.revision===chosen.value?.analysisV2?.pipelineRevision)
+    v2Fields.value=result.fields
+   return
+  }
   const fields=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')
   if(version===fieldRequest)v2Fields.value=fields
  }catch(e:unknown){
@@ -401,6 +465,19 @@ onMounted(load)
     <div v-if="!datasets.length" class="analysis-empty-data">当前还没有数据集，请先在「公共数据」连接 StarRocks 并创建 SQL 数据集。</div>
     <div v-else-if="!chosen" class="analysis-empty-data">在底部点击「＋组件」开始分析。</div>
     <template v-else-if="chosen.analysisV2">
+     <div class="analysis-processing-source">
+      <span>数据来源</span>
+      <el-switch :model-value="Boolean(chosen.analysisV2.usePipeline)"
+       :disabled="pipelineLoading||!chosen.datasetId"
+       active-text="加工结果" inactive-text="原始数据"
+       @change="togglePipelineMode(Boolean($event))"/>
+      <span v-if="chosen.analysisV2.usePipeline" class="analysis-pipeline-version">
+       版本 {{chosen.analysisV2.pipelineRevision}}
+       <button title="更新加工结果绑定版本" :disabled="pipelineLoading"
+        @click="refreshPipelineVersion">更新版本</button>
+      </span>
+     </div>
+     <div v-if="pipelineError" class="analysis-pipeline-warning">{{pipelineError}}</div>
      <div class="analysis-field-search">
        <el-input v-model="fieldSearch" clearable placeholder="搜索字段" size="small"/>
        <el-checkbox v-model="showHidden" size="small">管理隐藏字段</el-checkbox>
