@@ -113,4 +113,42 @@ class AnalysisPipelineUnionTest {
     assertThrows(IllegalArgumentException.class,()->api.compile("main_ds",
       Map.of("steps",List.of(step()),"limit",10)));
   }
+
+  @Test void explicitMappingSupportsDifferentPhysicalNamesAndRejectsUnsafeMappings()throws Exception{
+    var renamed=List.of(
+      new FieldCatalog.Field("newCity","城市","city_name","STRING","DIMENSION",false,false,"ROW",null),
+      new FieldCatalog.Field("newRevenue","收入","amount","DECIMAL","BOTH",true,false,"ROW",null));
+    var engine=new AnalysisPipelineCompiler(LEFT,Map.of("archive_ds",
+      new AnalysisPipelineCompiler.UnionSource("SELECT city_name,amount FROM archive",renamed)));
+    var mapping=List.of(
+      Map.of("leftFieldId","city","rightFieldId","newCity"),
+      Map.of("leftFieldId","revenue","rightFieldId","newRevenue"));
+    var configured=new HashMap<String,Object>(step());
+    configured.put("mappings",mapping);
+    var plan=engine.compile(MAIN,Map.of("steps",List.of(configured),"limit",20));
+    assertTrue(plan.sql().contains("bis.`city_name` AS `city`"));
+    assertTrue(plan.sql().contains("bis.`amount` AS `revenue`"));
+    try(var conn=DriverManager.getConnection(
+      "jdbc:h2:mem:union_mapping_"+UUID.randomUUID()+";MODE=MySQL","sa","")){
+      try(var st=conn.createStatement()){
+        st.execute("CREATE TABLE sales(city VARCHAR(25),revenue DECIMAL(12,2))");
+        st.execute("CREATE TABLE archive(city_name VARCHAR(25),amount DECIMAL(12,2))");
+        st.execute("INSERT INTO sales VALUES ('北京',100)");
+        st.execute("INSERT INTO archive VALUES ('上海',60)");
+      }
+      var data=rows(conn,plan);
+      assertEquals(2,data.size());
+      assertEquals("上海",data.get(1).get("city"));
+    }
+    configured.put("mappings",List.of(mapping.get(0),mapping.get(0)));
+    assertThrows(IllegalArgumentException.class,()->
+      engine.compile(MAIN,Map.of("steps",List.of(configured))));
+    configured.put("mappings",List.of(mapping.get(0)));
+    assertThrows(IllegalArgumentException.class,()->
+      engine.compile(MAIN,Map.of("steps",List.of(configured))));
+    configured.put("mappings",List.of(mapping.get(1),Map.of(
+      "leftFieldId","city","rightFieldId","newRevenue")));
+    assertThrows(IllegalArgumentException.class,()->
+      engine.compile(MAIN,Map.of("steps",List.of(configured))));
+  }
 }
