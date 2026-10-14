@@ -648,6 +648,14 @@ onMounted(load)
          @update:model-value="v=>setV2Direction(v as 'asc'|'desc')">
         <el-option label="降序" value="desc"/><el-option label="升序" value="asc"/>
        </el-select>
+       <label>汇总排名（相同数值并列）</label>
+       <el-select :model-value="chosen.analysisV2.rank?.ref||''" clearable placeholder="不计算排名"
+        @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.rank={ref:String(v),direction:'desc'};else delete chosen.analysisV2.rank;mark()}}">
+        <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
+       </el-select>
+       <el-select v-if="chosen.analysisV2.rank" v-model="chosen.analysisV2.rank.direction" @change="mark">
+        <el-option label="数值越大排名越前" value="desc"/><el-option label="数值越小排名越前" value="asc"/>
+       </el-select>
        <AnalysisFilters :key="chosen.id" :bindings="chosen.analysisV2" :fields="v2Fields" @change="mark"/>
        <label>各指标显示设置</label>
        <div v-for="item in v2MeasureLabels" :key="'style-'+item.binding.id" class="v2-measure-setting">
