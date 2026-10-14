@@ -86,7 +86,7 @@ const processedFields=[
 
   // Switching back keeps existing nonprocessing analysis request shape.
   await sw.click()
-  await page.locator('.analysis-field').filter({hasText:'城市'}).waitFor()
+  await page.locator('.analysis-field').filter({hasText:'城市'}).first().waitFor()
   await page.locator('.analysis-header-actions .analysis-primary').click()
   await page.waitForFunction(()=>document.querySelector('.analysis-save-indicator')?.textContent?.includes('已保存'))
   const raw=saves.at(-1).content.widgets[0].analysisV2
