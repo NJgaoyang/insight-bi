@@ -213,12 +213,12 @@ class AnalysisQueryPlannerTest {
     req.put("measures",List.of(Map.of("id","total","fieldId","revenue","aggregate","SUM")));
     req.put("periodCompare",Map.of("ref","total","mode","yoy"));
     var yoy=planner.compile("SELECT order_date,revenue FROM sales",req);
-    assertTrue(yoy.sql().contains("LAG(bic.`total`,12)"));
-    assertTrue(yoy.sql().contains("NULLIF(bip.`bi_previous`,0)"));
+    assertTrue(yoy.sql().contains("INTERVAL 12 MONTH"));
+    assertTrue(yoy.sql().contains("NULLIF(prev.`total`,0)"));
     assertEquals("bi_period_change",yoy.columns().get(2).get("name"));
     req.put("periodCompare",Map.of("ref","total","mode","mom"));
     assertTrue(planner.compile("SELECT order_date,revenue FROM sales",req).sql()
-      .contains("LAG(bic.`total`,1)"));
+      .contains("INTERVAL 1 MONTH"));
     req.put("dimensions",List.of(Map.of("fieldId","city")));
     assertThrows(IllegalArgumentException.class,()->
       planner.compile("SELECT city,revenue FROM sales",req));
@@ -237,6 +237,24 @@ class AnalysisQueryPlannerTest {
     req.put("sort",List.of(Map.of("ref","month","direction","asc")));
     var plan=planner.compile("SELECT order_date,revenue FROM sales",req);
     assertTrue(plan.sql().contains(" ORDER BY `d1` ASC LIMIT ?"));
-    assertTrue(plan.sql().contains("LAG(bic.`total`,1)"));
+    assertTrue(plan.sql().contains("INTERVAL 1 DAY"));
+  }
+
+  @Test void missingMonthsUseCalendarKeyNotPriorExistingRow(){
+    var planner=new AnalysisQueryPlanner(sample());
+    var req=new HashMap<String,Object>();
+    req.put("dimensions",List.of(Map.of("fieldId","month","granularity","month")));
+    req.put("measures",List.of(Map.of("id","total","fieldId","revenue","aggregate","SUM")));
+    req.put("periodCompare",Map.of("ref","total","mode","mom"));
+    req.put("filters",Map.of("pre",List.of(Map.of("fieldId","revenue","op","gte","value",1))));
+    var plan=planner.compile("SELECT order_date,revenue FROM sales",req);
+    assertTrue(plan.sql().contains("LEFT JOIN"));
+    assertTrue(plan.sql().contains("prev.`d1` = DATE_FORMAT(DATE_SUB"));
+    assertTrue(plan.sql().contains("INTERVAL 1 MONTH"));
+    assertEquals(List.of(new BigDecimal("1"),new BigDecimal("1"),201),plan.params());
+    assertFalse(plan.sql().contains("LAG("));
+    req.put("periodCompare",Map.of("ref","total","mode","yoy"));
+    assertTrue(planner.compile("SELECT order_date,revenue FROM sales",req).sql()
+      .contains("INTERVAL 12 MONTH"));
   }
 }
