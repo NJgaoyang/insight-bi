@@ -658,6 +658,16 @@ onMounted(load)
          <el-option label="维度升序累计" value="asc"/><el-option label="维度降序累计" value="desc"/>
         </el-select>
        </template>
+       <template v-if="chosen.analysisV2.dimensions.length===1 && v2Fields.some(f=>f.id===chosen.analysisV2!.dimensions[0]?.fieldId && ['DATE','DATETIME'].includes(f.logicalType))">
+        <label>按日期分组周期比较（需连续周期）</label>
+        <el-select :model-value="chosen.analysisV2.periodCompare?.ref||''" clearable placeholder="不计算同比环比"
+         @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.periodCompare={ref:String(v),mode:'mom'};else delete chosen.analysisV2.periodCompare;mark()}}">
+         <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
+        </el-select>
+        <el-select v-if="chosen.analysisV2.periodCompare" v-model="chosen.analysisV2.periodCompare.mode" @change="mark">
+         <el-option label="环比（上一可用周期）" value="mom"/><el-option label="同比（向前 12 月/1 年）" value="yoy"/>
+        </el-select>
+       </template>
        <label>指标占总量比例</label>
        <el-select :model-value="chosen.analysisV2.share?.ref||''" clearable placeholder="不计算占比"
         @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.share={ref:String(v)};else delete chosen.analysisV2.share;mark()}}">
