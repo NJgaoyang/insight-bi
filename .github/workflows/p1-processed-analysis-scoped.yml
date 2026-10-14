@@ -1,0 +1,55 @@
+name: P1 Processed Analysis Scoped
+
+on:
+  push:
+    branches:
+      - feat/finebi-analysis-engine-p0
+    paths:
+      - '.github/workflows/p1-processed-analysis-scoped.yml'
+      - 'backend/src/main/java/com/insightbi/analysis/AnalysisApi.java'
+      - 'backend/src/main/java/com/insightbi/analysis/AnalysisPipelineApi.java'
+      - 'backend/src/main/java/com/insightbi/analysis/AnalysisResourceGraph.java'
+      - 'backend/src/main/java/com/insightbi/BiApi.java'
+      - 'backend/src/test/java/com/insightbi/analysis/AnalysisPipelineReuseTest.java'
+      - 'backend/src/test/java/com/insightbi/AnalysisPipelineSnapshotBindingTest.java'
+      - 'frontend/src/AnalysisSubject.vue'
+      - 'frontend/src/AnalysisV2Chart.vue'
+      - 'frontend/src/api.ts'
+      - 'frontend/src/style.css'
+      - 'scripts/finebi_processed_source_ui_smoke.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  processing-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Only related H2/contract tests (no external DB access)
+        working-directory: backend
+        run: mvn -B -q -Dtest=AnalysisPipelineReuseTest,AnalysisPipelineSnapshotBindingTest,AnalysisResourceGraphTest test
+  processing-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install pinned frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Type-check and bundle only (no end-to-end regression)
+        working-directory: frontend
+        run: npm run build
