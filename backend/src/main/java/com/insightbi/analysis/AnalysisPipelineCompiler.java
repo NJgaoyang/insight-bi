@@ -157,7 +157,7 @@ public final class AnalysisPipelineCompiler {
     Set<String> aliases=new HashSet<>();
     for(var f:left){
       String physical=f.sourceColumn();
-      if(!aliases.add(physical))
+      if(!aliases.add(physical.toLowerCase(Locale.ROOT)))
         throw new IllegalArgumentException("左表存在重复物理字段名");
       columns.add("biq."+FormulaCompiler.quote(physical)+" AS "+FormulaCompiler.quote(physical));
     }
@@ -172,7 +172,7 @@ public final class AnalysisPipelineCompiler {
       FieldCatalog.Field sourceField=rightFields.get(srcId);
       if(sourceField==null)throw new IllegalArgumentException("关联输出字段不存在");
       String alias="join_"+id;
-      if(!aliases.add(alias))throw new IllegalArgumentException("关联输出物理字段名冲突");
+      if(!aliases.add(alias.toLowerCase(Locale.ROOT)))throw new IllegalArgumentException("关联输出物理字段名冲突");
       columns.add("bis."+FormulaCompiler.quote(sourceField.sourceColumn())+
         " AS "+FormulaCompiler.quote(alias));
       fields.put(id,new FieldCatalog.Field(id,name,alias,sourceField.logicalType(),
