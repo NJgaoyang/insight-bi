@@ -227,4 +227,16 @@ class AnalysisQueryPlannerTest {
     assertThrows(IllegalArgumentException.class,()->
       planner.compile("SELECT order_date,revenue FROM sales",req));
   }
+
+  @Test void periodChangeExecutesAfterDateAggregationWithSafeZero()throws Exception{
+    var planner=new AnalysisQueryPlanner(sample());
+    var req=new HashMap<String,Object>();
+    req.put("dimensions",List.of(Map.of("fieldId","month","granularity","day")));
+    req.put("measures",List.of(Map.of("id","total","fieldId","revenue","aggregate","SUM")));
+    req.put("periodCompare",Map.of("ref","total","mode","mom"));
+    req.put("sort",List.of(Map.of("ref","month","direction","asc")));
+    var plan=planner.compile("SELECT order_date,revenue FROM sales",req);
+    assertTrue(plan.sql().contains(" ORDER BY `d1` ASC LIMIT ?"));
+    assertTrue(plan.sql().contains("LAG(bic.`total`,1)"));
+  }
 }
