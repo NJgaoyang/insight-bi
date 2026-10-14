@@ -658,7 +658,7 @@ onMounted(load)
          <el-option label="维度升序累计" value="asc"/><el-option label="维度降序累计" value="desc"/>
         </el-select>
        </template>
-       <template v-if="chosen.analysisV2.dimensions.length===1 && v2Fields.some(f=>f.id===chosen.analysisV2!.dimensions[0]?.fieldId && ['DATE','DATETIME'].includes(f.logicalType))">
+       <template v-if="chosen.analysisV2.dimensions.length===1 && v2Fields.some(f=>f.id===chosen?.analysisV2?.dimensions[0]?.fieldId && ['DATE','DATETIME'].includes(f.logicalType))">
         <label>按日期分组周期比较（需连续周期）</label>
         <el-select :model-value="chosen.analysisV2.periodCompare?.ref||''" clearable placeholder="不计算同比环比"
          @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.periodCompare={ref:String(v),mode:'mom'};else delete chosen.analysisV2.periodCompare;mark()}}">
