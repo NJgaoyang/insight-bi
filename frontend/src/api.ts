@@ -28,6 +28,7 @@ export interface AnalysisV2Bindings {
   dimensions:DimensionV2[]
   measures:MeasureV2[]
   filters:{pre:FilterV2[];post:FilterV2[]}
+  rank?:{ref:string;id?:string;direction?:'asc'|'desc'}
   sort:{ref:string;direction:'asc'|'desc'}[]
   limit:number
 }
