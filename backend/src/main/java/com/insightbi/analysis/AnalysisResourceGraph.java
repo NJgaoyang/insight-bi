@@ -109,6 +109,31 @@ public final class AnalysisResourceGraph {
     return copy;
   }
 
+  /**
+   * An analysis snapshot opts into processing per widget. Saved and published
+   * snapshots must bind an actual processing revision; otherwise a dashboard
+   * could silently query a different pipeline after an editor change.
+   */
+  public static void requirePinnedPipelines(Object snapshot,AnalysisPipelineApi pipeline){
+    if(!(snapshot instanceof Map<?,?> root)||
+       !(root.get("widgets") instanceof List<?> widgets))
+      throw new IllegalArgumentException("分析主题组件列表无效");
+    for(Object raw:widgets){
+      if(!(raw instanceof Map<?,?> widget))continue;
+      Object config=widget.get("analysisV2");
+      if(!(config instanceof Map<?,?> analysis))continue;
+      Object mode=analysis.get("usePipeline");
+      if(mode==null||Boolean.FALSE.equals(mode))continue;
+      if(!Boolean.TRUE.equals(mode))
+        throw new IllegalArgumentException("加工数据源开关必须为布尔值");
+      Object dataset=widget.get("datasetId"),revision=analysis.get("pipelineRevision");
+      if(!(dataset instanceof String id)||id.isBlank()||
+         !(revision instanceof Integer version)||version<1)
+        throw new IllegalArgumentException("加工数据源缺少有效数据集或绑定版本");
+      pipeline.reusableSource(id,version);
+    }
+  }
+
   /** Validates source existence for actual referenced IDs, not commentary text. */
   public static void requireExistingDatasets(Graph graph,org.springframework.jdbc.core.JdbcTemplate db){
     for(String datasetId:graph.datasetIds()){
