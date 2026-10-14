@@ -226,6 +226,13 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - H2 SQL 定向执行用例验证 150/50 分组下份额为 0.75、LIMIT 前计算完整总量、0 分母和无效引用。相关测试 CI [38505836389](https://github.com/NJgaoyang/insight-bi/actions/runs/38505836389) 成功；前端构建和浏览器工作流以各自最终结果为准。
 - 未验收真实 StarRocks JDBC、正式生产部署与元数据备份/恢复。P2-01 累计、同比环比、复杂表格及导出未完成。
 
+## P2-01 第三批：单维度累计值（2026-10-14）
+
+- 分析 V2 请求增加可选 `running:{ref,id?,direction?}`，仅允许**恰好一个分组维度**，且 ref 必须为当前请求的数值指标。先计算原本 WHERE/GROUP/HAVING 和可选排名、占比，再经外层窗口 `SUM(metric) OVER (ORDER BY d1 ASC|DESC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)` 得到按维度顺序累计的数值，最后才应用最外层排序与 LIMIT；避免只累计客户端加载的部分结果。
+- 前端只在恰好一个维度时显示“按维度累计指标”设置，允许指定指标与升/降序；旧 V2 查询和已有图表继续兼容。
+- H2 定向 SQL 执行测试验证三组累计和、末端显示排序不改变窗口累计顺序、LIMIT 前计算完整结果、无效指标及多维度请求拒绝。[38506388127](https://github.com/NJgaoyang/insight-bi/actions/runs/38506388127) 后端定向 CI **PASS**。前端构建、浏览器工作流以相应最新 CI 完结状态为准。
+- 仅支持单维度全局累计；分区累计、多维级联、同比环比、高级表格与导出尚未完成。真实 StarRocks、生产备份回滚和部署仍未验收。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
