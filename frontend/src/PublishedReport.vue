@@ -17,6 +17,11 @@ const dashboardViews=ref<DashboardView[]>([])
 const selectedViewId=ref('')
 const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
 const visibleWidgets=computed(()=>orderedViewWidgets(activeView.value,widgets.value))
+const jumpTarget=(id:string)=>{
+ const target=activeView.value?.jumps?.[id]
+ return target&&dashboardViews.value.some(v=>v.id===target)?target:''
+}
+function navigateWidget(id:string){const target=jumpTarget(id);if(target)selectedViewId.value=target}
 
 async function load(){
  try{
@@ -60,10 +65,11 @@ onMounted(load)
      :data-widget-id="widget.id" :style="cardStyle(activeView,widget.id)">
      <div class="analysis-layout-toolbar">
       <strong>{{widget.title}}</strong>
-      <button v-if="activeView?.jumps?.[widget.id] && dashboardViews.some(v=>v.id===activeView?.jumps?.[widget.id])"
-       @click="selectedViewId=activeView!.jumps![widget.id]">前往 {{dashboardViews.find(v=>v.id===activeView?.jumps?.[widget.id])?.name}} →</button>
+      <button v-if="jumpTarget(widget.id)"
+       @click="navigateWidget(widget.id)">前往 {{dashboardViews.find(v=>v.id===activeView?.jumps?.[widget.id])?.name}} →</button>
      </div>
-     <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"/>
+     <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"
+      :navigable="!!jumpTarget(widget.id)" @navigate="navigateWidget(widget.id)"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
     </div>
    </div>
