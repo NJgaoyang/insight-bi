@@ -170,4 +170,39 @@ class AnalysisQueryPlannerTest {
     assertThrows(IllegalArgumentException.class,()->
       planner.compile("SELECT city,revenue FROM sales",req));
   }
+
+  @Test void runningTotalUsesAllGroupsBeforeLimitAndRejectsMultiDimensionalOrder()throws Exception{
+    var planner=new AnalysisQueryPlanner(sample());
+    Map<String,Object> req=new HashMap<>();
+    req.put("dimensions",List.of(Map.of("fieldId","city")));
+    req.put("measures",List.of(Map.of("id","total","fieldId","revenue","aggregate","SUM")));
+    req.put("running",Map.of("ref","total","id","running_total","direction","asc"));
+    req.put("sort",List.of(Map.of("ref","city","direction","desc")));
+    req.put("limit",1);
+    var plan=planner.compile("SELECT city,revenue FROM sales",req);
+    assertTrue(plan.sql().contains("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"));
+    try(var c=java.sql.DriverManager.getConnection(
+      "jdbc:h2:mem:p2_running_"+UUID.randomUUID()+";MODE=MySQL","sa","")){
+      try(var st=c.createStatement()){
+        st.execute("CREATE TABLE sales(city VARCHAR(30),revenue DECIMAL(12,2))");
+        st.execute("INSERT INTO sales VALUES ('A',100),('A',50),('B',90),('C',60)");
+      }
+      try(var ps=c.prepareStatement(plan.sql())){
+        for(int i=0;i<plan.params().size();i++)ps.setObject(i+1,plan.params().get(i));
+        try(var rs=ps.executeQuery()){
+          assertTrue(rs.next());assertEquals("C",rs.getString("d1"));
+          assertEquals(0,new BigDecimal("300").compareTo(rs.getBigDecimal("running_total")));
+          assertTrue(rs.next());assertEquals("B",rs.getString("d1"));
+          assertEquals(0,new BigDecimal("240").compareTo(rs.getBigDecimal("running_total")));
+        }
+      }
+    }
+    req.put("dimensions",List.of(Map.of("fieldId","city"),Map.of("fieldId","month")));
+    assertThrows(IllegalArgumentException.class,()->
+      planner.compile("SELECT city,revenue,order_date FROM sales",req));
+    req.put("dimensions",List.of(Map.of("fieldId","city")));
+    req.put("running",Map.of("ref","unknown"));
+    assertThrows(IllegalArgumentException.class,()->
+      planner.compile("SELECT city,revenue FROM sales",req));
+  }
 }
