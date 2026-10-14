@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {computed,nextTick,onBeforeUnmount,ref,watch} from 'vue'
 import * as echarts from 'echarts'
-import {api,type AnalysisWidgetV2,type QueryV2Result} from './api'
+import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
-const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean}>()
-const emit=defineEmits<{(e:'navigate'):void}>()
+const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null}>()
+const emit=defineEmits<{(e:'navigate'):void;(e:'selectDimension',selection:{fieldId:string;value:string|number}|null):void}>()
 const element=ref<HTMLElement|null>(null)
 const loading=ref(false),error=ref(''),rows=ref<Record<string,unknown>[]>([])
 const result=ref<QueryV2Result|null>(null)
@@ -45,13 +45,20 @@ async function load(){
  loading.value=true;error.value=''
  const controller=new AbortController();activeRequest=controller
  try{
-  const response=await api<QueryV2Result>('/analysis/v2/query',{method:'POST',body:JSON.stringify({datasetId:props.widget.datasetId,...config}),signal:controller.signal})
+  const response=await api<QueryV2Result>('/analysis/v2/query',{method:'POST',body:JSON.stringify({datasetId:props.widget.datasetId,...config,
+   filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilter?[props.linkedFilter]:[])],post:config.filters?.post||[]}}),signal:controller.signal})
   if(gen!==generation)return
   result.value=response;rows.value=response.rows
   await nextTick();render()
  }catch(e:unknown){
   if(gen===generation){error.value=e instanceof Error?e.message:'查询失败';rows.value=[];result.value=null;dispose()}
  }finally{if(gen===generation){loading.value=false;if(activeRequest===controller)activeRequest=null}}
+}
+function selectRow(index:number){
+ const dim=bindings.value?.dimensions[0],col=dimNames.value[0],row=rows.value[index]
+ if(!dim||!col||!row)return
+ const value=row[col.name]
+ if(typeof value==='string'||typeof value==='number')emit('selectDimension',{fieldId:dim.fieldId,value})
 }
 function render(){
  const t=props.widget.type
@@ -95,7 +102,7 @@ function render(){
  }
  error.value='';chart.setOption(base,{notMerge:true});
  chart.off('click')
- if(props.navigable)chart.on('click',()=>emit('navigate'))
+ chart.on('click',params=>{if(typeof params.dataIndex==='number')selectRow(params.dataIndex);if(props.navigable)emit('navigate')})
  chart.resize()
 }
 const queryKey=computed(()=>{
@@ -104,7 +111,7 @@ const queryKey=computed(()=>{
    usePipeline:b.usePipeline??false,pipelineRevision:b.pipelineRevision,
    dimensions:b.dimensions,
    measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,distinct:m.distinct,alias:m.alias})),
-   filters:b.filters,sort:b.sort,limit:b.limit
+   filters:b.filters,linkedFilter:props.linkedFilter,sort:b.sort,limit:b.limit
  }:null])
 })
 watch(queryKey,load,{immediate:true})
@@ -131,7 +138,7 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
    <table><thead><tr><th v-for="c in visibleColumns" :key="c.name">{{c.label}}</th></tr></thead>
    <tbody><tr v-for="(row,index) in rows" :key="index"
     :role="navigable?'button':undefined" :tabindex="navigable?0:undefined"
-    @click="navigable&&emit('navigate')" @keydown.enter="navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
+    @click="selectRow(index);navigable&&emit('navigate')" @keydown.enter="selectRow(index);navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
   <div v-show="!loading&&!error&&rows.length>0&&!['metric','table'].includes(widget.type)" ref="element" class="v2-echart-canvas"></div>
   <div v-if="result&&!loading" class="v2-query-meta">
