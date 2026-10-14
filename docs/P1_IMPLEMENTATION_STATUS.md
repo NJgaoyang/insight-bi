@@ -204,6 +204,13 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 此脚本基于 Chromium 和模拟 REST，**代码提交及 CI 语法检查并不等于实际浏览器运行成功**；仅当使用隔离预览服务执行该脚本并记录 PASS 后才能勾选浏览器交互门禁。由于点击图表采用测试画布坐标，真浏览器场景仍可能需要稳定的坐标/事件选择方式。
 - 仅补验收脚本，未改查询/数据库服务；StarRocks 真数与生产发布门禁依旧未满足。
 
+## P1-03 第五批：真实 Chromium 发布页验收（2026-10-14）
+
+- 新增独立 GitHub Actions `.github/workflows/p1-published-browser.yml`，仅在发布页、V2 图表、视图布局或对应浏览器测试脚本发生改动时触发；隔离安装 Chromium、构建前端、启动本地 Vite，运行 `finebi_published_views_ui_smoke.cjs`，不依赖生产实例、不触碰数据库。
+- 首次真实浏览器运行 [38504839796](https://github.com/NJgaoyang/insight-bi/actions/runs/38504839796) **失败**：SPA 对同一 hash 的 `goto` 没有重新拉取 fixture，导致联动用例等待不到图表。修复为 `page.reload()`，没有通过跳过用例掩盖失败。
+- 修复后 [38505038412](https://github.com/NJgaoyang/insight-bi/actions/runs/38505038412) **SUCCESS**：前端 build、隔离 Chromium、发布页导航和联动 eq 筛选、清除、旧仪表板只读路由全部通过。本条仅宣称**模拟 REST 的真浏览器操作**，不代表真实 StarRocks 端到端或生产发布验收完成。
+- 对应测试修复 commit `05dcb7b`；相关 workflow commit `88ea4d7`。P0-05 StarRocks SQL 数据对账、生产 H2 元数据备份恢复、P2/P3 仍未完成。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
