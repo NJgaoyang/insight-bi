@@ -11,7 +11,7 @@ type FilterStep={id:string;type:'filter';fieldId:string;op:string;value?:string;
 type Measure={id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';name:string}
 type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
 type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
- op:string;value?:string;outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
+ op:string;value?:string;values?:string[];outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
 type UnionMapping={leftFieldId:string;rightFieldId:string}
 type UnionStep={id:string;type:'union';sourceDatasetId:string;mappings?:UnionMapping[];distinct?:boolean}
 type JoinKey={leftFieldId:string;rightFieldId:string}
@@ -185,6 +185,16 @@ function addJoinKey(step:JoinStep){
 function addJoinOutput(step:JoinStep){
  if(step.fields.length>=30)return
  step.fields.push(joinOutputFor(step.sourceDatasetId,step.conditions));changed()
+}
+function changeCaseOperator(step:CaseStep){
+ if(step.op==='in'){
+  step.values=step.values?.length?step.values:(step.value?[step.value]:[])
+  delete step.value
+ }else if(step.op!=='isNull'&&step.op!=='notNull'&&step.values){
+  step.value=step.values[0]||''
+  delete step.values
+ }
+ changed()
 }
 function addCase(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
@@ -462,14 +472,21 @@ onMounted(load)
       <label>判断字段</label><el-select v-model="step.sourceFieldId" filterable @change="changed">
        <el-option v-for="f in selectable(index)" :key="f.id" :label="f.label" :value="f.id"/>
       </el-select>
-      <label>判断条件</label><el-select v-model="step.op" @change="changed">
+      <label>判断条件</label><el-select v-model="step.op" @change="changeCaseOperator(step)">
        <el-option v-for="o in [{id:'eq',name:'等于'},{id:'ne',name:'不等于'},
         {id:'gt',name:'大于'},{id:'gte',name:'大于等于'},
         {id:'lt',name:'小于'},{id:'lte',name:'小于等于'},
-        {id:'contains',name:'包含'},{id:'isNull',name:'为空'},{id:'notNull',name:'不为空'}]"
+        {id:'contains',name:'包含'},{id:'in',name:'属于集合'},{id:'isNull',name:'为空'},{id:'notNull',name:'不为空'}]"
         :key="o.id" :label="o.name" :value="o.id"/>
       </el-select>
-      <template v-if="!['isNull','notNull'].includes(step.op)">
+      <template v-if="step.op==='in'">
+       <label>匹配值（1～30 个）</label>
+       <el-select v-model="step.values" multiple filterable allow-create default-first-option
+        :reserve-keyword="false" placeholder="输入值后按回车" @change="changed">
+        <el-option v-for="v in step.values||[]" :key="v" :label="v" :value="v"/>
+       </el-select>
+      </template>
+      <template v-else-if="!['isNull','notNull'].includes(step.op)">
        <label>比较值</label><el-input v-model="step.value" @input="changed"/>
       </template>
       <label>结果类型</label><el-select v-model="step.outputType" @change="changed">
