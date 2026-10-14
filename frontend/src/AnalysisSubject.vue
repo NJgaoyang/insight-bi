@@ -280,7 +280,7 @@ async function load(){
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
@@ -603,6 +603,13 @@ onMounted(load)
        :data-widget-id="component.id" :style="cardStyle(activeView,component.id)">
        <div class="analysis-layout-toolbar">
         <strong>{{component.title}}</strong>
+        <el-select :model-value="activeView?.jumps?.[component.id]||''" size="small"
+         style="width:126px" placeholder="点击后跳转" aria-label="组件跳转目标"
+         @update:model-value="v=>{if(activeView){activeView.jumps ||= {};if(v)activeView.jumps[component.id]=String(v);else delete activeView.jumps[component.id];mark()}}">
+         <el-option label="不跳转" value=""/>
+         <el-option v-for="target in dashboardViews.filter(v=>v.id!==selectedViewId)"
+          :key="target.id" :label="target.name" :value="target.id"/>
+        </el-select>
         <button title="组件前移" :disabled="index===0" @click="moveDashboardWidget(component.id,-1)">←</button>
         <button title="组件后移" :disabled="index===dashboardWidgets.length-1" @click="moveDashboardWidget(component.id,1)">→</button>
         <button title="切换组件宽度" @click="resizeDashboardWidget(component.id,'columns')">{{viewLayout(activeView,component.id).columns===12?'半宽':'全宽'}}</button>
