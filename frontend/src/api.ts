@@ -30,6 +30,7 @@ export interface AnalysisV2Bindings {
   filters:{pre:FilterV2[];post:FilterV2[]}
   rank?:{ref:string;id?:string;direction?:'asc'|'desc'}
   share?:{ref:string;id?:string}
+  running?:{ref:string;id?:string;direction?:'asc'|'desc'}
   sort:{ref:string;direction:'asc'|'desc'}[]
   limit:number
 }
