@@ -111,7 +111,7 @@ const queryKey=computed(()=>{
    usePipeline:b.usePipeline??false,pipelineRevision:b.pipelineRevision,
    dimensions:b.dimensions,
    measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,distinct:m.distinct,alias:m.alias})),
-   filters:b.filters,linkedFilter:props.linkedFilter,rank:b.rank,share:b.share,running:b.running,sort:b.sort,limit:b.limit
+   filters:b.filters,linkedFilter:props.linkedFilter,rank:b.rank,share:b.share,running:b.running,periodCompare:b.periodCompare,sort:b.sort,limit:b.limit
  }:null])
 })
 watch(queryKey,load,{immediate:true})
