@@ -22,6 +22,9 @@ export interface DimensionV2 {fieldId:string;granularity?:'year'|'month'|'day'}
 export interface MeasureV2 {id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';alias:string;distinct?:boolean;seriesType?:'bar'|'line';axis?:'left'|'right';decimals?:number;color?:string;showLabel?:boolean}
 export interface FilterV2 {fieldId?:string;ref?:string;op:string;value?:string|number;values?:(string|number)[]}
 export interface AnalysisV2Bindings {
+  /** Explicitly use a saved and revision-pinned data processing result. */
+  usePipeline?:boolean
+  pipelineRevision?:number
   dimensions:DimensionV2[]
   measures:MeasureV2[]
   filters:{pre:FilterV2[];post:FilterV2[]}
