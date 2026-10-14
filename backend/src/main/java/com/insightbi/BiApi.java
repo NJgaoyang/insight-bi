@@ -7,6 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.insightbi.analysis.DatasetSchemaGuard;
 import com.insightbi.analysis.DatasetSqlChangePolicy;
 import com.insightbi.analysis.AnalysisResourceGraph;
+import com.insightbi.analysis.AnalysisPipelineApi;
+import com.insightbi.analysis.FieldCatalog;
 import com.insightbi.analysis.AnalysisPipelineDependencyGuard;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -33,6 +35,7 @@ class BiApi {
  final DatabaseStore s;final JdbcTemplate db;final String password;
  final ConcurrentHashMap<String,ArrayDeque<Long>> loginFailures=new ConcurrentHashMap<>();
  BiApi(DatabaseStore s,JdbcTemplate db,@Value("${BI_ADMIN_PASSWORD:}")String p){this.s=s;this.db=db;password=p;if(p.length()<12)throw new IllegalStateException("Missing admin password");}
+ private AnalysisPipelineApi pipeline(){return new AnalysisPipelineApi(s,new FieldCatalog(s,db),db);}
  @GetMapping("/health")Map<String,Object> health(){return Map.of("ok",true);}
  @PostMapping("/login")Map<String,Object> login(@RequestBody Map<String,Object> x,HttpServletRequest r){
   String ip=r.getRemoteAddr();var attempts=loginFailures.computeIfAbsent(ip,k->new ArrayDeque<Long>());long now=System.currentTimeMillis();
@@ -260,6 +263,7 @@ class BiApi {
   if("analysis".equals(existing.get(0).get("kind"))){
     var graph=AnalysisResourceGraph.of(content);
     AnalysisResourceGraph.requireExistingDatasets(graph,db);
+    AnalysisResourceGraph.requirePinnedPipelines(content,pipeline());
     content=AnalysisResourceGraph.indexedContent(content);
   }
   String json=s.json(content);if(json.length()>2_000_000)throw new IllegalArgumentException("内容过大");
@@ -284,9 +288,11 @@ class BiApi {
   if(list.isEmpty())throw new NoSuchElementException("仪表板不存在");
   var row=list.get(0);
   String kind=db.queryForObject("SELECT kind FROM insight_dashboard WHERE id=?",String.class,id);
-  if("analysis".equals(kind))
-    AnalysisResourceGraph.requireExistingDatasets(
-      AnalysisResourceGraph.of(s.map(String.valueOf(row.get("content_json")))),db);
+  if("analysis".equals(kind)){
+    Map<String,Object> content=s.map(String.valueOf(row.get("content_json")));
+    AnalysisResourceGraph.requireExistingDatasets(AnalysisResourceGraph.of(content),db);
+    AnalysisResourceGraph.requirePinnedPipelines(content,pipeline());
+  }
   Integer next=db.queryForObject("SELECT COALESCE(MAX(version_no),0)+1 FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id);
   db.update("UPDATE insight_dashboard SET published_json=content_json,status='published',updated_at=CURRENT_TIMESTAMP WHERE id=?",id);
   db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",UUID.randomUUID().toString(),id,next,row.get("name"),row.get("mode"),row.get("content_json"));
