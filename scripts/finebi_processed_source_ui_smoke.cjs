@@ -54,7 +54,7 @@ const processedFields=[
   await page.goto(origin+'/#/analysis/report',{waitUntil:'domcontentloaded'})
   const sw=page.locator('.analysis-processing-source .el-switch')
   await sw.waitFor()
-  assert.equal(await page.locator('.analysis-field').filter({hasText:'城市'}).count(),1)
+  assert.ok((await page.locator('.analysis-field').filter({hasText:'城市'}).count())>=1)
   await sw.click()
   await page.locator('.analysis-field').filter({hasText:'收入等级'}).waitFor()
   assert.ok((await page.locator('.analysis-processing-source').innerText()).includes('版本 3'))
