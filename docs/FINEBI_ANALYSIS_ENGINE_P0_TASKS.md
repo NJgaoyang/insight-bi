@@ -283,4 +283,6 @@ git diff --check
 
 | 2026-10-14 | P1-02 第三批：同连接 INNER/LEFT 多键 JOIN、指定右表字段新别名、重复键行数放大显式确认、已保存 JOIN/UNION 数据集删除依赖保护 | feat/finebi-analysis-engine-p0；详见 docs/P1_IMPLEMENTATION_STATUS.md 第三批 | JOIN/UNION/CASE/Compiler/Api 相关定向测试共 17/17 PASS，PipelineDependencyGuardTest 3/3 PASS；Vue TS/Vite build 与两个加工页 Chromium 定向脚本 PASS | StarRocks 真数按用户要求继续暂缓；没有进行全量回归 | P1-02 加工结果复用、关联键唯一性统计、更多多源映射待完成；P0-05/G4 与生产 H2 备份/回滚依旧未通过 |
 
+| 2026-10-14 | P1-02 第四批：将已保存加工结果作为分析主题 V2 数据源、版本锁定、原/加工字段切换、过期阻止保存及发布 | feat/finebi-analysis-engine-p0；docs/P1_IMPLEMENTATION_STATUS.md | 仅定向 14 项 H2/接口与绑定用例 PASS；前端 TypeScript/Vite PASS；Chromium 数据来源切换 PASS | 用户提供的 StarRocks FE TCP 9030 可达，但工具安全检查阻止凭据执行；StarRocks SELECT-only E2E 未通过/未执行 | 生产 18110 未部署，P0-05/G4、H2 备份与回滚发布门禁仍未关闭 |
+
 每推进一项，在根目录总计划和本表中同步更新状态。首次任务必须是 **P0-00**，后续任务不得跳过依赖关系。
