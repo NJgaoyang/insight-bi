@@ -2,7 +2,7 @@ import type {AnalysisWidgetV2} from '../api'
 
 /** P1 view-local layout; component query/visual config stays in shared widgets[]. */
 export type WidgetLayout={columns:6|12;height:320|480|640}
-export type DashboardView={id:string;name:string;widgetIds:string[];layout?:Record<string,WidgetLayout>}
+export type DashboardView={id:string;name:string;widgetIds:string[];layout?:Record<string,WidgetLayout>;jumps?:Record<string,string>}
 
 // Old snapshots use the original 380px visual height. New choices are 320/480/640.
 export function viewLayout(view:DashboardView|undefined,id:string){
@@ -22,7 +22,8 @@ export function orderedViewWidgets(view:DashboardView|undefined,widgets:Analysis
  return view.widgetIds.map(id=>index.get(id)).filter((w):w is AnalysisWidgetV2=>!!w)
 }
 export function removeUnusedLayout(view:DashboardView){
- if(!view.layout)return
  const selected=new Set(view.widgetIds)
+ if(view.jumps)view.jumps=Object.fromEntries(Object.entries(view.jumps).filter(([id])=>selected.has(id)))
+ if(!view.layout)return
  view.layout=Object.fromEntries(Object.entries(view.layout).filter(([id])=>selected.has(id)))
 }
