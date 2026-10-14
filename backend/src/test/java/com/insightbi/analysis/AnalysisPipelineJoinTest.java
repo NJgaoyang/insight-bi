@@ -145,4 +145,16 @@ class AnalysisPipelineJoinTest {
     assertThrows(IllegalArgumentException.class,()->api.compile("main_ds",
       Map.of("steps",List.of(join("LEFT")))));
   }
+
+  @Test void rejectsCaseInsensitiveJoinOutputCollision() {
+    var conflicting=new ArrayList<>(LEFT);
+    conflicting.add(new FieldCatalog.Field("existingRefund","已有退款","JOIN_refundValue",
+      "DECIMAL","BOTH",true,false,"ROW",null));
+    var compiler=new AnalysisPipelineCompiler(conflicting,Map.of(
+      "archive_ds",new AnalysisPipelineCompiler.UnionSource(SECOND,RIGHT)));
+    var error=assertThrows(IllegalArgumentException.class,()->
+      compiler.compile("SELECT city,period,revenue,0 AS JOIN_refundValue FROM sales",
+        Map.of("steps",List.of(join("LEFT")),"limit",20)));
+    assertTrue(error.getMessage().contains("物理字段名冲突"));
+  }
 }
