@@ -194,6 +194,16 @@ function addCase(){
   outputType:'STRING',thenValue:'满足',elseValue:'其他'})
  changed()
 }
+function changeFilterOperator(step:FilterStep){
+ if(step.op==='in'){
+  step.values=step.values?.length?step.values:(step.value?[step.value]:[])
+  delete step.value
+ }else if(step.op!=='isNull'&&step.op!=='notNull'&&step.values){
+  step.value=step.values[0]||''
+  delete step.values
+ }
+ changed()
+}
 function addFilter(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
  const id=nextId('s'),field=selectable(steps.value.length)[0]
@@ -427,13 +437,22 @@ onMounted(load)
       <label>字段</label><el-select v-model="step.fieldId" filterable @change="changed">
        <el-option v-for="f in selectable(index)" :key="f.id" :label="f.label" :value="f.id"/>
       </el-select>
-      <label>条件</label><el-select v-model="step.op" @change="changed">
+      <label>条件</label><el-select v-model="step.op" @change="changeFilterOperator(step)">
        <el-option v-for="o in [{id:'eq',name:'等于'},{id:'ne',name:'不等于'},
-        {id:'gte',name:'大于等于'},{id:'lte',name:'小于等于'},
-        {id:'contains',name:'包含'},{id:'isNull',name:'为空'},{id:'notNull',name:'不为空'}]"
+        {id:'gt',name:'大于'},{id:'gte',name:'大于等于'},
+        {id:'lt',name:'小于'},{id:'lte',name:'小于等于'},
+        {id:'in',name:'属于集合'},{id:'contains',name:'包含'},
+        {id:'isNull',name:'为空'},{id:'notNull',name:'不为空'}]"
         :key="o.id" :label="o.name" :value="o.id"/>
       </el-select>
-      <template v-if="!['isNull','notNull'].includes(step.op)">
+      <template v-if="step.op==='in'">
+       <label>筛选值（1～30 个）</label>
+       <el-select v-model="step.values" multiple filterable allow-create default-first-option
+        :reserve-keyword="false" placeholder="输入一个值后按回车" @change="changed">
+        <el-option v-for="v in step.values||[]" :key="v" :label="v" :value="v"/>
+       </el-select>
+      </template>
+      <template v-else-if="!['isNull','notNull'].includes(step.op)">
        <label>值</label><el-input v-model="step.value" @input="changed"/>
       </template>
      </div>
