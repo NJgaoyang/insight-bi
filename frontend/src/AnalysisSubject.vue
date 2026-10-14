@@ -648,6 +648,11 @@ onMounted(load)
          @update:model-value="v=>setV2Direction(v as 'asc'|'desc')">
         <el-option label="降序" value="desc"/><el-option label="升序" value="asc"/>
        </el-select>
+       <label>指标占总量比例</label>
+       <el-select :model-value="chosen.analysisV2.share?.ref||''" clearable placeholder="不计算占比"
+        @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.share={ref:String(v)};else delete chosen.analysisV2.share;mark()}}">
+        <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
+       </el-select>
        <label>汇总排名（相同数值并列）</label>
        <el-select :model-value="chosen.analysisV2.rank?.ref||''" clearable placeholder="不计算排名"
         @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.rank={ref:String(v),direction:'desc'};else delete chosen.analysisV2.rank;mark()}}">
