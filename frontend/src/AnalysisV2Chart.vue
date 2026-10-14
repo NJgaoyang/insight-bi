@@ -97,6 +97,7 @@ function render(){
 const queryKey=computed(()=>{
  const b=bindings.value
  return JSON.stringify([props.widget.datasetId,b?{
+   usePipeline:b.usePipeline??false,pipelineRevision:b.pipelineRevision,
    dimensions:b.dimensions,
    measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,distinct:m.distinct,alias:m.alias})),
    filters:b.filters,sort:b.sort,limit:b.limit
