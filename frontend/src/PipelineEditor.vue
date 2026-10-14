@@ -12,7 +12,8 @@ type Measure={id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX'
 type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
 type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
  op:string;value?:string;outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
-type UnionStep={id:string;type:'union';sourceDatasetId:string}
+type UnionMapping={leftFieldId:string;rightFieldId:string}
+type UnionStep={id:string;type:'union';sourceDatasetId:string;mappings?:UnionMapping[]}
 type JoinKey={leftFieldId:string;rightFieldId:string}
 type JoinOutput={sourceFieldId:string;fieldId:string;name:string}
 type JoinStep={id:string;type:'join';sourceDatasetId:string;joinType:'INNER'|'LEFT';
@@ -86,6 +87,31 @@ function addFormula(){
  steps.value.push({id,type:'formula',fieldId:nextId('field'),name:'计算列',expression:''})
  changed()
 }
+function unionMappingFor(sourceId:string):UnionMapping[]{
+ const used=new Set<string>()
+ return baseColumns().map(left=>{
+  const right=rightFields(sourceId).find(f=>f.type===left.type&&f.name===left.name&&!used.has(f.id))
+   ||rightFields(sourceId).find(f=>f.type===left.type&&!used.has(f.id))
+  if(right)used.add(right.id)
+  return {leftFieldId:left.id,rightFieldId:right?.id||''}
+ })
+}
+async function changeUnionSource(step:UnionStep,id:string){
+ try{
+  await ensureRightFields(id)
+  step.sourceDatasetId=id
+  if(step.mappings)step.mappings=unionMappingFor(id)
+  changed()
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'合并字段读取失败')}
+}
+async function enableUnionMapping(step:UnionStep){
+ try{
+  await ensureRightFields(step.sourceDatasetId)
+  step.mappings=unionMappingFor(step.sourceDatasetId)
+  changed()
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'合并字段读取失败')}
+}
+function disableUnionMapping(step:UnionStep){delete step.mappings;changed()}
 function addUnion(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
  if(steps.value.some(x=>x.type==='union'||x.type==='join')){
@@ -212,7 +238,9 @@ async function load(){
   baseFields.value=fields
   steps.value=structuredClone(config.steps)
   const savedJoin=steps.value.find((x):x is JoinStep=>x.type==='join')
+  const savedUnion=steps.value.find((x):x is UnionStep=>x.type==='union'&&!!x.mappings)
   if(savedJoin)await ensureRightFields(savedJoin.sourceDatasetId)
+  if(savedUnion)await ensureRightFields(savedUnion.sourceDatasetId)
   revision.value=config.revision;stale.value=config.stale
   savedSteps=JSON.stringify(steps.value);dirty.value=false
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取步骤失败')}
@@ -299,11 +327,27 @@ onMounted(load)
      </header>
      <div v-if="step.type==='union'" class="pipeline-fields">
       <label>需要追加的数据集</label>
-      <el-select v-model="step.sourceDatasetId" filterable @change="changed">
+      <el-select :model-value="step.sourceDatasetId" filterable
+       @update:model-value="v=>changeUnionSource(step,String(v))">
        <el-option v-for="source in unionCandidates" :key="source.id"
         :label="source.name" :value="source.id"/>
       </el-select>
-      <small>仅支持同一数据连接、输出字段名称和类型相同的数据集；保留重复行。</small>
+      <button v-if="!step.mappings" @click="enableUnionMapping(step)">配置字段映射</button>
+      <template v-else>
+       <label>字段对应关系（左侧字段 → 追加数据集字段）</label>
+       <div v-for="mapping in step.mappings" :key="mapping.leftFieldId" class="pipeline-measure">
+        <span>{{baseColumns().find(f=>f.id===mapping.leftFieldId)?.label||mapping.leftFieldId}}</span>
+        <span>→</span>
+        <el-select v-model="mapping.rightFieldId" filterable @change="changed">
+         <el-option v-for="right in rightFields(step.sourceDatasetId).filter(r=>
+          r.type===baseColumns().find(f=>f.id===mapping.leftFieldId)?.type)"
+          :key="right.id" :label="right.label+' ('+right.name+')'" :value="right.id"
+          :disabled="step.mappings.some(x=>x!==mapping&&x.rightFieldId===right.id)"/>
+        </el-select>
+       </div>
+       <button @click="disableUnionMapping(step)">恢复同名字段匹配</button>
+      </template>
+      <small>仅允许同一数据连接；映射需覆盖全部字段且类型一致。UNION ALL 保留重复记录。</small>
      </div>
      <div v-else-if="step.type==='join'" class="pipeline-fields">
       <label>关联数据集（同一数据连接）</label>
