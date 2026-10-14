@@ -62,7 +62,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
     if(new URL(request.url()).pathname==='/api/analysis/v2/query'&&request.method()==='POST')
       linkedRequests.push(request.postDataJSON())
   })
-  await page.goto(origin+'/#/view/published-analysis',{waitUntil:'domcontentloaded'})
+  // Revisit the SAME hash route with a full reload so the fixture is fetched
+  // again rather than preserving the previous SPA view selection.
+  await page.reload({waitUntil:'domcontentloaded'})
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').waitFor()
   await page.locator('.analysis-dashboard-card[data-widget-id="w2"] canvas').waitFor()
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').click({position:{x:130,y:170}})
