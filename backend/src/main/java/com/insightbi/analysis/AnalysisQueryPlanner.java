@@ -136,6 +136,30 @@ public final class AnalysisQueryPlanner {
       columns.add(Map.of("id",rankId,"name",rankId,"label","排名","type","INTEGER","kind","measure"));
       sortable.put(rankId,rankId);
     }
+    // P2 share-of-total: calculate against ALL aggregated groups before
+    // the final ORDER BY / LIMIT, not the subset currently displayed.
+    Object shareRequest=request.get("share");
+    if(shareRequest!=null){
+      Map<String,Object> share=object(shareRequest,"占比");
+      String metricId=required(share,"ref");
+      Metric metric=metrics.get(metricId);
+      if(metric==null||!Set.of("INTEGER","DECIMAL","DOUBLE").contains(metric.type()))
+        throw new IllegalArgumentException("占比必须引用本次查询的数值指标");
+      String shareId=string(share.get("id"),"bi_share");
+      if(!shareId.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")||
+         sortable.containsValue(shareId)||aliases.contains(shareId)||
+         columns.stream().anyMatch(c->shareId.equals(c.get("name"))))
+        throw new IllegalArgumentException("占比列 ID 无效或冲突");
+      if(share.size()>2||share.keySet().stream().anyMatch(k->!Set.of("ref","id").contains(k)))
+        throw new IllegalArgumentException("占比配置存在不支持的字段");
+      String inner=sql.toString(),quoted=FormulaCompiler.quote(metricId);
+      sql=new StringBuilder("SELECT bis.*, bis.").append(quoted)
+        .append(" / NULLIF(SUM(bis.").append(quoted)
+        .append(") OVER (),0) AS ").append(FormulaCompiler.quote(shareId))
+        .append(" FROM (").append(inner).append(") bis");
+      columns.add(Map.of("id",shareId,"name",shareId,"label","占比","type","DECIMAL","kind","measure"));
+      sortable.put(shareId,shareId);
+    }
     for(Map<String,Object> order:objects(request.get("sort"),4,"排序")){
       String ref=required(order,"ref"),alias=sortable.get(ref);
       if(alias==null)throw new IllegalArgumentException("排序字段不属于本次分析");
