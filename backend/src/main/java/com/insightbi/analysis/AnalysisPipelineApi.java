@@ -168,6 +168,67 @@ public final class AnalysisPipelineApi {
   }
 
   /**
+   * Read-only, on-demand diagnostic for right-side JOIN key multiplicity.
+   * This is a complete right-source scan, not a promise of exact JOIN fanout:
+   * left-side key distribution can make the final joined row count different.
+   */
+  @PostMapping("/datasets/{id}/pipeline/join-key-profile")
+  public Map<String,Object> joinKeyProfile(@PathVariable String id,
+                                            @RequestBody Map<String,Object> body)throws Exception{
+    var primary=store.dataset(id);
+    Object value=body.get("step");
+    if(!(value instanceof Map<?,?> loose))
+      throw new IllegalArgumentException("请提供关联步骤");
+    Map<String,Object> step=new HashMap<>();
+    for(var entry:loose.entrySet()){
+      if(!(entry.getKey() instanceof String key))
+        throw new IllegalArgumentException("关联步骤键名必须为文本");
+      step.put(key,entry.getValue());
+    }
+    if(!"join".equals(step.get("type")))
+      throw new IllegalArgumentException("只能诊断关联步骤");
+    // Reuse the actual JOIN compiler to enforce field ownership, compatible
+    // types, allowed join mode and well-formed conditions before opening JDBC.
+    step.put("acknowledgeFanout",true);
+    plan(id,Map.of("steps",List.of(step),"limit",1));
+    String sourceId=String.valueOf(step.get("sourceDatasetId"));
+    var sources=unionSources(id,primary,List.of(step));
+    var source=sources.get(sourceId);
+    if(source==null)throw new IllegalArgumentException("关联数据集不存在");
+    if(!(step.get("conditions") instanceof List<?> conditions))
+      throw new IllegalArgumentException("关联条件无效");
+    Map<String,FieldCatalog.Field> byId=new HashMap<>();
+    for(var field:source.fields())if(!field.calculated())byId.put(field.id(),field);
+    List<String> keys=new ArrayList<>();
+    for(Object raw:conditions){
+      if(!(raw instanceof Map<?,?> condition)||!(condition.get("rightFieldId") instanceof String fieldId))
+        throw new IllegalArgumentException("关联条件格式无效");
+      var field=byId.get(fieldId);
+      if(field==null)throw new IllegalArgumentException("关联键不存在");
+      keys.add("bis."+FormulaCompiler.quote(field.sourceColumn()));
+    }
+    String sql="SELECT COUNT(*) AS duplicate_groups, COALESCE(SUM(c-1),0) AS extra_right_rows "+
+      "FROM (SELECT COUNT(*) AS c FROM ("+ReadOnlySqlGuard.validate(source.sourceSql())+
+      ") bis GROUP BY "+String.join(", ",keys)+" HAVING COUNT(*) > 1) groups_bi";
+    long start=System.nanoTime();
+    try(AnalysisQueryLimiter.Lease lease=LIMITER.acquire();
+        Connection connection=store.open(store.connection(String.valueOf(primary.get("connection_id"))))){
+      ReadOnlyConnectionPolicy.require(connection);
+      try(var stmt=connection.prepareStatement(sql)){
+        stmt.setQueryTimeout(10);
+        stmt.setMaxRows(1);
+        try(var rs=stmt.executeQuery()){
+          if(!rs.next())throw new IllegalStateException("关联键检查未返回结果");
+          long groups=rs.getLong(1),extra=rs.getLong(2);
+          return Map.of("duplicateGroups",groups,"extraRightRows",extra,
+            "hasDuplicateKeys",groups>0,"executionMs",(System.nanoTime()-start)/1_000_000,
+            "scope","RIGHT_SOURCE","exactJoinRowCount",false);
+        }
+      }
+    }
+  }
+
+  /**
    * The saved pipeline can be used as an opt-in V2 analysis source. Always
    * enforce the exact saved revision, including for published dashboard
    * snapshots. SQL changes to either original JOIN/UNION source fail closed.
