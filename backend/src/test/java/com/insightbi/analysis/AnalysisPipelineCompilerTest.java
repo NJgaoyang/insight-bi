@@ -171,4 +171,22 @@ class AnalysisPipelineCompilerTest {
     assertThrows(IllegalArgumentException.class,()->
       engine.compile(SOURCE,Map.of("steps",List.of(first,second,third))));
   }
+
+  @Test void pipelineInFilterBindsEachValueAndRejectsMissingCollection()throws Exception{
+    var filter=Map.<String,Object>of("id","cityIn","type","filter",
+      "fieldId","city","op","in","values",List.of("北京","南京"));
+    var engine=new AnalysisPipelineCompiler(FIELDS);
+    var plan=engine.compile(SOURCE,Map.of("steps",List.of(filter),"limit",20));
+    assertEquals(List.of("北京","南京",21),plan.params());
+    assertTrue(plan.sql().contains(" IN (?,?)"));
+    try(var c=sample()){
+      var rows=execute(c,plan);
+      assertEquals(3,rows.size());
+      assertTrue(rows.stream().noneMatch(x->"上海".equals(x.get("city"))));
+    }
+    var invalid=Map.<String,Object>of("id","cityIn","type","filter",
+      "fieldId","city","op","in","values",List.of());
+    assertThrows(IllegalArgumentException.class,()->
+      engine.compile(SOURCE,Map.of("steps",List.of(invalid))));
+  }
 }
