@@ -27,7 +27,7 @@ async function load(){
   widgets.value=Array.isArray(saved.content?.widgets)?saved.content.widgets:[]
   const stored=(saved.content as typeof saved.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:widgets.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   datasets.value=await api<Dataset[]>('/datasets')
@@ -58,7 +58,11 @@ onMounted(load)
    <div v-else class="analysis-view-grid">
     <div v-for="widget in visibleWidgets" :key="widget.id" class="analysis-dashboard-card"
      :data-widget-id="widget.id" :style="cardStyle(activeView,widget.id)">
-     <strong>{{widget.title}}</strong>
+     <div class="analysis-layout-toolbar">
+      <strong>{{widget.title}}</strong>
+      <button v-if="activeView?.jumps?.[widget.id] && dashboardViews.some(v=>v.id===activeView?.jumps?.[widget.id])"
+       @click="selectedViewId=activeView!.jumps![widget.id]">前往 {{dashboardViews.find(v=>v.id===activeView?.jumps?.[widget.id])?.name}} →</button>
+     </div>
      <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
     </div>
