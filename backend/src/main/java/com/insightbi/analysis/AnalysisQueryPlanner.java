@@ -230,12 +230,14 @@ public final class AnalysisQueryPlanner {
       columns.add(Map.of("id",compareId,"name",compareId,"label","同比环比","type","DECIMAL","kind","measure"));
       sortable.put(compareId,compareId);
     }
+    boolean outerOrderStarted=false;
     for(Map<String,Object> order:objects(request.get("sort"),4,"排序")){
       String ref=required(order,"ref"),alias=sortable.get(ref);
       if(alias==null)throw new IllegalArgumentException("排序字段不属于本次分析");
       String direction=string(order.get("direction"),"asc").toUpperCase(Locale.ROOT);
       if(!Set.of("ASC","DESC").contains(direction))throw new IllegalArgumentException("排序方向无效");
-      sql.append(sql.indexOf(" ORDER BY ")<0?" ORDER BY ":", ");
+      sql.append(outerOrderStarted?", ":" ORDER BY ");
+      outerOrderStarted=true;
       sql.append(FormulaCompiler.quote(alias)).append(" ").append(direction);
     }
     int limit=number(request.get("limit"),200);
