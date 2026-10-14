@@ -3,7 +3,8 @@ import {computed,nextTick,onBeforeUnmount,ref,watch} from 'vue'
 import * as echarts from 'echarts'
 import {api,type AnalysisWidgetV2,type QueryV2Result} from './api'
 
-const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean}>()
+const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean}>()
+const emit=defineEmits<{(e:'navigate'):void}>()
 const element=ref<HTMLElement|null>(null)
 const loading=ref(false),error=ref(''),rows=ref<Record<string,unknown>[]>([])
 const result=ref<QueryV2Result|null>(null)
@@ -92,7 +93,10 @@ function render(){
      }
    })
  }
- error.value='';chart.setOption(base,{notMerge:true});chart.resize()
+ error.value='';chart.setOption(base,{notMerge:true});
+ chart.off('click')
+ if(props.navigable)chart.on('click',()=>emit('navigate'))
+ chart.resize()
 }
 const queryKey=computed(()=>{
  const b=bindings.value
@@ -119,12 +123,15 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
   <div v-else-if="error" class="v2-chart-notice v2-chart-error">{{error}}</div>
   <div v-else-if="!rows.length" class="v2-chart-notice">暂无查询结果</div>
   <template v-else-if="widget.type==='metric'">
-    <div class="v2-metric-value">{{formatMeasure(metricValue,measureNames[0]?.id||'')}}</div>
+    <div class="v2-metric-value" :role="navigable?'button':undefined" :tabindex="navigable?0:undefined"
+     @click="navigable&&emit('navigate')" @keydown.enter="navigable&&emit('navigate')">{{formatMeasure(metricValue,measureNames[0]?.id||'')}}</div>
     <div class="v2-metric-label">{{measureNames[0]?.label}}</div>
   </template>
   <div v-else-if="widget.type==='table'" class="v2-table-wrap">
    <table><thead><tr><th v-for="c in visibleColumns" :key="c.name">{{c.label}}</th></tr></thead>
-   <tbody><tr v-for="(row,index) in rows" :key="index"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
+   <tbody><tr v-for="(row,index) in rows" :key="index"
+    :role="navigable?'button':undefined" :tabindex="navigable?0:undefined"
+    @click="navigable&&emit('navigate')" @keydown.enter="navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
   <div v-show="!loading&&!error&&rows.length>0&&!['metric','table'].includes(widget.type)" ref="element" class="v2-echart-canvas"></div>
   <div v-if="result&&!loading" class="v2-query-meta">
