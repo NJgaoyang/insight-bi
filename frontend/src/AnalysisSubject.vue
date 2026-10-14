@@ -648,6 +648,16 @@ onMounted(load)
          @update:model-value="v=>setV2Direction(v as 'asc'|'desc')">
         <el-option label="降序" value="desc"/><el-option label="升序" value="asc"/>
        </el-select>
+       <template v-if="chosen.analysisV2.dimensions.length===1">
+        <label>按维度累计指标</label>
+        <el-select :model-value="chosen.analysisV2.running?.ref||''" clearable placeholder="不计算累计值"
+         @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.running={ref:String(v),direction:'asc'};else delete chosen.analysisV2.running;mark()}}">
+         <el-option v-for="m in chosen.analysisV2.measures" :key="m.id" :label="m.alias" :value="m.id"/>
+        </el-select>
+        <el-select v-if="chosen.analysisV2.running" v-model="chosen.analysisV2.running.direction" @change="mark">
+         <el-option label="维度升序累计" value="asc"/><el-option label="维度降序累计" value="desc"/>
+        </el-select>
+       </template>
        <label>指标占总量比例</label>
        <el-select :model-value="chosen.analysisV2.share?.ref||''" clearable placeholder="不计算占比"
         @update:model-value="v=>{if(chosen?.analysisV2){if(v)chosen.analysisV2.share={ref:String(v)};else delete chosen.analysisV2.share;mark()}}">
