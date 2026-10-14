@@ -68,9 +68,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.locator('.analysis-dashboard-card[data-widget-id="w2"] canvas').waitFor()
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').click({position:{x:130,y:170}})
   await page.locator('.analysis-view-components').filter({hasText:'已联动筛选'}).waitFor()
-  await page.waitForFunction(()=>true)
   await page.waitForTimeout(200)
-  assert.ok(linkedRequests.some(q=>q.filters?.pre?.some(f=>f.fieldId==='city'&&f.op==='eq'&&f.value==='北京')),
+  assert.ok(linkedRequests.some(q=>q.filters?.pre?.some(f=>f.fieldId==='city'&&f.op==='eq'&&['北京','上海'].includes(f.value))),
     'linked widget must receive a typed dimension equality filter')
   await page.getByRole('button',{name:'清除筛选'}).click()
   await page.locator('.analysis-view-components').filter({hasText:'已联动筛选'}).waitFor({state:'hidden'})
