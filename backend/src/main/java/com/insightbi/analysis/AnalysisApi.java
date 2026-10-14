@@ -15,9 +15,11 @@ public class AnalysisApi {
   private final DatabaseStore store;
   private final JdbcTemplate db;
   private final FieldCatalog catalog;
+  private final AnalysisPipelineApi pipeline;
   private static final AnalysisQueryLimiter QUERY_LIMITER=new AnalysisQueryLimiter(4,250);
   public AnalysisApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog){
     this.store=store;this.db=db;this.catalog=catalog;
+    this.pipeline=new AnalysisPipelineApi(store,catalog,db);
   }
   @GetMapping("/datasets/{id}/fields")
   public List<FieldCatalog.Field> fields(@PathVariable String id){return catalog.fields(id);}
@@ -42,25 +44,23 @@ public class AnalysisApi {
 
   @PostMapping("/analysis/v2/compile")
   public Map<String,Object> compile(@RequestBody Map<String,Object> request){
-    String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
-    Map<String,Object> ds=store.dataset(datasetId);
-    AnalysisQueryPlanner.Plan plan=new AnalysisQueryPlanner(catalog.fields(datasetId))
-      .compile(String.valueOf(ds.get("sql_body")),request);
+    ResolvedPlan resolved=resolvePlan(request);
+    AnalysisQueryPlanner.Plan plan=resolved.plan();
     return Map.of("columns",plan.columns(),"sqlPreview",plan.sql(),
-       "bindCount",plan.params().size(),"warnings",List.of());
+       "bindCount",resolved.params().size(),"warnings",List.of());
   }
   @PostMapping("/analysis/v2/query")
   public Map<String,Object> query(@RequestBody Map<String,Object> request)throws Exception{
     String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
     Map<String,Object> ds=store.dataset(datasetId);
-    AnalysisQueryPlanner.Plan plan=new AnalysisQueryPlanner(catalog.fields(datasetId))
-      .compile(String.valueOf(ds.get("sql_body")),request);
+    ResolvedPlan resolved=resolvePlan(request);
+    AnalysisQueryPlanner.Plan plan=resolved.plan();
     long start=System.nanoTime();
     List<Map<String,Object>> rows;
     try(AnalysisQueryLimiter.Lease slot=QUERY_LIMITER.acquire();
         Connection c=store.open(store.connection(String.valueOf(ds.get("connection_id"))))){
       ReadOnlyConnectionPolicy.require(c);
-      rows=store.readAnalysisRows(c,plan.sql(),plan.params(),plan.limit());
+      rows=store.readAnalysisRows(c,plan.sql(),resolved.params(),plan.limit());
     }
     boolean truncated=rows.size()>plan.limit();
     // Do not expose the sentinel record used only to detect overflow.
@@ -69,6 +69,38 @@ public class AnalysisApi {
     return Map.of("rows",rows,"columns",plan.columns(),"executionMs",elapsed,
       "truncated",truncated,"warnings",List.of());
   }
+  private record ResolvedPlan(AnalysisQueryPlanner.Plan plan,List<Object> params) {}
+
+  /**
+   * V2 requests are unchanged unless usePipeline=true. In that opt-in mode
+   * the dashboard pins a saved pipeline revision so published snapshots cannot
+   * silently drift when data-processing steps are later edited.
+   *
+   * The pipeline source is nested inside V2's FROM, so its JDBC placeholders
+   * precede semantic WHERE/HAVING and outer LIMIT placeholders.
+   */
+  private ResolvedPlan resolvePlan(Map<String,Object> request){
+    String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
+    Map<String,Object> ds=store.dataset(datasetId);
+    Object mode=request.get("usePipeline");
+    if(mode!=null&&!(mode instanceof Boolean))
+      throw new IllegalArgumentException("usePipeline 必须为布尔值");
+    if(!Boolean.TRUE.equals(mode)){
+      AnalysisQueryPlanner.Plan plan=new AnalysisQueryPlanner(catalog.fields(datasetId))
+        .compile(String.valueOf(ds.get("sql_body")),request);
+      return new ResolvedPlan(plan,plan.params());
+    }
+    Object version=request.get("pipelineRevision");
+    if(!(version instanceof Integer revision)||revision<1)
+      throw new IllegalArgumentException("加工数据源必须绑定有效版本号");
+    AnalysisPipelineApi.ReusableSource source=pipeline.reusableSource(datasetId,revision);
+    AnalysisQueryPlanner.Plan plan=new AnalysisQueryPlanner(source.fields())
+      .compile(source.sql(),request);
+    List<Object> all=new ArrayList<>(source.params());
+    all.addAll(plan.params());
+    return new ResolvedPlan(plan,List.copyOf(all));
+  }
+
   @GetMapping("/datasets/{id}/calculated-fields")
   public List<Map<String,Object>> formulas(@PathVariable String id){
     store.dataset(id);
