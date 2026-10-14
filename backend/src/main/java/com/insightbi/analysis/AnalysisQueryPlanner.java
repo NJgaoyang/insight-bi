@@ -191,7 +191,7 @@ public final class AnalysisQueryPlanner {
       sortable.put(runningId,runningId);
     }
     // P2 period-over-period comparison. Requires a single date dimension.
-    // LAG compares the preceding available bucket; sparse dates are not filled.
+    // Compare actual calendar buckets; missing periods have no match.
     Object compareRequest=request.get("periodCompare");
     if(compareRequest!=null){
       Map<String,Object> compare=object(compareRequest,"周期比较");
@@ -205,9 +205,6 @@ public final class AnalysisQueryPlanner {
       String mode=required(compare,"mode");
       if(!Set.of("mom","yoy").contains(mode))
         throw new IllegalArgumentException("周期比较模式无效");
-      int lag="mom".equals(mode)?1:switch(granularity){
-        case "month"->12;case "day"->365;default->1;
-      };
       String metricId=required(compare,"ref");
       Metric metric=metrics.get(metricId);
       if(metric==null||!Set.of("INTEGER","DECIMAL","DOUBLE").contains(metric.type()))
@@ -220,13 +217,26 @@ public final class AnalysisQueryPlanner {
       if(compare.size()>3||compare.keySet().stream().anyMatch(k->!Set.of("ref","mode","id").contains(k)))
         throw new IllegalArgumentException("周期比较配置含不支持的字段");
       String inner=sql.toString(),col=FormulaCompiler.quote(metricId);
-      String previous="LAG(bic."+col+","+lag+") OVER (ORDER BY bic.`d1` ASC)";
-      sql=new StringBuilder("SELECT bip.*, (bip.").append(col)
-        .append(" - bip.`bi_previous`) / NULLIF(bip.`bi_previous`,0) AS ")
-        .append(FormulaCompiler.quote(compareId))
-        .append(" FROM (SELECT bic.*, ").append(previous)
-        .append(" AS `bi_previous` FROM (").append(inner)
-        .append(") bic) bip");
+      int months="mom".equals(mode)?1:12;
+      String period=granularity.equals("year")?"YEAR":granularity.equals("month")?"MONTH":"DAY";
+      int offset=granularity.equals("year")?1:granularity.equals("month")?months:
+        ("mom".equals(mode)?1:1);
+      String dateExpression=granularity.equals("day")?
+        "DATE_SUB(STR_TO_DATE(cur.`d1`,'%Y-%m-%d'), INTERVAL "+offset+
+          ("yoy".equals(mode)?" YEAR)":" DAY)"):
+        granularity.equals("month")?
+          "DATE_FORMAT(DATE_SUB(STR_TO_DATE(CONCAT(cur.`d1`,'-01'),'%Y-%m-%d'), INTERVAL "+months+" MONTH),'%Y-%m')":
+          "DATE_FORMAT(DATE_SUB(STR_TO_DATE(CONCAT(cur.`d1`,'-01-01'),'%Y-%m-%d'), INTERVAL 1 YEAR),'%Y')";
+      if(granularity.equals("day"))dateExpression="DATE_FORMAT("+dateExpression+",'%Y-%m-%d')";
+      sql=new StringBuilder("SELECT cur.*, (cur.").append(col)
+        .append(" - prev.").append(col).append(") / NULLIF(prev.").append(col)
+        .append(",0) AS ").append(FormulaCompiler.quote(compareId))
+        .append(" FROM (").append(inner).append(") cur LEFT JOIN (")
+        .append(inner).append(") prev ON prev.`d1` = ").append(dateExpression);
+      // Both independent aggregate subqueries repeat the same predicates.
+      // Every placeholder in the second source must have its corresponding bind.
+      List<Object> originalParams=new ArrayList<>(params);
+      params.addAll(originalParams);
       columns.add(Map.of("id",compareId,"name",compareId,"label","同比环比","type","DECIMAL","kind","measure"));
       sortable.put(compareId,compareId);
     }
