@@ -205,4 +205,26 @@ class AnalysisQueryPlannerTest {
     assertThrows(IllegalArgumentException.class,()->
       planner.compile("SELECT city,revenue FROM sales",req));
   }
+
+  @Test void periodComparisonValidatesDateMetricAndBuildsSafeWindow(){
+    var planner=new AnalysisQueryPlanner(sample());
+    Map<String,Object> req=new HashMap<>();
+    req.put("dimensions",List.of(Map.of("fieldId","month","granularity","month")));
+    req.put("measures",List.of(Map.of("id","total","fieldId","revenue","aggregate","SUM")));
+    req.put("periodCompare",Map.of("ref","total","mode","yoy"));
+    var yoy=planner.compile("SELECT order_date,revenue FROM sales",req);
+    assertTrue(yoy.sql().contains("LAG(bic.`total`,12)"));
+    assertTrue(yoy.sql().contains("NULLIF(bip.`bi_previous`,0)"));
+    assertEquals("bi_period_change",yoy.columns().get(2).get("name"));
+    req.put("periodCompare",Map.of("ref","total","mode","mom"));
+    assertTrue(planner.compile("SELECT order_date,revenue FROM sales",req).sql()
+      .contains("LAG(bic.`total`,1)"));
+    req.put("dimensions",List.of(Map.of("fieldId","city")));
+    assertThrows(IllegalArgumentException.class,()->
+      planner.compile("SELECT city,revenue FROM sales",req));
+    req.put("dimensions",List.of(Map.of("fieldId","month","granularity","month")));
+    req.put("periodCompare",Map.of("ref","missing","mode","mom"));
+    assertThrows(IllegalArgumentException.class,()->
+      planner.compile("SELECT order_date,revenue FROM sales",req));
+  }
 }
