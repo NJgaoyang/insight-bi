@@ -106,4 +106,23 @@ class AnalysisPipelineCaseTest {
         Map.of("steps",List.of(candidate))),candidate.toString());
     }
   }
+
+  @Test void conditionalInMatchesSeveralValuesAndPreservesBindOrder()throws Exception{
+    var step=new HashMap<String,Object>(condition());
+    step.put("sourceFieldId","city");
+    step.put("op","in");
+    step.remove("value");
+    step.put("values",List.of("北京","上海"));
+    var plan=new AnalysisPipelineCompiler(FIELDS).compile(SOURCE,
+      Map.of("steps",List.of(step),"limit",20));
+    assertEquals(List.of("北京","上海","高","低",21),plan.params());
+    try(var c=sample()){
+      var rows=run(c,plan);
+      assertEquals(3,rows.stream().filter(r->"高".equals(r.get("step_tier"))).count());
+      assertEquals(1,rows.stream().filter(r->"低".equals(r.get("step_tier"))).count());
+    }
+    step.put("values",List.of());
+    assertThrows(IllegalArgumentException.class,()->
+      new AnalysisPipelineCompiler(FIELDS).compile(SOURCE,Map.of("steps",List.of(step))));
+  }
 }
