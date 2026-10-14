@@ -486,15 +486,15 @@ onMounted(load)
      <div v-for="f in v2Dimensions" :key="f.id" class="analysis-field" :class="{'is-hidden':f.hidden}" :draggable="!f.hidden"
        @dragstart="onV2Drag($event,f,'dimension')" @click="!f.hidden&&addV2Field(f,'dimension')">
        <span class="field-dimension">{{f.logicalType==='DATE'||f.logicalType==='DATETIME'?'D':'A'}}</span>{{f.name}}
-        <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
-        <button v-if="!f.calculated" class="analysis-field-toggle" draggable="false" :title="f.hidden?'显示字段':'隐藏字段'" @click.stop="togglePhysicalField(f)">{{f.hidden?'显示':'隐藏'}}</button><small>⋮⋮</small>
+        <button v-if="!f.calculated&&!chosen.analysisV2.usePipeline" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
+        <button v-if="!f.calculated&&!chosen.analysisV2.usePipeline" class="analysis-field-toggle" draggable="false" :title="f.hidden?'显示字段':'隐藏字段'" @click.stop="togglePhysicalField(f)">{{f.hidden?'显示':'隐藏'}}</button><small>⋮⋮</small>
      </div>
      <div class="analysis-field-header">数值指标 <small>{{v2Metrics.length}}</small></div>
      <div v-for="f in v2Metrics" :key="f.id" class="analysis-field" :class="{'is-hidden':f.hidden}" :draggable="!f.hidden"
        @dragstart="onV2Drag($event,f,'metric')" @click="!f.hidden&&addV2Field(f,'metric')">
        <span class="field-metric">∑</span>{{f.name}}
-        <button v-if="!f.calculated" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
-        <button v-if="!f.calculated" class="analysis-field-toggle" draggable="false" :title="f.hidden?'显示字段':'隐藏字段'" @click.stop="togglePhysicalField(f)">{{f.hidden?'显示':'隐藏'}}</button>
+        <button v-if="!f.calculated&&!chosen.analysisV2.usePipeline" class="analysis-field-rename" draggable="false" title="修改展示名称" @click.stop="renamePhysicalField(f)">✎</button>
+        <button v-if="!f.calculated&&!chosen.analysisV2.usePipeline" class="analysis-field-toggle" draggable="false" :title="f.hidden?'显示字段':'隐藏字段'" @click.stop="togglePhysicalField(f)">{{f.hidden?'显示':'隐藏'}}</button>
         <small>{{f.calculated?'ƒ':'⋮⋮'}}</small>
      </div>
      <div v-if="v2CountFields.length" class="analysis-field-header">可计数字段 <small>{{v2CountFields.length}}</small></div>
@@ -502,7 +502,7 @@ onMounted(load)
        @dragstart="onV2Drag($event,f,'metric')" @click="!f.hidden&&addV2Field(f,'metric')">
        <span class="field-metric">#</span>{{f.name}}<small>COUNT</small>
       </div>
-      <button class="analysis-formula-add" @click="openFormula">＋ 计算字段</button>
+      <button v-if="!chosen.analysisV2.usePipeline" class="analysis-formula-add" @click="openFormula">＋ 计算字段</button>
     </template>
     <template v-else>
      <div class="analysis-field-header">维度 <small>{{dimensions.length}}</small></div>
