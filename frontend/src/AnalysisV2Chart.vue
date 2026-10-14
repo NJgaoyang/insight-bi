@@ -15,7 +15,12 @@ let activeRequest:AbortController|null=null
 const supported=['bar','hbar','line','area','pie','donut','combo','metric','table']
 const dimNames=computed(()=>result.value?.columns.filter(c=>c.kind==='dimension')??[])
 const measureNames=computed(()=>result.value?.columns.filter(c=>c.kind==='measure')??[])
-const visibleColumns=computed(()=>result.value?.columns??[])
+const hiddenColumnIds=ref<string[]>([])
+const tableSearch=ref('')
+const visibleColumns=computed(()=>result.value?.columns.filter(c=>!hiddenColumnIds.value.includes(c.id))??[])
+const tableRows=computed(()=>{const q=tableSearch.value.trim().toLowerCase();return q?rows.value.filter(row=>visibleColumns.value.some(c=>String(row[c.name]??'').toLowerCase().includes(q))):rows.value})
+function toggleColumn(id:string){hiddenColumnIds.value=hiddenColumnIds.value.includes(id)?hiddenColumnIds.value.filter(x=>x!==id):[...hiddenColumnIds.value,id]}
+
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
 const format=(v:unknown)=>v===undefined||v===null?'—':typeof v==='number'?new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(v):String(v)
 const numeric=(v:unknown):number|null=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
@@ -35,7 +40,7 @@ function formatCell(row:Record<string,unknown>,col:{name:string;id:string;kind:s
 }
 function downloadCsv(){
  if(loading.value||error.value||!result.value||!visibleColumns.value.length)return
- const csv=analysisCsv(visibleColumns.value,rows.value)
+ const csv=analysisCsv(visibleColumns.value,props.widget.type==='table'?tableRows.value:rows.value)
  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'})
  const url=URL.createObjectURL(blob)
  try{
@@ -150,8 +155,18 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
     <div class="v2-metric-label">{{measureNames[0]?.label}}</div>
   </template>
   <div v-else-if="widget.type==='table'" class="v2-table-wrap">
+   <div class="v2-table-controls">
+    <input v-model="tableSearch" aria-label="搜索当前表格结果" placeholder="搜索当前结果" />
+    <details><summary>显示列</summary>
+     <label v-for="c in result?.columns||[]" :key="c.id">
+      <input type="checkbox" :checked="!hiddenColumnIds.includes(c.id)"
+       :disabled="!hiddenColumnIds.includes(c.id)&&visibleColumns.length===1"
+       @change="toggleColumn(c.id)" />{{c.label}}
+     </label>
+    </details>
+   </div>
    <table><thead><tr><th v-for="c in visibleColumns" :key="c.name">{{c.label}}</th></tr></thead>
-   <tbody><tr v-for="(row,index) in rows" :key="index"
+   <tbody><tr v-for="(row,index) in tableRows" :key="index"
     :role="navigable?'button':undefined" :tabindex="navigable?0:undefined"
     @click="selectRow(index);navigable&&emit('navigate')" @keydown.enter="selectRow(index);navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
