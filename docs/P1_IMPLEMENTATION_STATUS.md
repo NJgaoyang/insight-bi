@@ -211,6 +211,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 修复后 [38505038412](https://github.com/NJgaoyang/insight-bi/actions/runs/38505038412) **SUCCESS**：前端 build、隔离 Chromium、发布页导航和联动 eq 筛选、清除、旧仪表板只读路由全部通过。本条仅宣称**模拟 REST 的真浏览器操作**，不代表真实 StarRocks 端到端或生产发布验收完成。
 - 对应测试修复 commit `05dcb7b`；相关 workflow commit `88ea4d7`。P0-05 StarRocks SQL 数据对账、生产 H2 元数据备份恢复、P2/P3 仍未完成。
 
+## P2-01 第一批：汇总结果 RANK 排名（2026-10-14）
+
+- `AnalysisQueryPlanner` 新增可选结构化 `rank:{ref,id?,direction?}`，其中 ref 必须为当前请求的数值指标别名。先执行既有明细筛选、聚合及 HAVING，再通过外层 `RANK() OVER (ORDER BY ...)` 对最终维度汇总结果计算排名，相同值并列，不在浏览器端根据可见前 N 行计算。
+- 排名 ID、方向及配置字段均校验白名单，引用其他数据集或自定义 SQL 被拒绝；默认向下排序，结果以 `INTEGER` 排名列加入输出合同。旧请求不提供 rank 时 SQL 结构不变。
+- 前端分析主题增加“汇总排名”指标选择和升降序方向，排名随保存的 V2 配置在预览和发布页面查询。H2 定向测试验证 150/90/90 数值排名为 1/2/2、实际 SQL、排序、错误引用和冲突 ID 拒绝。
+- 相关后端定向 GitHub CI [38505292004](https://github.com/NJgaoyang/insight-bi/actions/runs/38505292004) 已通过。前端构建和浏览器验证以各自最新工作流最终结果为准；未进行真实 StarRocks 对账、生产部署或全量回归。
+- P2-01 其余占比、累计、同比环比、多维表格和导出仍未完成；不因此将整阶段标记完成。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
