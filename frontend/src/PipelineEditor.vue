@@ -13,7 +13,7 @@ type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
 type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
  op:string;value?:string;outputType:'STRING'|'DECIMAL';thenValue:string;elseValue:string}
 type UnionMapping={leftFieldId:string;rightFieldId:string}
-type UnionStep={id:string;type:'union';sourceDatasetId:string;mappings?:UnionMapping[]}
+type UnionStep={id:string;type:'union';sourceDatasetId:string;mappings?:UnionMapping[];distinct?:boolean}
 type JoinKey={leftFieldId:string;rightFieldId:string}
 type JoinOutput={sourceFieldId:string;fieldId:string;name:string}
 type JoinStep={id:string;type:'join';sourceDatasetId:string;joinType:'INNER'|'LEFT';
@@ -369,7 +369,8 @@ onMounted(load)
        </div>
        <button @click="disableUnionMapping(step)">恢复同名字段匹配</button>
       </template>
-      <small>仅允许同一数据连接；映射需覆盖全部字段且类型一致。UNION ALL 保留重复记录。</small>
+      <el-checkbox v-model="step.distinct" @change="changed">合并后按整行去重（UNION DISTINCT）</el-checkbox>
+      <small>默认 UNION ALL 保留重复记录；开启后仅移除所有输出字段完全相同的行。</small>
      </div>
      <div v-else-if="step.type==='join'" class="pipeline-fields">
       <label>关联数据集（同一数据连接）</label>
