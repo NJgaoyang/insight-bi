@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed,onMounted,ref} from 'vue'
-import {api,type Dashboard,type Dataset,type AnalysisWidgetV2} from './api'
+import {api,type Dashboard,type Dataset,type AnalysisWidgetV2,type FilterV2} from './api'
 import Designer from './Designer.vue'
 import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
@@ -15,13 +15,25 @@ const widgets=ref<AnalysisWidgetV2[]>([])
 const datasets=ref<Dataset[]>([])
 const dashboardViews=ref<DashboardView[]>([])
 const selectedViewId=ref('')
+const linkedSelection=ref<{datasetId:string;fieldId:string;value:string|number;sourceWidgetId:string}|null>(null)
 const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
 const visibleWidgets=computed(()=>orderedViewWidgets(activeView.value,widgets.value))
 const jumpTarget=(id:string)=>{
  const target=activeView.value?.jumps?.[id]
  return target&&dashboardViews.value.some(v=>v.id===target)?target:''
 }
-function navigateWidget(id:string){const target=jumpTarget(id);if(target)selectedViewId.value=target}
+function navigateWidget(id:string){const target=jumpTarget(id);if(target){linkedSelection.value=null;selectedViewId.value=target}}
+function selectDimension(widget:AnalysisWidgetV2,selection:{fieldId:string;value:string|number}|null){
+ if(!selection||jumpTarget(widget.id))return
+ linkedSelection.value={datasetId:widget.datasetId,fieldId:selection.fieldId,
+  value:selection.value,sourceWidgetId:widget.id}
+}
+function linkedFilterFor(widget:AnalysisWidgetV2):FilterV2|null{
+ const selected=linkedSelection.value
+ if(!selected||widget.id===selected.sourceWidgetId||widget.datasetId!==selected.datasetId||
+  !widget.analysisV2?.dimensions.some(d=>d.fieldId===selected.fieldId))return null
+ return {fieldId:selected.fieldId,op:'eq',value:selected.value}
+}
 
 async function load(){
  try{
@@ -59,6 +71,10 @@ onMounted(load)
    </el-select>
   </header>
   <main class="analysis-published-body">
+   <div v-if="linkedSelection" class="analysis-view-components">
+    <span>已联动筛选：{{linkedSelection.value}}</span>
+    <button @click="linkedSelection=null">清除筛选</button>
+   </div>
    <div v-if="!visibleWidgets.length" class="analysis-stage-empty">当前视图没有展示组件</div>
    <div v-else class="analysis-view-grid">
     <div v-for="widget in visibleWidgets" :key="widget.id" class="analysis-dashboard-card"
@@ -69,7 +85,8 @@ onMounted(load)
        @click="navigateWidget(widget.id)">前往 {{dashboardViews.find(v=>v.id===activeView?.jumps?.[widget.id])?.name}} →</button>
      </div>
      <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"
-      :navigable="!!jumpTarget(widget.id)" @navigate="navigateWidget(widget.id)"/>
+      :navigable="!!jumpTarget(widget.id)" :linked-filter="linkedFilterFor(widget)"
+      @select-dimension="selection=>selectDimension(widget,selection)" @navigate="navigateWidget(widget.id)"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
     </div>
    </div>
