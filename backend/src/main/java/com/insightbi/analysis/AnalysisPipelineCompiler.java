@@ -126,9 +126,13 @@ public final class AnalysisPipelineCompiler {
       lhs.add("biq."+col+" AS "+col);
       rhs.add("bis."+FormulaCompiler.quote(r.sourceColumn())+" AS "+col);
     }
+    Object unique=step.get("distinct");
+    if(unique!=null&&!(unique instanceof Boolean))
+      throw new IllegalArgumentException("上下合并去重标记必须为布尔值");
+    String keyword=Boolean.TRUE.equals(unique)?"UNION SELECT ":"UNION ALL SELECT ";
     String secondary=ReadOnlySqlGuard.validate(source.sourceSql());
     String sql="SELECT "+String.join(", ",lhs)+" FROM ("+state.sql()+") biq "+
-      "UNION ALL SELECT "+String.join(", ",rhs)+" FROM ("+secondary+") bis";
+      keyword+String.join(", ",rhs)+" FROM ("+secondary+") bis";
     return new State(sql,state.fields(),state.params(),false);
   }
 
