@@ -151,4 +151,28 @@ class AnalysisPipelineUnionTest {
     assertThrows(IllegalArgumentException.class,()->
       engine.compile(MAIN,Map.of("steps",List.of(configured))));
   }
+
+  @Test void distinctUnionRemovesIdenticalFullRowsButDefaultPreservesThem()throws Exception{
+    var engine=compiler();
+    var unique=new HashMap<String,Object>(step());
+    unique.put("distinct",true);
+    var distinctPlan=engine.compile(MAIN,Map.of("steps",List.of(unique),"limit",20));
+    var allPlan=engine.compile(MAIN,Map.of("steps",List.of(step()),"limit",20));
+    assertTrue(distinctPlan.sql().contains(" UNION SELECT "));
+    assertTrue(allPlan.sql().contains(" UNION ALL SELECT "));
+    try(var conn=DriverManager.getConnection(
+      "jdbc:h2:mem:union_distinct_"+UUID.randomUUID()+";MODE=MySQL","sa","")){
+      try(var st=conn.createStatement()){
+        st.execute("CREATE TABLE sales(city VARCHAR(20),revenue DECIMAL(12,2))");
+        st.execute("CREATE TABLE archive(city VARCHAR(20),revenue DECIMAL(12,2))");
+        st.execute("INSERT INTO sales VALUES ('北京',100),('上海',40)");
+        st.execute("INSERT INTO archive VALUES ('北京',100),('北京',100),('上海',60)");
+      }
+      assertEquals(5,rows(conn,allPlan).size());
+      assertEquals(3,rows(conn,distinctPlan).size());
+    }
+    unique.put("distinct","true");
+    assertThrows(IllegalArgumentException.class,()->
+      engine.compile(MAIN,Map.of("steps",List.of(unique))));
+  }
 }
