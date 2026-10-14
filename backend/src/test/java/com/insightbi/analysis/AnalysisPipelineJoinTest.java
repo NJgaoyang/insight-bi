@@ -157,4 +157,28 @@ class AnalysisPipelineJoinTest {
         Map.of("steps",List.of(join("LEFT")),"limit",20)));
     assertTrue(error.getMessage().contains("物理字段名冲突"));
   }
+
+  @Test void joinKeyProfileCountsRightDuplicateGroupsWithoutWriting()throws Exception{
+    var store=mock(DatabaseStore.class);
+    var catalog=mock(FieldCatalog.class);
+    var ds=Map.<String,Object>of("sql_body",MAIN,"connection_id","conn");
+    var connection=Map.<String,Object>of("id","conn");
+    when(store.dataset("main_ds")).thenReturn(ds);
+    when(store.dataset("archive_ds")).thenReturn(Map.of(
+      "sql_body",SECOND,"connection_id","conn"));
+    when(store.connection("conn")).thenReturn(connection);
+    when(catalog.fields("main_ds")).thenReturn(LEFT);
+    when(catalog.fields("archive_ds")).thenReturn(RIGHT);
+    try(var conn=sample()){
+      conn.setReadOnly(true);
+      when(store.open(connection)).thenReturn(conn);
+      var api=new AnalysisPipelineApi(store,catalog,mock(JdbcTemplate.class));
+      var result=api.joinKeyProfile("main_ds",Map.of("step",join("LEFT")));
+      assertEquals(1L,result.get("duplicateGroups"));
+      assertEquals(1L,result.get("extraRightRows"));
+      assertEquals(true,result.get("hasDuplicateKeys"));
+      assertEquals(false,result.get("exactJoinRowCount"));
+      verify(store,times(1)).open(connection);
+    }
+  }
 }
