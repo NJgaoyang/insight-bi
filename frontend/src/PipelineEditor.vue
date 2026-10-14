@@ -65,14 +65,15 @@ const selectable=(index:number):Column[]=>{
   }
   if(step.type==='group'){
    fields=[
-    ...step.dimensions.map(id=>fields.find(f=>f.id===id)).filter((x):x is Column=>!!x),
+    ...step.dimensions.map(id=>fields.find(f=>f.id===id)).filter((x):x is Column=>!!x)
+     .map(f=>({...f,name:'d_'+f.id})),
     ...step.measures.map(m=>({id:m.id,name:'m_'+m.id,label:m.name,type:'DECIMAL',numeric:true}))
    ]
   }
  }
  return fields
 }
-const isGroupPresent=computed(()=>steps.value.some(s=>s.type==='group'))
+const isGroupLimit=computed(()=>steps.value.filter(s=>s.type==='group').length>=2)
 function changed(){
  joinProfile.value=null
  dirty.value=JSON.stringify(steps.value)!==savedSteps
@@ -200,7 +201,7 @@ function addFilter(){
  changed()
 }
 function addGroup(){
- if(steps.value.length>=12||isGroupPresent.value){ElMessage.warning('首批仅支持一次分组汇总');return}
+ if(steps.value.length>=12||isGroupLimit.value){ElMessage.warning('最多支持两级分组汇总');return}
  const fields=selectable(steps.value.length)
  steps.value.push({id:nextId('s'),type:'group',dimensions:[],
   measures:[{id:nextId('m'),fieldId:fields.find(f=>f.numeric)?.id||'*',aggregate:'SUM',name:'汇总'}]})
@@ -325,7 +326,7 @@ onMounted(load)
        @click="addUnion">＋ 上下合并</button>
       <button :disabled="steps.some(x=>x.type==='union'||x.type==='join')||!unionCandidates.length"
        @click="addJoin">＋ 关联</button>
-      <button :disabled="isGroupPresent" @click="addGroup">＋ 分组汇总</button>
+      <button :disabled="isGroupLimit" @click="addGroup">＋ 分组汇总</button>
      </div>
     </div>
     <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
