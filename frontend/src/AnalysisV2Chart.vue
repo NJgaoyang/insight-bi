@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,nextTick,onBeforeUnmount,ref,watch} from 'vue'
 import * as echarts from 'echarts'
+import {analysisCsv} from './analysis/exportCsv'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
 const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null}>()
@@ -31,6 +32,20 @@ function formatMeasure(value:unknown,id:string){
 }
 function formatCell(row:Record<string,unknown>,col:{name:string;id:string;kind:string}){
  return col.kind==='measure'?formatMeasure(row[col.name],col.id):format(row[col.name])
+}
+function downloadCsv(){
+ if(loading.value||error.value||!result.value||!visibleColumns.value.length)return
+ const csv=analysisCsv(visibleColumns.value,rows.value)
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'})
+ const url=URL.createObjectURL(blob)
+ try{
+  const anchor=document.createElement('a')
+  anchor.href=url
+  anchor.download=(props.widget.title||'分析结果').replace(/[\\/:*?"<>|]/g,'_').slice(0,80)+'.csv'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+ }finally{URL.revokeObjectURL(url)}
 }
 function dispose(){if(chart){chart.dispose();chart=null}}
 async function load(){
@@ -141,6 +156,9 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
     @click="selectRow(index);navigable&&emit('navigate')" @keydown.enter="selectRow(index);navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
   <div v-show="!loading&&!error&&rows.length>0&&!['metric','table'].includes(widget.type)" ref="element" class="v2-echart-canvas"></div>
+  <div v-if="result&&!loading&&!error&&rows.length" class="v2-query-meta">
+   <button type="button" aria-label="导出当前查询结果CSV" @click="downloadCsv">导出 CSV（当前 {{rows.length}} 行）</button>
+  </div>
   <div v-if="result&&!loading" class="v2-query-meta">
     {{rows.length}} 行 · {{result.executionMs}} ms <span v-if="result.truncated">· 已达到查询行数上限</span>
   </div>
