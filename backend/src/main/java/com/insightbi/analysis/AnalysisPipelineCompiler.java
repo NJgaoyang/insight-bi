@@ -36,7 +36,7 @@ public final class AnalysisPipelineCompiler {
     for(var f:initial)fields.put(f.id(),f);
     State state=new State(ReadOnlySqlGuard.validate(sourceSql),fields,new ArrayList<>(),false);
     Set<String> stepIds=new HashSet<>();
-    int index=0;
+    int index=0,groups=0;
     for(Object rawStep:steps){
       index++;
       if(!(rawStep instanceof Map<?,?> loose))
@@ -45,6 +45,8 @@ public final class AnalysisPipelineCompiler {
       String id=required(step,"id"),type=required(step,"type");
       if(!id.matches("[A-Za-z_][A-Za-z0-9_]{0,48}")||!stepIds.add(id))
         throw new IllegalArgumentException("步骤 ID 不合法或重复");
+      if("group".equals(type)&&++groups>2)
+        throw new IllegalArgumentException("最多支持两级分组汇总");
       state=switch(type){
         case "formula"->formula(state,step);
         case "filter"->filter(state,step);
@@ -300,7 +302,6 @@ public final class AnalysisPipelineCompiler {
   }
 
   private State group(State state,Map<String,Object> step){
-    if(state.grouped())throw new IllegalArgumentException("首批步骤引擎仅允许一次分组汇总");
     Object rawDims=step.get("dimensions"),rawMeasures=step.get("measures");
     if(!(rawDims instanceof List<?> dims)||dims.size()>3||
         !(rawMeasures instanceof List<?> measures)||measures.isEmpty()||measures.size()>5)
