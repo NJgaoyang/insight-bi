@@ -38,6 +38,18 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.goto(origin+'/#/view/published-analysis',{waitUntil:'domcontentloaded'})
   await page.locator('.analysis-published-header').waitFor()
   assert.equal(await page.locator('.analysis-dashboard-card').count(),2)
+  // CSV is built from the real V2 result set, including the UTF-8 BOM.
+  const csvDownload=page.waitForEvent('download')
+  await page.locator('.analysis-dashboard-card[data-widget-id="w1"]')
+    .getByRole('button',{name:/导出当前查询结果CSV/}).click()
+  const downloaded=await csvDownload
+  assert.match(downloaded.suggestedFilename(),/\.csv$/)
+  const stream=await downloaded.createReadStream()
+  const chunks=[]
+  for await(const chunk of stream)chunks.push(chunk)
+  const csv=Buffer.concat(chunks).toString('utf8')
+  assert.ok(csv.startsWith('\uFEFF'))
+  assert.ok(csv.includes('北京')&&csv.includes('上海'))
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').waitFor()
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').click({position:{x:130,y:170}})
   assert.ok((await page.locator('.analysis-dashboard-card').first().innerText()).includes('指标w2'))
