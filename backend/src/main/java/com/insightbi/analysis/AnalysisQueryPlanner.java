@@ -109,6 +109,33 @@ public final class AnalysisQueryPlanner {
       if(measures.isEmpty())throw new IllegalArgumentException("结果过滤必须先选择指标");
       sql.append(" HAVING ").append(String.join(" AND ",having));
     }
+    // P2-01: rank aggregated results, not underlying detail rows. This
+    // subquery boundary also keeps HAVING and all bind parameters unchanged.
+    Object rankRequest=request.get("rank");
+    if(rankRequest!=null){
+      Map<String,Object> rank=object(rankRequest,"排名");
+      String metricId=required(rank,"ref");
+      Metric metric=metrics.get(metricId);
+      if(metric==null||!Set.of("INTEGER","DECIMAL","DOUBLE").contains(metric.type()))
+        throw new IllegalArgumentException("排名必须引用本次查询的数值指标");
+      String rankId=string(rank.get("id"),"bi_rank");
+      if(!rankId.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")||
+          aliases.contains(rankId)||sortable.containsValue(rankId)||
+          columns.stream().anyMatch(c->rankId.equals(c.get("name"))))
+        throw new IllegalArgumentException("排名列 ID 无效或与已有列冲突");
+      String direction=string(rank.get("direction"),"desc").toUpperCase(Locale.ROOT);
+      if(!Set.of("ASC","DESC").contains(direction))
+        throw new IllegalArgumentException("排名排序方向无效");
+      if(rank.size()>3||rank.keySet().stream().anyMatch(k->!Set.of("ref","id","direction").contains(k)))
+        throw new IllegalArgumentException("排名配置存在不支持的字段");
+      String inner=sql.toString();
+      sql=new StringBuilder("SELECT bir.*, RANK() OVER (ORDER BY bir.")
+        .append(FormulaCompiler.quote(metricId)).append(" ").append(direction)
+        .append(") AS ").append(FormulaCompiler.quote(rankId))
+        .append(" FROM (").append(inner).append(") bir");
+      columns.add(Map.of("id",rankId,"name",rankId,"label","排名","type","INTEGER","kind","measure"));
+      sortable.put(rankId,rankId);
+    }
     for(Map<String,Object> order:objects(request.get("sort"),4,"排序")){
       String ref=required(order,"ref"),alias=sortable.get(ref);
       if(alias==null)throw new IllegalArgumentException("排序字段不属于本次分析");
