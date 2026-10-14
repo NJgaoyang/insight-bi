@@ -170,8 +170,11 @@ class AnalysisPipelineJoinTest {
     when(catalog.fields("main_ds")).thenReturn(LEFT);
     when(catalog.fields("archive_ds")).thenReturn(RIGHT);
     try(var conn=sample()){
-      conn.setReadOnly(true);
-      when(store.open(connection)).thenReturn(conn);
+      // H2's JDBC read-only flag is not enforced like the production driver.
+      // Stub only the flag and delegate actual SQL execution to the real H2 connection.
+      var readonly=spy(conn);
+      doReturn(true).when(readonly).isReadOnly();
+      when(store.open(connection)).thenReturn(readonly);
       var api=new AnalysisPipelineApi(store,catalog,mock(JdbcTemplate.class));
       var result=api.joinKeyProfile("main_ds",Map.of("step",join("LEFT")));
       assertEquals(1L,result.get("duplicateGroups"));
