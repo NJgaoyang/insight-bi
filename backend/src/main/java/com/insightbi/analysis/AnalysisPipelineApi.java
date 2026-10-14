@@ -167,6 +167,56 @@ public final class AnalysisPipelineApi {
       "stepCount",plan.stepCount(),"warnings",List.of());
   }
 
+  /**
+   * The saved pipeline can be used as an opt-in V2 analysis source. Always
+   * enforce the exact saved revision, including for published dashboard
+   * snapshots. SQL changes to either original JOIN/UNION source fail closed.
+   * There is no runtime SQL supplied by the calling widget.
+   */
+  public record ReusableSource(String sql,List<Object> params,
+      List<FieldCatalog.Field> fields,int revision) {}
+
+  public ReusableSource reusableSource(String id,int expectedRevision){
+    if(expectedRevision<1)throw new IllegalArgumentException("请选择已保存的数据加工版本");
+    var saved=get(id);
+    if(Boolean.TRUE.equals(saved.get("stale")))
+      throw new IllegalStateException("数据加工依赖的源 SQL 已变化，请重新校验保存");
+    Object current=saved.get("revision");
+    if(!(current instanceof Number n)||n.intValue()!=expectedRevision)
+      throw new IllegalStateException("数据加工配置已更新，请重新绑定最新版本后保存分析主题");
+    Object value=saved.get("steps");
+    if(!(value instanceof List<?> steps)||steps.isEmpty())
+      throw new IllegalArgumentException("数据加工还没有可复用的步骤");
+    var plan=plan(id,Map.of("steps",steps,"limit",200));
+    String suffix=" LIMIT ?";
+    if(!plan.sql().endsWith(suffix)||plan.params().isEmpty())
+      throw new IllegalStateException("数据加工查询缺少预览行数哨兵");
+    String sql=plan.sql().substring(0,plan.sql().length()-suffix.length());
+    List<Object> params=List.copyOf(plan.params().subList(0,plan.params().size()-1));
+    List<FieldCatalog.Field> fields=new ArrayList<>();
+    for(Map<String,Object> column:plan.columns()){
+      String type=String.valueOf(column.get("type"));
+      String name=String.valueOf(column.get("name"));
+      fields.add(new FieldCatalog.Field(String.valueOf(column.get("id")),
+        String.valueOf(column.get("label")),name,type,
+        "BOTH",Boolean.TRUE.equals(column.get("numeric")),false,"ROW",null));
+    }
+    if(fields.isEmpty())throw new IllegalArgumentException("数据加工结果没有可用字段");
+    return new ReusableSource(sql,params,List.copyOf(fields),expectedRevision);
+  }
+
+  @GetMapping("/datasets/{id}/pipeline/fields")
+  public Map<String,Object> reusableFields(@PathVariable String id){
+    Map<String,Object> saved=get(id);
+    if(Boolean.TRUE.equals(saved.get("stale")))
+      throw new IllegalStateException("数据加工配置已过期，请先重新保存");
+    Object revision=saved.get("revision");
+    if(!(revision instanceof Number n)||n.intValue()<1)
+      throw new IllegalArgumentException("请先保存数据加工步骤");
+    ReusableSource source=reusableSource(id,n.intValue());
+    return Map.of("fields",source.fields(),"revision",source.revision());
+  }
+
   private AnalysisPipelineCompiler.Plan plan(String id,Map<String,Object> body){
     var ds=store.dataset(id);
     return new AnalysisPipelineCompiler(catalog.fields(id),unionSources(id,ds,body.get("steps")))
