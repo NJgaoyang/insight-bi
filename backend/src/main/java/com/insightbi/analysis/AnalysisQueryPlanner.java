@@ -160,6 +160,36 @@ public final class AnalysisQueryPlanner {
       columns.add(Map.of("id",shareId,"name",shareId,"label","占比","type","DECIMAL","kind","measure"));
       sortable.put(shareId,shareId);
     }
+    // Running total is evaluated after aggregation, before the final LIMIT.
+    // Single dimension only: its group key defines a deterministic traversal.
+    Object runningRequest=request.get("running");
+    if(runningRequest!=null){
+      Map<String,Object> running=object(runningRequest,"累计值");
+      if(dims.size()!=1)throw new IllegalArgumentException("累计值要求恰好一个分组维度");
+      String metricId=required(running,"ref");
+      Metric metric=metrics.get(metricId);
+      if(metric==null||!Set.of("INTEGER","DECIMAL","DOUBLE").contains(metric.type()))
+        throw new IllegalArgumentException("累计值必须引用数值指标");
+      String runningId=string(running.get("id"),"bi_running");
+      if(!runningId.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")||
+          sortable.containsValue(runningId)||aliases.contains(runningId)||
+          columns.stream().anyMatch(c->runningId.equals(c.get("name"))))
+        throw new IllegalArgumentException("累计值列 ID 无效或冲突");
+      String direction=string(running.get("direction"),"asc").toUpperCase(Locale.ROOT);
+      if(!Set.of("ASC","DESC").contains(direction))
+        throw new IllegalArgumentException("累计值排序方向无效");
+      if(running.size()>3||running.keySet().stream().anyMatch(k->!Set.of("ref","id","direction").contains(k)))
+        throw new IllegalArgumentException("累计值配置存在不支持的字段");
+      String inner=sql.toString();
+      sql=new StringBuilder("SELECT birun.*, SUM(birun.")
+        .append(FormulaCompiler.quote(metricId))
+        .append(") OVER (ORDER BY birun.`d1` ").append(direction)
+        .append(" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ")
+        .append(FormulaCompiler.quote(runningId))
+        .append(" FROM (").append(inner).append(") birun");
+      columns.add(Map.of("id",runningId,"name",runningId,"label","累计值","type","DECIMAL","kind","measure"));
+      sortable.put(runningId,runningId);
+    }
     for(Map<String,Object> order:objects(request.get("sort"),4,"排序")){
       String ref=required(order,"ref"),alias=sortable.get(ref);
       if(alias==null)throw new IllegalArgumentException("排序字段不属于本次分析");
