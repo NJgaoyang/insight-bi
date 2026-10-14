@@ -97,4 +97,40 @@ class AnalysisQueryPlannerTest {
     assertThrows(IllegalArgumentException.class,()->ReadOnlySqlGuard.validate("SELECT SLEEP(10)"));
   }
 
+
+  @Test void rankingRunsAfterAggregationAndRejectsInvalidReferences()throws Exception{
+    var planner=new AnalysisQueryPlanner(sample());
+    Map<String,Object> req=new HashMap<>();
+    req.put("dimensions",List.of(Map.of("fieldId","city")));
+    req.put("measures",List.of(Map.of("id","revenue_total","fieldId","revenue",
+      "aggregate","SUM")));
+    req.put("rank",Map.of("ref","revenue_total","id","revenue_rank","direction","desc"));
+    req.put("sort",List.of(Map.of("ref","revenue_rank","direction","asc")));
+    req.put("limit",10);
+    var plan=planner.compile("SELECT city,revenue FROM sales",req);
+    assertTrue(plan.sql().contains("RANK() OVER (ORDER BY bir.`revenue_total` DESC)"));
+    assertTrue(plan.sql().contains("FROM (SELECT"));
+    assertEquals("revenue_rank",plan.columns().get(2).get("name"));
+    try(var c=java.sql.DriverManager.getConnection(
+      "jdbc:h2:mem:p2_rank_"+UUID.randomUUID()+";MODE=MySQL","sa","")){
+      try(var st=c.createStatement()){
+        st.execute("CREATE TABLE sales(city VARCHAR(30),revenue DECIMAL(12,2))");
+        st.execute("INSERT INTO sales VALUES ('北京',100),('北京',50),('上海',90),('广州',90)");
+      }
+      try(var stmt=c.prepareStatement(plan.sql())){
+        for(int i=0;i<plan.params().size();i++)stmt.setObject(i+1,plan.params().get(i));
+        try(var rs=stmt.executeQuery()){
+          var ranks=new HashMap<String,Integer>();
+          while(rs.next())ranks.put(rs.getString("d1"),rs.getInt("revenue_rank"));
+          assertEquals(Map.of("北京",1,"上海",2,"广州",2),ranks);
+        }
+      }
+    }
+    req.put("rank",Map.of("ref","missing"));
+    assertThrows(IllegalArgumentException.class,()->
+      planner.compile("SELECT city,revenue FROM sales",req));
+    req.put("rank",Map.of("ref","revenue_total","id","revenue_total"));
+    assertThrows(IllegalArgumentException.class,()->
+      planner.compile("SELECT city,revenue FROM sales",req));
+  }
 }
