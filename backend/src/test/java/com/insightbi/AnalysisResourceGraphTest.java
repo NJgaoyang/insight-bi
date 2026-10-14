@@ -224,4 +224,26 @@ class AnalysisResourceGraphTest {
     assertThrows(IllegalStateException.class,()->api.deleteDataset(second),
       "unreadable historical content must fail closed, even if another dataset is targeted");
   }
+
+  @Test void viewJumpsPersistInPublishedSnapshotAndRejectDanglingTargets(){
+    String id=String.valueOf(api.create(Map.of("name","视图跳转","kind","analysis")).get("id"));
+    var content=new LinkedHashMap<String,Object>(content(widget("a",first),widget("b",second)));
+    content.put("dashboards",List.of(
+      Map.of("id","overview","name","总览","widgetIds",List.of("a"),
+        "jumps",Map.of("a","detail")),
+      Map.of("id","detail","name","明细","widgetIds",List.of("b"))));
+    api.update(id,Map.of("name","视图跳转","mode","grid","revision",1,"content",content));
+    api.publish(id);
+    assertEquals(content.get("dashboards"),
+      ((Map<?,?>)api.get(id,true).get("content")).get("dashboards"));
+    for(Map<String,Object> wrong:List.of(
+      Map.of("a","missing"),Map.of("b","detail"),Map.of("a","overview"))){
+      var invalid=new LinkedHashMap<>(content);
+      invalid.put("dashboards",List.of(
+        Map.of("id","overview","name","总览","widgetIds",List.of("a"),"jumps",wrong),
+        Map.of("id","detail","name","明细","widgetIds",List.of("b"))));
+      assertThrows(IllegalArgumentException.class,()->api.update(id,Map.of(
+        "name","视图跳转","mode","grid","revision",2,"content",invalid)));
+    }
+  }
 }
