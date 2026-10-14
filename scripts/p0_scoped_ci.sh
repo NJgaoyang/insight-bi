@@ -24,12 +24,14 @@ for path in "${paths[@]}"; do
     */DatabaseStore.java|*/BiApi.java)
       add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest
       add_test BiQueryInTest;add_test AnalysisResourceGraphTest
-      add_test AnalysisPipelineApiTest;add_test AnalysisPipelineDependencyGuardTest;;
-    */AnalysisResourceGraph.java) add_test AnalysisResourceGraphTest;;
+      add_test AnalysisPipelineApiTest;add_test AnalysisPipelineDependencyGuardTest
+      add_test AnalysisPipelineSnapshotBindingTest;;
+    */AnalysisResourceGraph.java)
+      add_test AnalysisResourceGraphTest;add_test AnalysisPipelineSnapshotBindingTest;;
     */AnalysisPipelineCompiler.java|*/AnalysisPipelineApi.java)
       add_test AnalysisPipelineCompilerTest;add_test AnalysisPipelineApiTest
       add_test AnalysisPipelineCaseTest;add_test AnalysisPipelineUnionTest
-      add_test AnalysisPipelineJoinTest;;
+      add_test AnalysisPipelineJoinTest;add_test AnalysisPipelineReuseTest;;
     */AnalysisPipelineDependencyGuard.java) add_test AnalysisPipelineDependencyGuardTest;;
     */FieldCatalog.java)
       add_test FieldVisibilityTest;add_test FieldCatalogRefreshTest;add_test FieldCatalogConcurrencyTest;;
@@ -37,7 +39,8 @@ for path in "${paths[@]}"; do
       add_test DatasetSchemaGuardTest;add_test DatasetAliasUpdateIntegrationTest;;
     */AnalysisApi.java)
       add_test AnalysisFormulaValidationTest;add_test AnalysisFormulaDependencyTest
-      add_test FormulaSnapshotGuardTest;add_test FieldDisplayNameTest;;
+      add_test FormulaSnapshotGuardTest;add_test FieldDisplayNameTest
+      add_test AnalysisPipelineReuseTest;;
     */FormulaSnapshotGuard.java)
       add_test FormulaSnapshotGuardTest;add_test AnalysisFormulaDependencyTest;;
     */FormulaCompiler.java)
