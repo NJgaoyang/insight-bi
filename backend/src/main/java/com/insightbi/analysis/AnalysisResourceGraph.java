@@ -85,6 +85,22 @@ public final class AnalysisResourceGraph {
           }
         }
       }
+      // A jump target must be another view in this same theme. Validate
+      // after all view IDs are collected so forward references are legal.
+      for(Object viewRaw:views){
+        Map<?,?> view=(Map<?,?>)viewRaw;
+        Object jumpsRaw=view.get("jumps");
+        if(jumpsRaw==null)continue;
+        if(!(jumpsRaw instanceof Map<?,?> jumps))
+          throw new IllegalArgumentException("视图跳转配置必须是组件映射");
+        Set<?> members=new HashSet<>((List<?>)view.get("widgetIds"));
+        for(var jump:jumps.entrySet()){
+          if(!(jump.getKey() instanceof String widgetId)||!members.contains(widgetId)||
+             !(jump.getValue() instanceof String target)||!dashboardIds.contains(target)||
+             target.equals(view.get("id")))
+            throw new IllegalArgumentException("视图跳转引用了无效组件或目标仪表板");
+        }
+      }
     }
     return new Graph(List.copyOf(datasets),List.copyOf(ids),widgets.size(),
       List.copyOf(dashboardIds),dashboardIds.size());
