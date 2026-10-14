@@ -236,7 +236,7 @@ class AnalysisResourceGraphTest {
     api.publish(id);
     assertEquals(content.get("dashboards"),
       ((Map<?,?>)api.get(id,true).get("content")).get("dashboards"));
-    for(Map<String,Object> wrong:List.of(
+    for(Map<String,String> wrong:List.of(
       Map.of("a","missing"),Map.of("b","detail"),Map.of("a","overview"))){
       var invalid=new LinkedHashMap<>(content);
       invalid.put("dashboards",List.of(
