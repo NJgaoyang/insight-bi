@@ -59,7 +59,7 @@ const processedFields=[
   await page.locator('.analysis-field').filter({hasText:'收入等级'}).first().waitFor()
   assert.ok((await page.locator('.analysis-processing-source').innerText()).includes('版本 3'))
   await page.locator('.analysis-field').filter({hasText:'收入等级'}).first().click()
-  await page.locator('.analysis-field').filter({hasText:'收入'}).first().click()
+  await page.locator('.analysis-field:has(.field-metric)').filter({hasText:'收入'}).first().click()
   await page.locator('.analysis-header-actions .analysis-primary').click()
   await page.waitForFunction(()=>document.querySelector('.analysis-save-indicator')?.textContent?.includes('已保存'))
   assert.equal(saves.length,1)
