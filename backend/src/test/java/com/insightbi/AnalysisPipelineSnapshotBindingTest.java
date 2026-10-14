@@ -51,9 +51,12 @@ class AnalysisPipelineSnapshotBindingTest {
     assertEquals(2,api.get(report,false).get("revision"));
     assertEquals(1,api.versions(report).size(),"rejected publish cannot append a version");
     var oldPublished=api.get(report,true);
-    assertEquals(1,((Number)((Map<?,?>)((Map<?,?>)((List<?>)((Map<?,?>)
-      oldPublished.get("content")).get("widgets")).get(0)).get("analysisV2"))
-      .get("pipelineRevision")).intValue(),"published snapshot must remain immutable");
+    Map<?,?> publishedContent=(Map<?,?>)oldPublished.get("content");
+    List<?> publishedWidgets=(List<?>)publishedContent.get("widgets");
+    Map<?,?> publishedWidget=(Map<?,?>)publishedWidgets.get(0);
+    Map<?,?> publishedAnalysis=(Map<?,?>)publishedWidget.get("analysisV2");
+    assertEquals(1,((Number)publishedAnalysis.get("pipelineRevision")).intValue(),
+      "published snapshot must remain immutable");
 
     var updated=new LinkedHashMap<String,Object>(selected);
     updated.put("widgets",List.of(Map.of("id","widget1","datasetId",datasetId,
