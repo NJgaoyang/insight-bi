@@ -86,10 +86,34 @@ public final class AnalysisPipelineCompiler {
     List<FieldCatalog.Field> right=source.fields().stream().filter(f->!f.calculated()).toList();
     if(left.isEmpty()||left.size()>100||right.size()!=left.size())
       throw new IllegalArgumentException("上下合并的数据集字段结构不一致");
+    // Older configurations without mappings keep their original exact-name
+    // matching semantics. Explicit mapping uses server catalog IDs only.
+    Object rawMappings=step.get("mappings");
     Map<String,FieldCatalog.Field> matching=new HashMap<>();
-    for(var f:right){
-      if(matching.put(f.sourceColumn(),f)!=null)
-        throw new IllegalArgumentException("上下合并数据集存在重名字段");
+    if(rawMappings==null){
+      for(var f:right){
+        if(matching.put(f.sourceColumn(),f)!=null)
+          throw new IllegalArgumentException("上下合并数据集存在重名字段");
+      }
+    }else{
+      if(!(rawMappings instanceof List<?> mappings)||mappings.size()!=left.size())
+        throw new IllegalArgumentException("上下合并映射必须覆盖全部左表字段");
+      Map<String,FieldCatalog.Field> leftById=new HashMap<>(),rightById=new HashMap<>();
+      for(var f:left)if(leftById.put(f.id(),f)!=null)
+        throw new IllegalArgumentException("左侧字段 ID 重复");
+      for(var f:right)if(rightById.put(f.id(),f)!=null)
+        throw new IllegalArgumentException("右侧字段 ID 重复");
+      Set<String> usedRight=new HashSet<>();
+      for(Object rawMapping:mappings){
+        if(!(rawMapping instanceof Map<?,?> m))
+          throw new IllegalArgumentException("上下合并字段映射格式无效");
+        Map<String,Object> entry=object(m);
+        String leftId=required(entry,"leftFieldId"),rightId=required(entry,"rightFieldId");
+        FieldCatalog.Field l=leftById.get(leftId),r=rightById.get(rightId);
+        if(l==null||r==null||!l.logicalType().equals(r.logicalType())||
+            matching.putIfAbsent(l.sourceColumn(),r)!=null||!usedRight.add(rightId))
+          throw new IllegalArgumentException("上下合并字段映射重复、未知或类型不匹配");
+      }
     }
     List<String> lhs=new ArrayList<>(),rhs=new ArrayList<>();
     for(var l:left){
