@@ -260,3 +260,10 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .pipeline-formula-fields{display:flex;flex-wrap:wrap;gap:5px;max-height:115px;overflow:auto}
 .pipeline-formula-fields>button{border:1px solid #dce5f1;background:#f8faff;color:#456384;font-size:11px;border-radius:4px;padding:4px 7px;cursor:pointer}
 .pipeline-formula-fields>button:hover{border-color:#9eb7da;color:#2358a0}
+
+/* P1-02: optional saved processing source, without changing the normal field list. */
+.analysis-processing-source{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 7px;margin:6px 0;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b}
+.analysis-processing-source>.analysis-pipeline-version{display:inline-flex;gap:6px;align-items:center;font-size:11px;color:#64748b}
+.analysis-pipeline-version button{background:transparent;color:#2d61a8;border:0;padding:3px;cursor:pointer}
+.analysis-pipeline-version button:disabled{opacity:.4;cursor:default}
+.analysis-pipeline-warning{font-size:12px;color:#9b5b1b;padding:7px;border-left:2px solid #d1a05e;background:#fff9f0;word-break:break-word}
