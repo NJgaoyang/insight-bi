@@ -105,8 +105,8 @@ class AnalysisPipelineReuseTest {
 
   @Test void refusesUnsavedStaleAndWrongRevisionWithoutOpeningDataConnection(){
     Fixture fx=fixture();
-    assertThrows(IllegalArgumentException.class,()->
-      fx.analysis.compile(widgetRequest(1)));
+    assertThrows(IllegalStateException.class,()->
+      fx.analysis.compile(widgetRequest(1)),"unsaved revisions fail closed before any SQL runs");
     fx.pipeline.save("ds1",Map.of("steps",steps(),"revision",0));
     assertThrows(IllegalStateException.class,()->
       fx.analysis.compile(widgetRequest(2)));
@@ -121,6 +121,7 @@ class AnalysisPipelineReuseTest {
     Map<String,Object> ordinary=new HashMap<>(widgetRequest(1));
     ordinary.remove("pipelineRevision");
     ordinary.put("usePipeline",false);
+    ordinary.put("dimensions",List.of(Map.of("fieldId","city")));
     var result=fx.analysis.compile(ordinary);
     assertEquals(2,result.get("bindCount"),"one filter bind and one limit sentinel");
     ordinary.put("usePipeline","true");
