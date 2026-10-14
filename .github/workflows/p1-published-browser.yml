@@ -1,0 +1,48 @@
+name: P1 Published Views Browser Acceptance
+on:
+  push:
+    branches: [feat/finebi-analysis-engine-p0]
+    paths:
+      - 'frontend/src/PublishedReport.vue'
+      - 'frontend/src/AnalysisV2Chart.vue'
+      - 'frontend/src/analysis/dashboardLayout.ts'
+      - 'scripts/finebi_published_views_ui_smoke.cjs'
+      - '.github/workflows/p1-published-browser.yml'
+  workflow_dispatch:
+
+jobs:
+  published-view-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build changed frontend
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Install isolated Chromium test runner
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.58.2
+          npx --yes playwright@1.58.2 install --with-deps chromium
+      - name: Start isolated Vite preview
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 18212 > /tmp/insight-p1-vite.log 2>&1 &
+          echo $! > /tmp/insight-p1-vite.pid
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:18212/ >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/insight-p1-vite.log
+          exit 1
+      - name: Chromium published-view navigation and linkage smoke
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18212
+          NODE_PATH: ${{ github.workspace }}/node_modules
+        run: node scripts/finebi_published_views_ui_smoke.cjs
