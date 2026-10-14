@@ -146,4 +146,29 @@ class AnalysisPipelineCompilerTest {
       Map.of("id","c","type","filter","fieldId","city","op","contains","value","%_"))));
     assertEquals("%!%!_%",contains.params().get(0));
   }
+
+  @Test void secondAggregationConsumesFirstStageMetricsAndRejectsThird()throws Exception{
+    var first=Map.<String,Object>of("id","g1","type","group",
+      "dimensions",List.of("city"),
+      "measures",List.of(Map.of("id","cityTotal","fieldId","revenue",
+        "aggregate","SUM","name","城市收入")));
+    var second=Map.<String,Object>of("id","g2","type","group",
+      "dimensions",List.of(),
+      "measures",List.of(Map.of("id","grandTotal","fieldId","cityTotal",
+        "aggregate","SUM","name","总收入")));
+    var engine=new AnalysisPipelineCompiler(FIELDS);
+    var plan=engine.compile(SOURCE,Map.of("steps",List.of(first,second),"limit",10));
+    assertTrue(plan.sql().contains("SUM(biq.`m_cityTotal`)"));
+    try(var c=sample()){
+      var data=execute(c,plan);
+      assertEquals(1,data.size());
+      assertEquals(0,value(data.get(0).get("m_grandtotal")).compareTo(new BigDecimal("650")));
+    }
+    var third=Map.<String,Object>of("id","g3","type","group",
+      "dimensions",List.of(),
+      "measures",List.of(Map.of("id","onceMore","fieldId","grandTotal",
+        "aggregate","SUM")));
+    assertThrows(IllegalArgumentException.class,()->
+      engine.compile(SOURCE,Map.of("steps",List.of(first,second,third))));
+  }
 }
