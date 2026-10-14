@@ -252,6 +252,12 @@ GitHub Actions [#304](https://github.com/NJgaoyang/insight-bi/actions/runs/38398
 
 本轮开发 `JOIN` 加工步骤，限制同数据连接、INNER/LEFT、1–4 等值键、右表显式投影和新字段稳定 ID、重复键放大需显式确认；原 UNION 加工及数据集 SQL 指纹保留兼容。同步新增数据集删除保护，检查其他加工配置是否实际引用待删除数据集。只执行相关后端 **17+3 项 PASS**，前端 Vue/TypeScript 构建 PASS，JOIN 及既有加工 Chromium 定向测试 PASS。生产 `18110` 未部署，真实 StarRocks 继续暂缓，生产 H2 备份/恢复/发布门禁未完成。更多细节见 `docs/P1_IMPLEMENTATION_STATUS.md` 第三批。
 
+### P1-02 第四批（2026-10-14）：分析主题复用加工结果
+
+启用 `analysisV2.usePipeline` 后，V2 查询复用已保存的数据加工 SQL 与字段，按 `pipelineRevision` 锁定版本；源 SQL/关联元数据变化、版本失配时拒绝新分析主题保存、发布及直接执行旧配置。原始数据集路径不变。前端已增加“加工结果”切换、绑定版本更新和字段重新选择。
+
+仅定向 H2/接口合同测试 **14/14 PASS**、Vue/TypeScript 构建 PASS、Chromium 相关页面测试 PASS。测试 FE 两个端口可达，但尝试带凭据运行时被工具安全检查阻止，故 StarRocks 真实 JDBC 对账**尚未执行**；临时凭据文件已清理，生产 `18110` 未部署/未更改。详情见 `docs/P1_IMPLEMENTATION_STATUS.md`。
+
 ## 后续优先事项
 
 1. SQL 函数白名单真实兼容验证与数据库最小权限（仍阻塞生产级安全验收）。
