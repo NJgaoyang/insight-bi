@@ -120,6 +120,23 @@ P1-02 的同连接 JOIN（重名字段与多对多语义）、多源 UNION 映�
 
 P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量评估、多级汇总、处理后的数据作为主题可复用数据集、复杂类型兼容矩阵。P0-05/G4、生产 H2 一致性备份恢复和生产发布回滚演练依旧未通过。
 
+## P1-02 第四批：加工结果复用到分析主题（2026-10-14）
+
+- 分析主题 V2 图表新增可选 `analysisV2.usePipeline=true` 与 `pipelineRevision`，在“数据来源”中切换“原始数据 / 加工结果”，无需将加工结果复制或物化到 StarRocks。启用时从 `GET /api/datasets/{id}/pipeline/fields` 获取**真实保存后**的加工字段（含条件列、计算列、JOIN 右侧输出及分组指标），并在保存主题 JSON 时保留版本。
+- `AnalysisPipelineApi.reusableSource` 校验：该数据集有已保存且非空的加工步骤、依赖 SQL/字段指纹未过期、绑定版本正好等于当前加工 revision；根据经过白名单验证的实际步骤构造可复用只读 SQL 与稳定字段目录，剥离只用于加工预览的 `LIMIT ?` 哨兵。不会执行用户传入的任意 SQL。
+- `AnalysisApi` 的 `/analysis/v2/compile` 与 `/analysis/v2/query` 对 `usePipeline` 显式选择加工结果时，先将加工数据集 SELECT 作为只读子查询，后使用现有维度、指标、过滤与 Top N 查询规划；严格按**加工占位符在前、图表过滤与最外层 LIMIT 参数在后**合并 JDBC 参数，仍保留只读连接、最大行数和并发限制。未选择加工的原 V2 请求保持旧查询行为。
+- `AnalysisResourceGraph.requirePinnedPipelines` 已接入分析主题保存、发布前检查：当前加工配置版本变化或原/关联数据集 SQL 已变化时拒绝保存/发布损坏的绑定，不改写已发布旧快照。更新加工版本必须在编辑器中明确“更新版本”并重新选择维度/指标。旧发布版本仍保留其原始版本号，不会静默切换成新版加工结果。
+- UI 只增加紧凑的加工数据源选择开关、绑定版本显示/更新和过期提示；切换模式清理原字段槽位，避免旧字段 ID 被误用于不同来源。加工模式不显示原始字段的重命名、隐藏和原始公式编辑按钮；已发布只读 V2 图表传递同样的版本参数。
+- 只增加独立 `AnalysisPipelineReuseTest`、`AnalysisPipelineSnapshotBindingTest`、`finebi_processed_source_ui_smoke.cjs` 与按文件定向 CI 配置，不修改现有数据集表结构，也没有创建生产数据表。
+
+### 本批定向验证结果
+
+- `mvn -q -o -Dtest=AnalysisPipelineReuseTest,AnalysisPipelineSnapshotBindingTest,AnalysisResourceGraphTest test`：**13/13 PASS**；针对实际 `/analysis/v2/query` 新增 JDBC 参数顺序、只读和连接释放测试后，只运行 `AnalysisPipelineReuseTest`：**4/4 PASS**（最终合计相关测试 **14/14 PASS**，没有执行全量 Maven 回归）。
+- `npm run build`：Vue 3 / TypeScript 类型检查及 Vite 构建 **PASS**；`node scripts/finebi_processed_source_ui_smoke.cjs`：独立 Chromium 操作 + 模拟 REST **PASS**，覆盖选择加工字段、绑定版本、保存重开、版本变更、显式重新绑定及切回原始字段。
+- `ProcessedAnalysisStarRocksReadOnlyTest` 已编写、编译并默认跳过。开发机对测试 FE 的 `3306` 与 `9030` TCP 均可连接；但注入凭据启动 JDBC 测试时被工具安全检查阻止，因此**尚无真实 StarRocks SQL 对账结果**。已清理临时凭据文件；不会伪称通过，也未尝试绕过检查。此测试仅使用内联 SELECT 数据，外部 StarRocks 无 DDL/DML。
+- 已添加 `.github/workflows/p1-processed-analysis-scoped.yml` 和 `scripts/p0_scoped_ci.sh` 映射，仅执行关联 H2/合同用例及前端类型构建；没有添加任何数据库秘密到 GitHub。
+- 生产 `18110` 未部署本次修改；P0-05/G4 真库、生产 H2 备份恢复与发布回滚门禁仍未通过。进一步进度以此节为准，不把 P1-02 其它 JOIN 扩展、多级汇总和高阶数据处理项标记完成。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
