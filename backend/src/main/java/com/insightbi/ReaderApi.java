@@ -19,12 +19,14 @@ class ReaderApi {
   private final JdbcTemplate db;
   private final DatabaseStore store;
   private final GovernanceApi governance;
+  private final ReaderColumnGuard columnGuard;
   private final AnalysisApi analysis;
   private final ConcurrentHashMap<String,ArrayDeque<Long>> failedLogins=new ConcurrentHashMap<>();
   private static final String DUMMY_HASH=ReaderPassword.hash("reader-login-constant-not-a-real-password");
 
   ReaderApi(JdbcTemplate db,DatabaseStore store,GovernanceApi governance,AnalysisApi analysis){
     this.db=db;this.store=store;this.governance=governance;this.analysis=analysis;
+    this.columnGuard=new ReaderColumnGuard(governance,db);
   }
 
   @PostMapping("/login")
@@ -83,20 +85,32 @@ class ReaderApi {
     String userId=(String)session.getAttribute("readerId");
     Set<String> granted=governance.effectiveDashboardIds(userId);
     if(granted.isEmpty())return List.of();
-    // Use the exact same effective grants as report() and widget query().
-    // Parameterized resource IDs; no unrelated reports can appear in catalog.
+    // Evaluate the same content-level column policy as report() and query().
+    // Do not send denied report names or published JSON to the browser.
     List<String> ids=new ArrayList<>(granted);
     String placeholders=String.join(",",Collections.nCopies(ids.size(),"?"));
-    return db.queryForList("SELECT id,name,kind,status FROM insight_dashboard "+
+    List<Map<String,Object>> candidates=db.queryForList(
+      "SELECT id,name,kind,status,published_json FROM insight_dashboard "+
       "WHERE id IN ("+placeholders+") AND kind='analysis' "+
       "AND status='published' AND published_json IS NOT NULL "+
-      "ORDER BY name,id LIMIT 200",ids.toArray());
+      "ORDER BY name,id LIMIT 1000",ids.toArray());
+    List<Map<String,Object>> visible=new ArrayList<>();
+    for(Map<String,Object> row:candidates){
+      Map<String,Object> content=store.map(String.valueOf(row.get("published_json")));
+      if(!columnGuard.allowed(userId,content))continue;
+      visible.add(Map.of("id",row.get("id"),"name",row.get("name"),
+        "kind",row.get("kind"),"status",row.get("status")));
+      if(visible.size()>=200)break;
+    }
+    return visible;
   }
 
   @GetMapping("/dashboards/{id}")
   Map<String,Object> report(@PathVariable String id,HttpSession session){
     Map<String,Object> row=published(id,(String)session.getAttribute("readerId"));
     Map<String,Object> content=store.map(String.valueOf(row.get("published_json")));
+    if(!columnGuard.allowed((String)session.getAttribute("readerId"),content))
+      throw new NoSuchElementException("已授权报表不可访问");
     // This reader is V2-only. A legacy widget could query admin-only V1 APIs;
     // fail closed until that pathway has its own validated viewer query contract.
     for(Object item:widgets(content)){
@@ -115,6 +129,8 @@ class ReaderApi {
     if(!userParameters.isEmpty())throw new IllegalArgumentException("只允许查询已发布的组件配置");
     Map<String,Object> row=published(id,(String)session.getAttribute("readerId"));
     Map<String,Object> content=store.map(String.valueOf(row.get("published_json")));
+    if(!columnGuard.allowed((String)session.getAttribute("readerId"),content))
+      throw new NoSuchElementException("已授权报表不可访问");
     Map<?,?> selected=null;
     for(Object item:widgets(content)){
       if(item instanceof Map<?,?> widget&&widgetId.equals(widget.get("id"))){
