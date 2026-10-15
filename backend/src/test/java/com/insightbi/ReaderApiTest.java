@@ -256,4 +256,48 @@ class ReaderApiTest {
     assertThrows(NoSuchElementException.class,()->reader.report(dashboard,session));
     assertTrue(reader.catalog(session).isEmpty());
   }
+
+  @Test void inheritedDepartmentGrantsKeepCatalogReportAndQueryConsistent()throws Exception{
+    String userId=user();
+    governance.setPassword(userId,Map.of("password","complex-password-of-reader-1"));
+    governance.setActivation(userId,Map.of("enabled",true));
+    String parent=(String)governance.createDepartment(Map.of("name","管理大区")).get("id");
+    String child=(String)governance.createDepartment(Map.of("name","城市团队","parentId",parent)).get("id");
+    String outside=(String)governance.createDepartment(Map.of("name","无权团队")).get("id");
+    governance.assignDepartment(userId,Map.of("departmentId",child));
+    String dashboard=(String)admin.create(
+      Map.of("name","继承授权主题","mode","grid","kind","analysis")).get("id");
+    String secret=(String)admin.create(
+      Map.of("name","未授权主题","mode","grid","kind","analysis")).get("id");
+    var settings=Map.of("dimensions",List.of(Map.of("fieldId","city")),
+      "measures",List.of(Map.of("id","m1","fieldId","revenue","aggregate","SUM")),
+      "filters",Map.of("pre",List.of(),"post",List.of()),"sort",List.of(),"limit",30);
+    var widget=Map.of("id","w1","title","收入","type","table",
+      "datasetId","trusted-data","analysisV2",settings);
+    String published=store.json(Map.of("mode","grid","theme","light",
+      "widgets",List.of(widget)));
+    db.update("UPDATE insight_dashboard SET status='published',published_json=? WHERE id=?",
+      published,dashboard);
+    db.update("UPDATE insight_dashboard SET status='published',published_json=? WHERE id=?",
+      published,secret);
+    governance.grantDepartmentRead(parent,Map.of("dashboardId",dashboard));
+    HttpSession session=login("analyst01","complex-password-of-reader-1").getSession(false);
+    assertEquals(List.of(dashboard),reader.catalog(session).stream().map(x->x.get("id")).toList());
+    assertEquals("继承授权主题",reader.report(dashboard,session).get("name"));
+    reader.query(dashboard,"w1",Map.of(),session);
+    assertEquals("trusted-data",analysis.received.get("datasetId"));
+    assertThrows(NoSuchElementException.class,()->reader.report(secret,session));
+    assertThrows(NoSuchElementException.class,()->
+      reader.query(secret,"w1",Map.of(),session));
+    governance.assignDepartment(userId,Map.of("departmentId",outside));
+    assertTrue(reader.catalog(session).isEmpty());
+    assertThrows(NoSuchElementException.class,()->reader.report(dashboard,session));
+    assertThrows(NoSuchElementException.class,()->
+      reader.query(dashboard,"w1",Map.of(),session));
+    governance.assignDepartment(userId,Map.of("departmentId",child));
+    assertEquals(1,reader.catalog(session).size());
+    governance.revokeDepartmentRead(parent,dashboard);
+    assertTrue(reader.catalog(session).isEmpty());
+    assertThrows(NoSuchElementException.class,()->reader.report(dashboard,session));
+  }
 }
