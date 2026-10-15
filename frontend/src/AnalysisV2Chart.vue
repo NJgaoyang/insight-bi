@@ -2,7 +2,7 @@
 import {computed,nextTick,onBeforeUnmount,ref,watch} from 'vue'
 import * as echarts from 'echarts'
 import {analysisCsv} from './analysis/exportCsv'
-import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,type PivotAxis} from './analysis/pivotTable'
+import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,formatPivotTotal,type PivotAxis} from './analysis/pivotTable'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
 const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null;viewerReportId?:string}>()
@@ -34,6 +34,10 @@ function toggleColumn(id:string){
 
 const pivotModel=computed(()=>result.value&&bindings.value?buildPivot(result.value,bindings.value):null)
 const pivotShowTotals=computed(()=>bindings.value?.pivot?.showTotals!==false)
+const pivotExact=computed(()=>result.value?.pivotTotals?.exact===true)
+function formatTotal(value:unknown,id:string){
+ return pivotExact.value?formatPivotTotal(value,optionsFor(id)?.decimals):formatMeasure(value,id)
+}
 const pivotPage=ref(1)
 const pivotPageSize=20
 const pivotPageCount=computed(()=>Math.max(1,Math.ceil((pivotModel.value?.rows.length??0)/pivotPageSize)))
@@ -98,6 +102,7 @@ async function load(){
    ?'/reader/dashboards/'+encodeURIComponent(props.viewerReportId)+'/widgets/'+encodeURIComponent(props.widget.id)+'/query'
    :'/analysis/v2/query'
   const request=props.viewerReportId?{}:{datasetId:props.widget.datasetId,...config,
+   ...(props.widget.type==='pivot'?{pivot:{...config.pivot,showTotals:config.pivot?.showTotals!==false}}:{}),
    filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilter?[props.linkedFilter]:[])],post:config.filters?.post||[]}}
   const response=await api<QueryV2Result>(path,{method:'POST',body:JSON.stringify(request),signal:controller.signal})
   if(gen!==generation)return
@@ -231,24 +236,24 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
       </template>
       <template v-if="pivotShowTotals">
        <td v-for="metric in pivotModel.measures" :key="metric.id" class="v2-pivot-total">
-        {{pivotModel.additive.has(metric.id)?formatMeasure(pivotRowTotal(pivotModel,axis.key,metric.id),metric.id):'—'}}
+        {{pivotModel.additive.has(metric.id)?formatTotal(pivotRowTotal(pivotModel,axis.key,metric.id),metric.id):'—'}}
        </td>
       </template>
      </tr></tbody>
      <tfoot v-if="pivotShowTotals"><tr><th>列合计</th>
       <template v-for="column in pivotModel.columns" :key="column.key">
        <th v-for="metric in pivotModel.measures" :key="metric.id">
-        {{pivotModel.additive.has(metric.id)?formatMeasure(pivotColumnTotal(pivotModel,column.key,metric.id),metric.id):'—'}}
+        {{pivotModel.additive.has(metric.id)?formatTotal(pivotColumnTotal(pivotModel,column.key,metric.id),metric.id):'—'}}
        </th>
       </template>
       <th v-for="metric in pivotModel.measures" :key="metric.id">
-       {{pivotModel.additive.has(metric.id)?formatMeasure(pivotGrandTotal(pivotModel,metric.id),metric.id):'—'}}
+       {{pivotModel.additive.has(metric.id)?formatTotal(pivotGrandTotal(pivotModel,metric.id),metric.id):'—'}}
       </th>
      </tr></tfoot>
     </table>
     <div class="v2-pivot-caption">
      <span>{{pivotModel.rows.length}} 行组 × {{pivotModel.columns.length}} 列组 × {{pivotModel.measures.length}} 指标
-      <span v-if="pivotShowTotals"> · 合计仅适用于未截断的 SUM / 非去重 COUNT；其他为 —</span>
+      <span v-if="pivotShowTotals"> · {{pivotExact?'由服务端重新聚合全部指标':'兼容模式：仅合计可加指标'}}</span>
      </span>
      <span v-if="pivotPageCount>1" class="v2-pivot-pager">
       <button type="button" :disabled="pivotPage<=1" @click="pivotPage--">上一页</button>

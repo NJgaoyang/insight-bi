@@ -194,3 +194,10 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 新增或调整：`AnalysisQueryPlanner.java` 的 `additive` 查询列元数据、`AnalysisV2Chart.vue`、`AnalysisSubject.vue`、`pivotTable.ts`、`api.ts`、样式和专项 H2/Node/Chromium 测试。定向检查：H2 Java 14/14 PASS、Node 4/4 PASS、TypeScript/Vite 构建 PASS、隔离 Chromium mock REST 保存/重进/两视图/发布/分页/截断 PASS。**没有进行全量回归、生产数据操作或 18110 部署**。
 
 详细验收与限制见 [ANALYSIS_PHASE2_01_PIVOT_BATCH1.md](ANALYSIS_PHASE2_01_PIVOT_BATCH1.md)；下一批建议继续服务端 SQL ROLLUP 安全小计、多层行列维度和高精度数字传输，不要误判第一批等于高级交叉表功能全量完成。CI 的远端执行结果另行核验，不以本地测试替代 CI 结论。
+
+
+## 12. 接手后的执行补充：ANALYSIS-PHASE2-02 第二批服务端精确合计（2026-10-15）
+
+基于第一批交叉表实现，现已新增 `PivotRollup` 服务端分组重算：依旧经 V2 安全 Planner + 已发布读者的强制明细过滤，先执行原分组查询，再在同一个只读连接及限流许可内执行独立行合计、列合计、总计 SQL，正确求 AVG 和 COUNT DISTINCT，而非将分组平均值/去重数相加。用于合计的 DECIMAL 返回字符串以避免 JavaScript Number 精度损失。截断、后置过滤、窗口计算、行列组不一致均禁用合计；旧前端/旧 V2 查询仍保持原接口。未创建任何新元数据表，也未修改 V1 Designer。
+
+定向 H2/JUnit 覆盖实际 API 和数据库 AVG/去重聚合、注入式读者过滤、出错与截断拒绝；TypeScript、Node 纯逻辑、独立 Chromium 展示/保存/发布/截断场景均属于本批范围。详细测试命令、兼容性、风险与下一批见 [ANALYSIS_PHASE2_02_PIVOT_ROLLUP.md](ANALYSIS_PHASE2_02_PIVOT_ROLLUP.md)。注意 4 次 SQL 非单语句快照一致性，也没有验证生产 StarRocks 的多语句一致性；未部署 18110，也不触碰原始业务表。第三批优先支持层次交叉表与多级小计。

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,
- PIVOT_MAX_COLUMNS} from '../frontend/src/analysis/pivotTable.ts'
+ PIVOT_MAX_COLUMNS,formatPivotTotal} from '../frontend/src/analysis/pivotTable.ts'
 
 const cols=[
  {id:'city',name:'d1',label:'同名字段',kind:'dimension',type:'STRING'},
@@ -78,4 +78,40 @@ test('bad schema, duplicate tuples, missing values and column cap are rejected',
  assert.match(overflow.error,/上限/)
  const invalid=buildPivot(result(data),{...bindings,dimensions:[{fieldId:'city'}]})
  assert.match(invalid.error,/恰好两个维度/)
+})
+
+
+test('server recomputed SUM / weighted AVG / DISTINCT totals override unsafe client sums',()=>{
+ const server={exact:true,rows:[
+   {d1:'北京',rev:'0.3000',cnt:'3',avg:'0.1000',distinct:'2'},
+   {d1:'上海',rev:'20.5000',cnt:'1',avg:'20.5000',distinct:'1'},
+   {d1:null,rev:null,cnt:'1',avg:null,distinct:'0'},
+   {d1:'(空值)',rev:'1.0000',cnt:'1',avg:'1.0000',distinct:'1'}
+ ],columns:[
+   {d1:'1月',rev:'21.6000',cnt:'4',avg:'5.4000',distinct:'3'},
+   {d1:null,rev:'0.2000',cnt:'2',avg:'0.2000',distinct:'2'}
+ ],grand:{rev:'21.8000',cnt:'6',avg:'3.6333333333',distinct:'3'}}
+ const model=buildPivot({...result(data),pivotTotals:server},bindings)
+ assert.equal(model.warning,'')
+ assert.equal(model.additive.size,4)
+ assert.equal(pivotRowTotal(model,axis(model,'北京').key,'avg'),'0.1000')
+ assert.equal(pivotGrandTotal(model,'distinct'),'3')
+ assert.equal(formatPivotTotal(pivotGrandTotal(model,'avg'),2),'3.63')
+ const warning=buildPivot({...result(data),pivotTotals:{exact:false,reason:'后置过滤限制'}},bindings)
+ assert.match(warning.warning,/后置过滤限制/)
+ assert.equal(warning.additive.size,0)
+ assert.equal(pivotGrandTotal(warning,'rev'),null)
+ const inconsistent=buildPivot({...result(data),pivotTotals:{...server,grand:{rev:1}}},bindings)
+ assert.equal(inconsistent.additive.size,0)
+ assert.match(inconsistent.warning,/异常/)
+})
+
+test('exact formatting keeps all integer digits and stable rounding',()=>{
+ assert.equal(formatPivotTotal('12345678901234567890.129',2),'12,345,678,901,234,567,890.13')
+ assert.equal(formatPivotTotal('-0.005',2),'-0.01')
+ assert.equal(formatPivotTotal('999.999',2),'1,000.00')
+ assert.equal(formatPivotTotal('10.0001',4),'10.0001')
+ assert.equal(formatPivotTotal('0',0),'0')
+ assert.equal(formatPivotTotal(null,2),'—')
+ assert.equal(formatPivotTotal('1e100',2),'—')
 })

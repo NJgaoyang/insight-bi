@@ -39,4 +39,9 @@ export interface AnalysisV2Bindings {
   limit:number
 }
 export type AnalysisWidgetV2 = Widget & {analysisV2?:AnalysisV2Bindings}
-export interface QueryV2Result {rows:Record<string,unknown>[];columns:{id:string;name:string;label:string;type:string;kind:string;additive?:boolean}[];executionMs:number;truncated:boolean;warnings:string[]}
+export interface PivotTotalsV2 {
+ exact:boolean;reason?:string
+ rows?:Record<string,unknown>[];columns?:Record<string,unknown>[]
+ grand?:Record<string,unknown>
+}
+export interface QueryV2Result {pivotTotals?:PivotTotalsV2;rows:Record<string,unknown>[];columns:{id:string;name:string;label:string;type:string;kind:string;additive?:boolean}[];executionMs:number;truncated:boolean;warnings:string[]}

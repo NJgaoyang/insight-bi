@@ -5,7 +5,7 @@ export type PivotMeasure = QueryV2Result['columns'][number]
 export interface PivotModel {
  rows:PivotAxis[]; columns:PivotAxis[]; measures:PivotMeasure[]
  cells:Map<string,unknown>
- rowTotals:Map<string,string>; columnTotals:Map<string,string>; grandTotals:Map<string,string>
+ rowTotals:Map<string,unknown>; columnTotals:Map<string,unknown>; grandTotals:Map<string,unknown>
  additive:Set<string>; error:string; warning:string
 }
 export const PIVOT_MAX_ROWS=100
@@ -109,6 +109,43 @@ export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):Pivot
  if(result.truncated){
   model.warning='查询结果已截断；当前仅显示部分分组，合计已禁用'
  }else if(config.pivot?.showTotals!==false){
+  // New servers provide exact SQL rollups (including AVG / COUNT DISTINCT);
+  // retain the legacy additive-only result path for old deployments.
+  if(result.pivotTotals){
+   const totals=result.pivotTotals
+   if(!totals.exact){
+    model.warning=totals.reason||'服务端无法安全生成合计'
+    return model
+   }
+   const serverRows=totals.rows,serverCols=totals.columns,grand=totals.grand
+   const rowKeys=new Set(model.rows.map(row=>row.key))
+   const colKeys=new Set(model.columns.map(col=>col.key))
+   if(!Array.isArray(serverRows)||!Array.isArray(serverCols)||!grand||
+      serverRows.length!==model.rows.length||serverCols.length!==model.columns.length){
+    model.warning='服务端合计与分组结果不一致，已隐藏合计'
+    return model
+   }
+   const seenRows=new Set<string>(),seenCols=new Set<string>()
+   const hasMetrics=(r:Record<string,unknown>)=>model.measures.every(m=>Object.prototype.hasOwnProperty.call(r,m.name))
+   for(const r of serverRows){
+    const k=key(r.d1)
+    if(!rowKeys.has(k)||seenRows.has(k)||!hasMetrics(r)){model.warning='行合计结果异常，已隐藏合计';return model}
+    seenRows.add(k)
+   }
+   for(const c of serverCols){
+    const k=key(c.d1)
+    if(!colKeys.has(k)||seenCols.has(k)||!hasMetrics(c)){model.warning='列合计结果异常，已隐藏合计';return model}
+    seenCols.add(k)
+   }
+   if(!hasMetrics(grand)){model.warning='总计结果异常，已隐藏合计';return model}
+   for(const m of model.measures){
+    model.additive.add(m.id) // all metric formulas are recalculated by SQL
+    for(const r of serverRows)model.rowTotals.set(sumKey(key(r.d1),m.id),r[m.name])
+    for(const c of serverCols)model.columnTotals.set(sumKey(key(c.d1),m.id),c[m.name])
+    model.grandTotals.set(m.id,grand[m.name])
+   }
+   return model
+  }
   for(const m of model.measures){
    if(m.additive!==true)continue
    model.additive.add(m.id)
@@ -120,4 +157,26 @@ export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):Pivot
   }
  }
  return model
+}
+
+
+/** Format SQL-produced decimal strings without converting them to JS Number. */
+export function formatPivotTotal(value:unknown,decimals?:number|null):string{
+ if(value==null||value==='')return '—'
+ const raw=String(value)
+ if(!/^-?\d+(?:\.\d{1,18})?$/.test(raw)||raw.length>60)return '—'
+ const digits=Number.isInteger(decimals)?Math.max(0,Math.min(6,decimals as number)):2
+ const negative=raw.startsWith('-')
+ const unsigned=negative?raw.slice(1):raw
+ const [whole,fraction='']=unsigned.split('.')
+ const normalized=fraction.padEnd(digits+1,'0')
+ const rounding=normalized[digits]&&normalized[digits]>='5'?1n:0n
+ const scale=10n**BigInt(digits)
+ const integer=BigInt(whole)*scale+
+   BigInt((digits?normalized.slice(0,digits):'')||0)+rounding
+ const total=integer.toString().padStart(digits+1,'0')
+ const wholePart=digits?total.slice(0,-digits):total
+ const fractionPart=digits?'.'+total.slice(-digits):''
+ const grouped=wholePart.replace(/\B(?=(\d{3})+(?!\d))/g,',')
+ return (negative&&integer!==0n?'-':'')+grouped+fractionPart
 }

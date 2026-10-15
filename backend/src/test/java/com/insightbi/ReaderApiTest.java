@@ -252,6 +252,18 @@ class ReaderApiTest {
     assertEquals(200,analysis.received.get("limit"));
     assertEquals(bindings.get("dimensions"),analysis.received.get("dimensions"));
     assertFalse(analysis.received.containsKey("tableHiddenColumnIds"));
+    // Published pivot rollups are enabled exclusively from the trusted
+    // snapshot; viewer callers cannot submit their own pivot or raw SQL.
+    Map<String,Object> pivotBindings=new LinkedHashMap<>(bindings);
+    pivotBindings.put("pivot",Map.of("showTotals",true,"rowOrder","asc","columnOrder","desc"));
+    Map<String,Object> pivotWidget=Map.of("id","w1","title","收入交叉表",
+      "datasetId","trusted-dataset","type","pivot","analysisV2",pivotBindings);
+    db.update("UPDATE insight_dashboard SET published_json=? WHERE id=?",
+      store.json(Map.of("mode","grid","widgets",List.of(pivotWidget))),dashboard);
+    reader.query(dashboard,"w1",Map.of(),session);
+    assertEquals(pivotBindings.get("pivot"),analysis.received.get("pivot"));
+    assertThrows(IllegalArgumentException.class,()->
+      reader.query(dashboard,"w1",Map.of("pivot",Map.of("showTotals",true)),session));
     db.update("UPDATE insight_dashboard SET published_json=NULL,status='draft' WHERE id=?",dashboard);
     assertThrows(NoSuchElementException.class,()->reader.report(dashboard,session));
     assertTrue(reader.catalog(session).isEmpty());

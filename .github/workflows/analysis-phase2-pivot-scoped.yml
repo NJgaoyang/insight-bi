@@ -6,6 +6,12 @@ on:
       - feat/finebi-analysis-engine-p0
     paths:
       - backend/src/main/java/com/insightbi/analysis/AnalysisQueryPlanner.java
+      - backend/src/main/java/com/insightbi/analysis/AnalysisApi.java
+      - backend/src/main/java/com/insightbi/analysis/PivotRollup.java
+      - backend/src/main/java/com/insightbi/ReaderApi.java
+      - backend/src/test/java/com/insightbi/analysis/AnalysisPivotRollupTest.java
+      - backend/src/test/java/com/insightbi/analysis/AnalysisPivotApiIntegrationTest.java
+      - backend/src/test/java/com/insightbi/ReaderApiTest.java
       - backend/src/test/java/com/insightbi/analysis/AnalysisPivotGroupedQueryTest.java
       - frontend/src/AnalysisSubject.vue
       - frontend/src/AnalysisV2Chart.vue
@@ -14,6 +20,7 @@ on:
       - frontend/src/analysis/pivotTable.ts
       - scripts/analysis_phase2_pivot.test.mjs
       - scripts/analysis_phase2_pivot_browser_smoke.cjs
+      - scripts/analysis_phase2_pivot_rollup_browser_smoke.cjs
       - .github/workflows/analysis-phase2-pivot-scoped.yml
 
 jobs:
@@ -29,7 +36,7 @@ jobs:
           cache: maven
       - name: H2 planner + pivot aggregate/metadata checks only
         working-directory: backend
-        run: mvn -q -Dtest=AnalysisPivotGroupedQueryTest,AnalysisQueryPlannerTest test
+        run: mvn -q -Dtest=AnalysisPivotGroupedQueryTest,AnalysisQueryPlannerTest,AnalysisPivotRollupTest,AnalysisPivotApiIntegrationTest,ReaderApiTest test
 
   scoped-frontend:
     runs-on: ubuntu-latest
@@ -65,4 +72,6 @@ jobs:
       - name: Chromium editor/save/reload/published snapshot and pagination
         env:
           P0_PREVIEW_URL: http://127.0.0.1:18213
-        run: node scripts/analysis_phase2_pivot_browser_smoke.cjs
+        run: |
+          node scripts/analysis_phase2_pivot_browser_smoke.cjs
+          node scripts/analysis_phase2_pivot_rollup_browser_smoke.cjs

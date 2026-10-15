@@ -146,6 +146,11 @@ class ReaderApi {
                            "filters","rank","share","running","periodCompare","sort")){
       if(config.containsKey(key))safe.put(key,config.get(key));
     }
+    // Rollup is an opt-in server operation tied to the trusted published
+    // snapshot, never an arbitrary client-supplied query parameter.
+    if("pivot".equals(selected.get("type"))){
+      safe.put("pivot",config.containsKey("pivot")?config.get("pivot"):Map.of("showTotals",true));
+    }
     int limit=config.get("limit") instanceof Number n?n.intValue():100;
     safe.put("limit",Math.min(Math.max(limit,1),200));
     safe.put("datasetId",datasetId);

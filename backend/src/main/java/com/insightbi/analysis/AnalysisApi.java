@@ -64,19 +64,36 @@ public class AnalysisApi {
   }
   @PostMapping("/analysis/v2/query")
   public Map<String,Object> query(@RequestBody Map<String,Object> request)throws Exception{
+    boolean pivotTotals=PivotRollup.requested(request);
     String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
     Map<String,Object> ds=store.dataset(datasetId);
     ResolvedPlan resolved=resolvePlan(request);
     AnalysisQueryPlanner.Plan plan=resolved.plan();
     long start=System.nanoTime();
-    List<Map<String,Object>> rows;
+    Map<String,Object> response;
     try{
       try(AnalysisQueryLimiter.Lease slot=QUERY_LIMITER.acquire()){
         String sourceId=String.valueOf(ds.get("connection_id"));
-        rows=recovery.execute(sourceId,()->{
+        response=recovery.execute(sourceId,()->{
           try(Connection connection=store.open(store.connection(sourceId))){
             ReadOnlyConnectionPolicy.require(connection);
-            return store.readAnalysisRows(connection,plan.sql(),resolved.params(),plan.limit());
+            List<Map<String,Object>> rows=store.readAnalysisRows(connection,plan.sql(),resolved.params(),plan.limit());
+            boolean truncated=rows.size()>plan.limit();
+            if(truncated)rows=new ArrayList<>(rows.subList(0,plan.limit()));
+            Map<String,Object> output=new LinkedHashMap<>();
+            output.put("rows",rows);
+            output.put("columns",plan.columns());
+            output.put("truncated",truncated);
+            output.put("warnings",List.of());
+            if(pivotTotals){
+              output.put("pivotTotals",PivotRollup.compute(request,rows,truncated,rollupRequest->{
+                ResolvedPlan rollup=resolvePlan(rollupRequest);
+                var list=store.readAnalysisRows(connection,rollup.plan().sql(),
+                  rollup.params(),rollup.plan().limit());
+                return list;
+              }));
+            }
+            return output;
           }
         });
       }
@@ -85,12 +102,8 @@ public class AnalysisApi {
       throw e;
     }
     executionMetrics.record(start,null);
-    boolean truncated=rows.size()>plan.limit();
-    // Do not expose the sentinel record used only to detect overflow.
-    if(truncated)rows=new ArrayList<>(rows.subList(0,plan.limit()));
-    long elapsed=(System.nanoTime()-start)/1_000_000;
-    return Map.of("rows",rows,"columns",plan.columns(),"executionMs",elapsed,
-      "truncated",truncated,"warnings",List.of());
+    response.put("executionMs",(System.nanoTime()-start)/1_000_000);
+    return response;
   }
   private record ResolvedPlan(AnalysisQueryPlanner.Plan plan,List<Object> params) {}
 
