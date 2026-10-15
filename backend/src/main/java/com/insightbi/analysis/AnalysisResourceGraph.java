@@ -35,6 +35,32 @@ public final class AnalysisResourceGraph {
         throw new IllegalArgumentException("组件 ID 缺失或无效");
       if(!ids.add(id))
         throw new IllegalArgumentException("组件 ID 重复："+id);
+      // Optional table presentation settings are stored in the theme snapshot.
+      // Fail closed on unknown/duplicate field IDs and unbounded arrays.
+      if(widget.get("analysisV2") instanceof Map<?,?> analysis &&
+         analysis.containsKey("tableHiddenColumnIds")){
+        Object hiddenRaw=analysis.get("tableHiddenColumnIds");
+        if(!(hiddenRaw instanceof List<?> hidden)||hidden.size()>8)
+          throw new IllegalArgumentException("明细表隐藏列配置必须为有限列表");
+        Set<String> allowed=new HashSet<>();
+        for(String kind:List.of("dimensions","measures")){
+          if(analysis.get(kind) instanceof List<?> bindings){
+            for(Object entry:bindings){
+              if(entry instanceof Map<?,?> binding){
+                Object value=binding.get(kind.equals("dimensions")?"fieldId":"id");
+                if(value instanceof String fieldId)allowed.add(fieldId);
+              }
+            }
+          }
+        }
+        Set<String> seen=new HashSet<>();
+        for(Object value:hidden){
+          if(!(value instanceof String fieldId)||!seen.add(fieldId)||!allowed.contains(fieldId))
+            throw new IllegalArgumentException("明细表隐藏列引用了非法或重复字段");
+        }
+        if(!allowed.isEmpty()&&seen.size()>=allowed.size())
+          throw new IllegalArgumentException("明细表至少保留一列可见");
+      }
       Object rawDataset=widget.get("datasetId");
       if(rawDataset==null||"".equals(rawDataset))continue; // blank new component
       if(!(rawDataset instanceof String datasetId)||datasetId.isBlank()||datasetId.length()>128)
