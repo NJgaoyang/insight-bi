@@ -1,9 +1,14 @@
 package com.insightbi;
 
 import com.insightbi.analysis.AnalysisApi;
+import com.insightbi.analysis.SourceRecoveryGuard;
+import com.insightbi.analysis.ReadOnlyConnectionPolicy;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
 import java.sql.Statement;
+import java.sql.Connection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -25,8 +30,15 @@ import org.springframework.web.bind.annotation.*;
 class OperationsApi {
   private final JdbcTemplate db;
   private final OperationsMetrics metrics;
+  private final DatabaseStore store;
+  private final SourceRecoveryGuard recovery;
   OperationsApi(JdbcTemplate db,OperationsMetrics metrics){
-    this.db=db;this.metrics=metrics;
+    this.db=db;this.metrics=metrics;this.store=null;this.recovery=null;
+  }
+  @org.springframework.beans.factory.annotation.Autowired
+  OperationsApi(JdbcTemplate db,OperationsMetrics metrics,DatabaseStore store,
+                SourceRecoveryGuard recovery){
+    this.db=db;this.metrics=metrics;this.store=store;this.recovery=recovery;
   }
 
   @GetMapping("/ready")
@@ -53,6 +65,55 @@ class OperationsApi {
     Map<String,Object> pool=poolSnapshot();
     if(!pool.isEmpty())result.put("connectionPool",pool);
     return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
+  }
+
+  @GetMapping("/admin/operations/sources")
+  ResponseEntity<List<Map<String,Object>>> sources(){
+    List<Map<String,Object>> configured=db.queryForList(
+      "SELECT id,name FROM insight_connection ORDER BY name,id LIMIT 200");
+    List<Map<String,Object>> visible=new ArrayList<>();
+    for(Map<String,Object> item:configured){
+      String id=String.valueOf(item.get("id"));
+      var state=recovery.snapshot(id);
+      visible.add(Map.of("id",id,"name",String.valueOf(item.get("name")),
+        "state",state.state(),"consecutiveFailures",state.consecutiveFailures(),
+        "retryAfterSeconds",state.retryAfterSeconds()));
+    }
+    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(visible);
+  }
+
+  /**
+   * Manual recovery only checks JDBC connectivity (SELECT 1); never retries
+   * a failed analytics SQL query and never leaks source credentials.
+   * While open, rechecks are denied until the cooldown expires.
+   */
+  @PostMapping("/admin/operations/sources/{id}/recheck")
+  ResponseEntity<Map<String,Object>> recheck(@PathVariable String id){
+    if(id==null||!id.matches("[a-zA-Z0-9_-]{1,64}"))
+      throw new IllegalArgumentException("数据源标识无效");
+    try{
+      boolean okay=recovery.execute(id,()->{
+        try(Connection conn=store.open(store.connection(id))){
+          ReadOnlyConnectionPolicy.require(conn);
+          try(Statement stmt=conn.createStatement()){
+            stmt.setQueryTimeout(3);
+            try(var rs=stmt.executeQuery("SELECT 1")){
+              return rs.next()&&rs.getInt(1)==1;
+            }
+          }
+        }
+      });
+      if(!okay)throw new SourceRecoveryGuard.Unavailable();
+      return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+        .body(Map.of("ready",true,"state",recovery.snapshot(id).state()));
+    }catch(SourceRecoveryGuard.Unavailable e){
+      return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .cacheControl(CacheControl.noStore())
+        .body(Map.of("ready",false,"state",recovery.snapshot(id).state()));
+    }catch(Exception unexpected){
+      return ResponseEntity.status(HttpStatus.BAD_GATEWAY).cacheControl(CacheControl.noStore())
+        .body(Map.of("ready",false,"state",recovery.snapshot(id).state()));
+    }
   }
 
   private boolean probeDatabase(){
