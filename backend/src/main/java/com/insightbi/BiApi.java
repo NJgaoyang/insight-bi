@@ -36,6 +36,10 @@ class BiApi {
  final ConcurrentHashMap<String,ArrayDeque<Long>> loginFailures=new ConcurrentHashMap<>();
  BiApi(DatabaseStore s,JdbcTemplate db,@Value("${BI_ADMIN_PASSWORD:}")String p){this.s=s;this.db=db;password=p;if(p.length()<12)throw new IllegalStateException("Missing admin password");}
  private AnalysisPipelineApi pipeline(){return new AnalysisPipelineApi(s,new FieldCatalog(s,db),db);}
+ private void auditPublication(String id,String event,Integer version){
+  db.update("INSERT INTO insight_publication_audit(id,dashboard_id,event_type,actor,version_no) VALUES(?,?,?,?,?)",
+    UUID.randomUUID().toString(),id,event,"admin",version);
+ }
  @GetMapping("/health")Map<String,Object> health(){return Map.of("ok",true);}
  @PostMapping("/login")Map<String,Object> login(@RequestBody Map<String,Object> x,HttpServletRequest r){
   String ip=r.getRemoteAddr();var attempts=loginFailures.computeIfAbsent(ip,k->new ArrayDeque<Long>());long now=System.currentTimeMillis();
@@ -281,6 +285,7 @@ class BiApi {
   var v=rows.get(0);int revision=DatabaseStore.number(x.get("revision"),-1);
   int changed=db.update("UPDATE insight_dashboard SET name=?,mode=?,content_json=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND revision=?",v.get("name"),v.get("mode"),v.get("content_json"),id,revision);
   if(changed!=1)throw new IllegalStateException("报表版本冲突，请刷新后重试");
+  auditPublication(id,"RESTORE",version);
   return Map.of("revision",revision+1,"restoredVersion",version);
  }
  @PostMapping("/dashboards/{id}/publish")@Transactional Map<String,Object> publish(@PathVariable String id){
@@ -296,9 +301,19 @@ class BiApi {
   Integer next=db.queryForObject("SELECT COALESCE(MAX(version_no),0)+1 FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id);
   db.update("UPDATE insight_dashboard SET published_json=content_json,status='published',updated_at=CURRENT_TIMESTAMP WHERE id=?",id);
   db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",UUID.randomUUID().toString(),id,next,row.get("name"),row.get("mode"),row.get("content_json"));
+  auditPublication(id,"PUBLISH",next);
   return Map.of("ok",true,"version",next);
  }
- @PostMapping("/dashboards/{id}/unpublish")Map<String,Object> unpublish(@PathVariable String id){db.update("UPDATE insight_dashboard SET published_json=NULL,status='draft' WHERE id=?",id);return Map.of("ok",true);}
+ @PostMapping("/dashboards/{id}/unpublish")@Transactional Map<String,Object> unpublish(@PathVariable String id){
+  int changed=db.update("UPDATE insight_dashboard SET published_json=NULL,status='draft' WHERE id=? AND status='published'",id);
+  if(changed==1)auditPublication(id,"UNPUBLISH",null);
+  return Map.of("ok",true);
+ }
+ @GetMapping("/dashboards/{id}/publication-audit")List<Map<String,Object>> publicationAudit(@PathVariable String id){
+  if(db.queryForObject("SELECT COUNT(*) FROM insight_dashboard WHERE id=?",Integer.class,id)==0)
+    throw new NoSuchElementException("仪表板不存在");
+  return db.queryForList("SELECT event_type,actor,version_no,created_at FROM insight_publication_audit WHERE dashboard_id=? ORDER BY created_at DESC,id DESC LIMIT 100",id);
+ }
  @DeleteMapping("/dashboards/{id}")@Transactional Map<String,Object> remove(@PathVariable String id){db.update("DELETE FROM insight_dashboard_version WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard WHERE id=?",id);return Map.of("ok",true);}
  static void mode(String s){if(!Set.of("grid","free").contains(s))throw new IllegalArgumentException("画布模式无效");}
 }
