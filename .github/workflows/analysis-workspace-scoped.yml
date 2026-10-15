@@ -9,6 +9,7 @@ on:
       - frontend/src/AnalysisSubject.vue
       - frontend/src/style.css
       - scripts/analysis_workspace_layout.test.mjs
+      - scripts/analysis_workspace_browser_smoke.cjs
       - .github/workflows/analysis-workspace-scoped.yml
 
 jobs:
@@ -22,3 +23,35 @@ jobs:
           node-version: '22'
       - name: Test view-local drag and shared-component copy semantics
         run: node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mjs
+
+  browser-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Install isolated Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.58.2
+          npx --yes playwright@1.58.2 install --with-deps chromium
+      - name: Start isolated Vue workbench
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 18212 > /tmp/insight-workbench-vite.log 2>&1 &
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:18212/ >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/insight-workbench-vite.log
+          exit 1
+      - name: Chromium drag copy edit save reload and published layout
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18212
+        run: node scripts/analysis_workspace_browser_smoke.cjs
