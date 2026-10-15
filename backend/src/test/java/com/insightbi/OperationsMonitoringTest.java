@@ -126,6 +126,22 @@ class OperationsMonitoringTest {
     assertTrue(auth.preHandle(request,new MockHttpServletResponse(),new Object()));
   }
 
+  @Test void operationalViewSeparatesJdbcTimeoutsAndGlobalErrorIsSanitized(){
+    var telemetry=new com.insightbi.analysis.AnalysisExecutionMetrics();
+    telemetry.record(System.nanoTime(),new java.sql.SQLTimeoutException(
+      "jdbc:mysql://internal-host:9030 password=confidential","HYT00"));
+    var operations=new OperationsApi(healthyDatabase(),new OperationsMetrics(),
+      null,null,telemetry);
+    var execution=(Map<?,?>)operations.status().getBody().get("queryExecution");
+    assertEquals(1L,execution.get("timedOutQueries"));
+    assertEquals(1L,execution.get("failedQueries"));
+    assertFalse(execution.toString().contains("internal-host"));
+    var response=new ApiErrors().timeout(new java.sql.SQLTimeoutException(
+      "jdbc:mysql://internal-host:9030 password=confidential"));
+    assertEquals(504,response.getStatusCode().value());
+    assertFalse(response.getBody().toString().contains("confidential"));
+  }
+
   @Test void queryLimiterReportsLoadAndRejectionsAndRestoresPermit(){
     AnalysisQueryLimiter limiter=new AnalysisQueryLimiter(1,0);
     assertEquals(0,limiter.snapshot().active());
