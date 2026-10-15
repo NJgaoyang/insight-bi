@@ -142,4 +142,78 @@ class GovernanceApiTest {
     assertThrows(IllegalArgumentException.class,()->
       governance.assignDepartment(id,Map.of("enabled",true)));
   }
+
+  @Test void departmentReadGrantsInheritWithoutEscalationAndRecomputeOnMove(){
+    String root=(String)governance.createDepartment(Map.of("name","总部")).get("id");
+    String team=(String)governance.createDepartment(Map.of("name","运营部","parentId",root)).get("id");
+    String leaf=(String)governance.createDepartment(Map.of("name","城市组","parentId",team)).get("id");
+    String elsewhere=(String)governance.createDepartment(Map.of("name","独立公司")).get("id");
+    String alice=(String)governance.createUser(
+      Map.of("username","alice","displayName","Alice","role","VIEWER")).get("id");
+    String bob=(String)governance.createUser(
+      Map.of("username","bobby","displayName","Bob","role","EDITOR")).get("id");
+    governance.assignDepartment(alice,Map.of("departmentId",leaf));
+    governance.assignDepartment(bob,Map.of("departmentId",elsewhere));
+    String sales=(String)reports.create(Map.of(
+      "name","已发布销售","mode","grid","kind","analysis")).get("id");
+    String finance=(String)reports.create(Map.of(
+      "name","已发布财务","mode","grid","kind","analysis")).get("id");
+    String draft=(String)reports.create(Map.of(
+      "name","未发布主题","mode","grid","kind","analysis")).get("id");
+    reports.publish(sales);reports.publish(finance);
+    assertThrows(NoSuchElementException.class,()->
+      governance.grantDepartmentRead(root,Map.of("dashboardId",draft)));
+    assertThrows(IllegalArgumentException.class,()->
+      governance.grantDepartmentRead(root,Map.of("dashboardId",sales,"permission","ADMIN")));
+    assertThrows(NoSuchElementException.class,()->
+      governance.grantDepartmentRead("missing",Map.of("dashboardId",sales)));
+    assertEquals(false,governance.grantDepartmentRead(root,
+      Map.of("dashboardId",sales)).get("alreadyGranted"));
+    assertEquals(true,governance.grantDepartmentRead(root,
+      Map.of("dashboardId",sales)).get("alreadyGranted"));
+    governance.grantDepartmentRead(team,Map.of("dashboardId",finance));
+    assertEquals(1,governance.departmentGrants(root).size());
+    assertFalse(governance.canReadPublished(alice,sales),"disabled reader is denied");
+    db.update("UPDATE insight_governance_user SET enabled=TRUE WHERE id IN (?,?)",alice,bob);
+    assertEquals(Set.of(sales,finance),governance.effectiveDashboardIds(alice));
+    assertTrue(governance.canReadPublished(alice,sales));
+    assertTrue(governance.canReadPublished(alice,finance));
+    assertFalse(governance.canReadPublished(bob,sales));
+    assertFalse(governance.canReadPublished(alice,draft));
+    assertThrows(NoSuchElementException.class,()->
+      governance.departmentGrants("missing"));
+    governance.assignDepartment(alice,Map.of("departmentId",elsewhere));
+    assertTrue(governance.effectiveDashboardIds(alice).isEmpty(),
+      "moving out must revoke inherited access immediately");
+    governance.assignDepartment(alice,Map.of("departmentId",leaf));
+    assertEquals(Set.of(sales,finance),governance.effectiveDashboardIds(alice));
+    governance.updateDepartment(team,Map.of("parentId",elsewhere));
+    assertFalse(governance.canReadPublished(alice,sales),
+      "moving the subtree removes old ancestor grants");
+    assertTrue(governance.canReadPublished(alice,finance));
+    governance.revokeDepartmentRead(team,finance);
+    assertFalse(governance.canReadPublished(alice,finance));
+    governance.grantRead(alice,Map.of("dashboardId",sales));
+    assertTrue(governance.canReadPublished(alice,sales),
+      "direct grant remains independent of inherited grants");
+    reports.unpublish(sales);
+    assertFalse(governance.canReadPublished(alice,sales));
+    assertThrows(NoSuchElementException.class,()->
+      governance.grantDepartmentRead(root,Map.of("dashboardId",sales)));
+  }
+
+  @Test void departmentDeletionCleansGrantsAndPreventsOrphanedPermissions(){
+    String dept=(String)governance.createDepartment(Map.of("name","待删除部门")).get("id");
+    String report=(String)reports.create(Map.of(
+      "name","销售","mode","grid","kind","analysis")).get("id");
+    reports.publish(report);
+    governance.grantDepartmentRead(dept,Map.of("dashboardId",report));
+    assertEquals(1,governance.departmentGrants(dept).size());
+    governance.deleteDepartment(dept);
+    assertEquals(0,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_department_dashboard_grant WHERE department_id=?",
+      Integer.class,dept));
+    assertThrows(NoSuchElementException.class,()->
+      governance.departmentGrants(dept));
+  }
 }
