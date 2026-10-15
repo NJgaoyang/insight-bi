@@ -28,9 +28,127 @@ class GovernanceApi {
     return Map.of("roles",List.of("VIEWER","EDITOR"),"loginEnabled",false);
   }
 
+  // Department tree is administrative metadata. No automatic permission
+  // inheritance or organization-scoped dataset access is enabled yet.
+  @GetMapping("/departments")
+  List<Map<String,Object>> departments(){
+    return db.queryForList(
+      "SELECT id,name,parent_id,created_at FROM insight_governance_department ORDER BY created_at,id LIMIT 501");
+  }
+
+  @PostMapping("/departments")
+  @Transactional
+  Map<String,Object> createDepartment(@RequestBody Map<String,Object> body){
+    if(!Set.of("name","parentId").containsAll(body.keySet())||!body.containsKey("name"))
+      throw new IllegalArgumentException("部门创建参数无效");
+    String name=text(body.get("name"),"部门名称",100);
+    String parent=departmentParent(body.get("parentId"));
+    Map<String,String> hierarchy=departmentTree();
+    if(hierarchy.size()>=500)throw new IllegalArgumentException("部门数量超过 500 个");
+    String id=UUID.randomUUID().toString();
+    hierarchy.put(id,parent);
+    validateDepartmentTree(hierarchy);
+    requireUniqueSibling(name,parent,null);
+    db.update("INSERT INTO insight_governance_department(id,name,parent_id) VALUES(?,?,?)",id,name,parent);
+    Map<String,Object> result=new LinkedHashMap<>();
+    result.put("id",id);result.put("name",name);result.put("parent_id",parent);
+    return result;
+  }
+
+  @PutMapping("/departments/{id}")
+  @Transactional
+  Map<String,Object> updateDepartment(@PathVariable String id,@RequestBody Map<String,Object> body){
+    if(!Set.of("name","parentId").containsAll(body.keySet())||
+       (!body.containsKey("name")&&!body.containsKey("parentId")))
+      throw new IllegalArgumentException("部门修改参数无效");
+    List<Map<String,Object>> existing=db.queryForList(
+      "SELECT name,parent_id FROM insight_governance_department WHERE id=?",id);
+    if(existing.size()!=1)throw new NoSuchElementException("部门不存在");
+    String name=body.containsKey("name")?text(body.get("name"),"部门名称",100):
+      String.valueOf(existing.get(0).get("name"));
+    String parent=body.containsKey("parentId")?departmentParent(body.get("parentId")):
+      (String)existing.get(0).get("parent_id");
+    Map<String,String> hierarchy=departmentTree();
+    hierarchy.put(id,parent);
+    validateDepartmentTree(hierarchy);
+    requireUniqueSibling(name,parent,id);
+    db.update("UPDATE insight_governance_department SET name=?,parent_id=? WHERE id=?",name,parent,id);
+    Map<String,Object> result=new LinkedHashMap<>();
+    result.put("id",id);result.put("name",name);result.put("parent_id",parent);
+    return result;
+  }
+
+  @DeleteMapping("/departments/{id}")
+  @Transactional
+  Map<String,Object> deleteDepartment(@PathVariable String id){
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_department WHERE id=?",Integer.class,id)!=1)
+      throw new NoSuchElementException("部门不存在");
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_department WHERE parent_id=?",Integer.class,id)>0)
+      throw new IllegalStateException("部门包含子部门，请先迁移或删除子部门");
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE department_id=?",Integer.class,id)>0)
+      throw new IllegalStateException("部门仍有用户，请先调整用户归属");
+    db.update("DELETE FROM insight_governance_department WHERE id=?",id);
+    return Map.of("ok",true);
+  }
+
+  @PutMapping("/users/{id}/department")
+  @Transactional
+  Map<String,Object> assignDepartment(@PathVariable String id,@RequestBody Map<String,Object> body){
+    if(body.size()!=1||!body.containsKey("departmentId"))
+      throw new IllegalArgumentException("用户归属参数无效");
+    requireUser(id);
+    String department=departmentParent(body.get("departmentId"));
+    if(department!=null&&db.queryForObject(
+        "SELECT COUNT(*) FROM insight_governance_department WHERE id=?",Integer.class,department)!=1)
+      throw new NoSuchElementException("目标部门不存在");
+    db.update("UPDATE insight_governance_user SET department_id=? WHERE id=?",department,id);
+    Map<String,Object> result=new LinkedHashMap<>();
+    result.put("id",id);result.put("department_id",department);
+    return result;
+  }
+
+  private Map<String,String> departmentTree(){
+    List<Map<String,Object>> nodes=departments();
+    if(nodes.size()>500)throw new IllegalStateException("部门数量超过上限");
+    Map<String,String> hierarchy=new HashMap<>();
+    for(Map<String,Object> node:nodes)
+      hierarchy.put(String.valueOf(node.get("id")),(String)node.get("parent_id"));
+    return hierarchy;
+  }
+
+  private static void validateDepartmentTree(Map<String,String> tree){
+    for(String node:tree.keySet()){
+      Set<String> visited=new HashSet<>();
+      String current=node;
+      while(current!=null){
+        if(!tree.containsKey(current))throw new IllegalArgumentException("父部门不存在");
+        if(!visited.add(current))throw new IllegalArgumentException("部门不能成为自身或子部门的下级");
+        if(visited.size()>10)throw new IllegalArgumentException("部门层级不能超过 10 层");
+        current=tree.get(current);
+      }
+    }
+  }
+
+  private void requireUniqueSibling(String name,String parent,String excludeId){
+    Integer existing=parent==null?
+      db.queryForObject("SELECT COUNT(*) FROM insight_governance_department WHERE name=? AND parent_id IS NULL AND id<>?",
+        Integer.class,name,excludeId==null?"":excludeId):
+      db.queryForObject("SELECT COUNT(*) FROM insight_governance_department WHERE name=? AND parent_id=? AND id<>?",
+        Integer.class,name,parent,excludeId==null?"":excludeId);
+    if(existing!=null&&existing>0)throw new IllegalArgumentException("同一层级已有同名部门");
+  }
+
+  private static String departmentParent(Object raw){
+    if(raw==null)return null;
+    if(!(raw instanceof String id))throw new IllegalArgumentException("部门 ID 必须是文本");
+    if(id.isBlank())return null;
+    if(id.length()>128)throw new IllegalArgumentException("部门 ID 过长");
+    return id;
+  }
+
   @GetMapping("/users")
   List<Map<String,Object>> users(){
-    return db.queryForList("SELECT id,username,display_name,role,enabled,created_at FROM insight_governance_user ORDER BY created_at,id LIMIT 200");
+    return db.queryForList("SELECT id,username,display_name,role,enabled,department_id,created_at FROM insight_governance_user ORDER BY created_at,id LIMIT 200");
   }
 
   @PostMapping("/users")
