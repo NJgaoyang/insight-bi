@@ -26,6 +26,14 @@ mvn -B -q -Dtest=HttpReaderSessionAcceptanceTest test
 
 没有 `BI_ACCEPTANCE_DISPOSABLE_MYSQL=yes` 时测试主体明确跳过；不能把空环境下的编译成功当作真实 HTTP + MySQL 验收成功。该工作流不运行全量回归、不部署线上服务、不访问用户现有的 StarRocks 或生产 MySQL。
 
+## 实际验收结果（2026-10-15）
+
+- 实际 GitHub CI [`P3 Real HTTP Reader Session Acceptance` #38693468804](https://github.com/NJgaoyang/insight-bi/actions/runs/38693468804)：**SUCCESS**，一份独立的随机端口 Tomcat + H2 元数据 + 一次性 MySQL 8.4 服务端到端环境。
+- **8 个不同的 HTTP Cookie 登录会话**，执行 16 次发布 V2 组件的并发 HTTP 查询，**成功 16 / 限流 0**；实际 HTTP P50 **51 ms**、P95 **72 ms**。此值只适用于该临时 CI 9000 行负载，不是生产 SLA。
+- 未登录访问 401、读者登录无法访问管理接口 401、缺失/错误 CSRF 403、浏览器伪造数据集参数 400、按账号城市行级策略过滤、撤销授权后旧会话 404、停用账户后旧 Cookie 401 均通过。
+- 首次启动揭示并修复 `AnalysisPipelineApi` 声明为 `final`、但方法需要 `@Transactional` CGLIB 代理的阻断缺陷。修复后实测 Spring Boot 完整上下文启动成功且 HTTP 测试通过。
+- 结果 JSON 与 Surefire 报告存储在该 CI 的 `p3-http-reader-session` artifact（保留 14 天）。改动范围 CI [#38693468697](https://github.com/NJgaoyang/insight-bi/actions/runs/38693468697) 同样 **SUCCESS**。
+
 ## 已知边界
 
 - 这是单 JVM 真实 HTTP/Tomcat/会话/CSRF/MySQL 测试，不是 Chrome 浏览器中的完整页面访问；不能验证前端渲染、Nginx 配置或 HTTPS SameSite Cookie 行为。
