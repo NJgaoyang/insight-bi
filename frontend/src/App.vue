@@ -6,8 +6,10 @@ import Designer from './Designer.vue'
 import AnalysisSubject from './AnalysisSubject.vue'
 import PublishedReport from './PublishedReport.vue'
 import PipelineEditor from './PipelineEditor.vue'
+import GovernanceAdmin from './GovernanceAdmin.vue'
 const logged=ref(false),loading=ref(true),username=ref('admin'),password=ref(''),loginBusy=ref(false)
 const route=ref('dashboards'),activeId=ref(''),view=ref(false)
+const systemTab=ref<'connections'|'governance'>('connections')
 const connections=ref<any[]>([]),datasets=ref<Dataset[]>([]),dashboards=ref<any[]>([])
 type Folder={id:string;name:string;parent_id:string|null;created_at?:string}
 const folders=ref<Folder[]>([])
@@ -325,10 +327,10 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
   <div class="work-area">
    <header class="work-topbar"><div><span class="location">工作空间</span><span class="separator">/</span><strong>{{menu.find(m=>m.key===route)?.label}}</strong></div><span class="session-pill">● 服务已连接</span></header>
    <main class="work-main fine-work-main">
-    <section class="page-title fine-page-heading"><div><h1>{{route==='dashboards'?folderName:route==='datasets'?publicFolderName:route==='catalog'?'目录':'系统管理 / 数据连接'}}</h1></div>
+    <section class="page-title fine-page-heading"><div><h1>{{route==='dashboards'?folderName:route==='datasets'?publicFolderName:route==='catalog'?'目录':(systemTab==='governance'?'系统管理 / 权限治理':'系统管理 / 数据连接')}}</h1></div>
      <input ref="importInput" type="file" accept=".json,application/json" style="display:none" aria-label="导入报表配置" @change="importDashboard"/>
      <button v-if="route==='dashboards'" class="primary-soft" @click="importInput?.click()">导入分析主题</button>
-     <button v-if="route!=='catalog'" class="primary-button" @click="route==='dashboards'?createAnalysisSubject():route==='datasets'?newDataset():newConnection()">＋ {{route==='dashboards'?'新建分析主题':route==='datasets'?'添加数据集':'添加数据连接'}}</button>
+     <button v-if="route!=='catalog' && !(route==='connections'&&systemTab==='governance')" class="primary-button" @click="route==='dashboards'?createAnalysisSubject():route==='datasets'?newDataset():newConnection()">＋ {{route==='dashboards'?'新建分析主题':route==='datasets'?'添加数据集':'添加数据连接'}}</button>
     </section>
     <template v-if="isAnalysisRoute">
      <div class="fine-list-tabs"><button class="selected">{{route==='catalog'?'已发布分析':'全部'}}</button><button v-if="route==='dashboards'" @click="selectedFolder=''">全部分析</button><span class="fine-list-count">{{visibleDashboards.length}} 个分析主题</span></div>
@@ -354,8 +356,15 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
      </div>
     </template>
     <template v-if="route==='connections'">
+     <div class="fine-list-tabs">
+      <button :class="{selected:systemTab==='connections'}" @click="systemTab='connections'">数据连接</button>
+      <button :class="{selected:systemTab==='governance'}" @click="systemTab='governance'">权限治理</button>
+     </div>
+     <GovernanceAdmin v-if="systemTab==='governance'" :dashboards="dashboards"/>
+     <template v-else>
      <div v-if="!connections.length" class="empty-panel"><div class="empty-symbol">◫</div><h3>还没有数据连接</h3><p>添加 StarRocks 或 MySQL 连接后，即可发现真实表结构。</p><button class="primary-soft" @click="newConnection">＋ 添加数据连接</button></div>
      <div v-else class="resource-table"><table><thead><tr><th>连接名称</th><th>类型</th><th>主机</th><th>数据库</th><th>操作</th></tr></thead><tbody><tr v-for="c in connections" :key="c.id"><td><b>{{c.name}}</b></td><td><span class="engine-tag">{{c.engine==='starrocks'?'StarRocks':'MySQL'}}</span></td><td>{{c.host}}:{{c.port}}</td><td>{{c.db_name}}</td><td><button @click="editConnection(c)">编辑</button><button class="danger-link" @click="deleteConnection(c)">删除</button></td></tr></tbody></table></div>
+     </template>
     </template>
     <template v-if="route==='datasets'">
       <div class="fine-list-tabs"><button class="selected">数据集</button><span class="fine-list-count">{{publicDataItems.length}} 个</span></div>
