@@ -381,4 +381,44 @@ class ReaderApiTest {
     assertEquals(0,db.queryForObject(
       "SELECT COUNT(*) FROM insight_reader_column_deny WHERE user_id=?",Integer.class,userId));
   }
+
+  @Test void folderAclConsistentlyRestrictsReaderCatalogDetailAndQuery()throws Exception{
+    String userId=user();
+    governance.setPassword(userId,Map.of("password","complex-password-of-reader-1"));
+    governance.setActivation(userId,Map.of("enabled",true));
+    String root=(String)admin.createFolder(Map.of("name","分析库")).get("id");
+    String restricted=(String)admin.createFolder(Map.of(
+      "name","敏感分析","parentId",root)).get("id");
+    String account=(String)admin.create(Map.of(
+      "name","部门财务","kind","analysis","mode","grid")).get("id");
+    admin.moveDashboard(account,Map.of("parentId",restricted));
+    var widget=Map.of("id","w1","title","收入","type","bar","datasetId","ds1",
+      "analysisV2",Map.of("dimensions",List.of(Map.of("fieldId","city")),
+        "measures",List.of(Map.of("id","m1","fieldId","revenue","aggregate","SUM")),
+        "limit",50));
+    db.update("UPDATE insight_dashboard SET status='published',published_json=? WHERE id=?",
+      store.json(Map.of("mode","grid","widgets",List.of(widget))),account);
+    governance.grantRead(userId,Map.of("dashboardId",account));
+    HttpSession session=login("analyst01","complex-password-of-reader-1").getSession(false);
+    assertEquals(1,reader.catalog(session).size());
+    reader.query(account,"w1",Map.of(),session);
+
+    String other=(String)governance.createUser(Map.of(
+      "username","bobby","displayName","Bob","role","VIEWER")).get("id");
+    governance.setFolderAccess(root,Map.of("rules",List.of(
+      Map.of("principalType","USER","principalId",other))));
+    assertTrue(reader.catalog(session).isEmpty());
+    assertThrows(NoSuchElementException.class,()->reader.report(account,session));
+    assertThrows(NoSuchElementException.class,()->
+      reader.query(account,"w1",Map.of(),session));
+
+    governance.setFolderAccess(root,Map.of("rules",List.of(
+      Map.of("principalType","USER","principalId",userId))));
+    assertEquals(1,reader.catalog(session).size());
+    assertEquals(account,reader.report(account,session).get("id"));
+    reader.query(account,"w1",Map.of(),session);
+    admin.moveDashboard(account,new HashMap<>(Map.of("parentId","")));
+    assertEquals(1,reader.catalog(session).size(),
+      "moving out of restricted folder updates reader visibility without republishing");
+  }
 }
