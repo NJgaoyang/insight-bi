@@ -1,0 +1,56 @@
+name: P3 Disposable Reader Concurrency Acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/finebi-analysis-engine-p0
+    paths:
+      - backend/src/test/java/com/insightbi/DisposableReaderConcurrencyTest.java
+      - .github/workflows/p3-reader-concurrency.yml
+
+jobs:
+  reader-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: insight_ci_acceptance
+          MYSQL_USER: insight_ci
+          MYSQL_PASSWORD: ci-disposable-only-password
+          MYSQL_ROOT_PASSWORD: ci-disposable-only-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-disposable-only-root --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Eight authenticated readers and 60k row V2 acceptance
+        working-directory: backend
+        env:
+          BI_ACCEPTANCE_DISPOSABLE_MYSQL: 'yes'
+          BI_ACCEPTANCE_MYSQL_HOST: 127.0.0.1
+          BI_ACCEPTANCE_MYSQL_PORT: '3306'
+          BI_ACCEPTANCE_MYSQL_USERNAME: insight_ci
+          BI_ACCEPTANCE_MYSQL_PASSWORD: ci-disposable-only-password
+        run: mvn -B -q -Dtest=DisposableReaderConcurrencyTest test
+      - name: Preserve scoped concurrency measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p3-reader-concurrency
+          path: |
+            backend/target/p3-reader-concurrency.json
+            backend/target/surefire-reports/com.insightbi.DisposableReaderConcurrencyTest.txt
+          if-no-files-found: warn
+          retention-days: 14
