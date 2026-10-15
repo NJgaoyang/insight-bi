@@ -69,6 +69,10 @@ class BiApi {
  final ConcurrentHashMap<String,ArrayDeque<Long>> loginFailures=new ConcurrentHashMap<>();
  BiApi(DatabaseStore s,JdbcTemplate db,@Value("${BI_ADMIN_PASSWORD:}")String p){this.s=s;this.db=db;password=p;if(p.length()<12)throw new IllegalStateException("Missing admin password");}
  private AnalysisPipelineApi pipeline(){return new AnalysisPipelineApi(s,new FieldCatalog(s,db),db);}
+ private void auditReview(String id,String event,int revision,String comment){
+  db.update("INSERT INTO insight_publication_review_event(id,dashboard_id,event_type,revision,actor,comment) "+
+    "VALUES(?,?,?,?,?,?)",UUID.randomUUID().toString(),id,event,revision,"admin",comment);
+ }
  private void auditPublication(String id,String event,Integer version){
   db.update("INSERT INTO insight_publication_audit(id,dashboard_id,event_type,actor,version_no) VALUES(?,?,?,?,?)",
     UUID.randomUUID().toString(),id,event,"admin",version);
@@ -333,6 +337,13 @@ class BiApi {
   result.put("required",true);
   return result;
  }
+ @GetMapping("/dashboards/{id}/approval/history")List<Map<String,Object>> approvalHistory(@PathVariable String id){
+  if(db.queryForObject("SELECT COUNT(*) FROM insight_dashboard WHERE id=?",Integer.class,id)!=1)
+    throw new NoSuchElementException("分析主题不存在");
+  return db.queryForList("SELECT event_type,revision,actor,comment,created_at "+
+    "FROM insight_publication_review_event WHERE dashboard_id=? "+
+    "ORDER BY created_at DESC,id DESC LIMIT 100",id);
+ }
  @PostMapping("/dashboards/{id}/approval/enable")@Transactional Map<String,Object> enableApproval(@PathVariable String id){
   var items=db.queryForList("SELECT kind FROM insight_dashboard WHERE id=?",id);
   if(items.isEmpty())throw new NoSuchElementException("分析主题不存在");
@@ -342,6 +353,9 @@ class BiApi {
     "SELECT COUNT(*) FROM insight_publication_approval WHERE dashboard_id=?",Integer.class,id);
   if(found==null||found==0){
     db.update("INSERT INTO insight_publication_approval(dashboard_id,state) VALUES(?,'IDLE')",id);
+    int current=db.queryForObject(
+      "SELECT revision FROM insight_dashboard WHERE id=?",Integer.class,id);
+    auditReview(id,"ENABLED",current,"");
     auditPublication(id,"ENABLE_APPROVAL",null);
   }
   return approval(id);
@@ -360,6 +374,7 @@ class BiApi {
   // A new submission invalidates any prior decision.
   db.update("UPDATE insight_publication_approval SET state='PENDING',submitted_revision=?,reviewed_revision=NULL,"+
     "comment=NULL,requested_at=CURRENT_TIMESTAMP(6),reviewed_at=NULL WHERE dashboard_id=?",revision,id);
+  auditReview(id,"SUBMITTED",revision,"");
   auditPublication(id,"SUBMIT_APPROVAL",null);
   return approval(id);
  }
@@ -383,6 +398,7 @@ class BiApi {
      "WHERE dashboard_id=? AND state='PENDING' AND submitted_revision=?",
      approved?"APPROVED":"REJECTED",revision,comment,id,revision);
   if(changed!=1)throw new IllegalStateException("审批状态已改变，请刷新");
+  auditReview(id,approved?"APPROVED":"REJECTED",revision,comment);
   auditPublication(id,approved?"APPROVE":"REJECT",null);
   return approval(id);
  }
@@ -407,7 +423,10 @@ class BiApi {
       throw new IllegalStateException("当前版本未审批通过，或批准已失效，请重新提交");
   }
   Integer next=db.queryForObject("SELECT COALESCE(MAX(version_no),0)+1 FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id);
-  db.update("UPDATE insight_dashboard SET published_json=content_json,status='published',updated_at=CURRENT_TIMESTAMP WHERE id=?",id);
+  int written=db.update("UPDATE insight_dashboard SET published_json=content_json,"+
+    "status='published',updated_at=CURRENT_TIMESTAMP WHERE id=? AND revision=?",
+    id,((Number)row.get("revision")).intValue());
+  if(written!=1)throw new IllegalStateException("保存版本已改变，发布中止");
   db.update("INSERT INTO insight_dashboard_version(id,dashboard_id,version_no,name,mode,content_json) VALUES(?,?,?,?,?,?)",UUID.randomUUID().toString(),id,next,row.get("name"),row.get("mode"),row.get("content_json"));
   auditPublication(id,"PUBLISH",next);
   return Map.of("ok",true,"version",next);
@@ -422,7 +441,7 @@ class BiApi {
     throw new NoSuchElementException("仪表板不存在");
   return db.queryForList("SELECT event_type,actor,version_no,created_at FROM insight_publication_audit WHERE dashboard_id=? ORDER BY created_at DESC,id DESC LIMIT 100",id);
  }
- @DeleteMapping("/dashboards/{id}")@Transactional Map<String,Object> remove(@PathVariable String id){db.update("DELETE FROM insight_publication_approval WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard_version WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard WHERE id=?",id);return Map.of("ok",true);}
+ @DeleteMapping("/dashboards/{id}")@Transactional Map<String,Object> remove(@PathVariable String id){db.update("DELETE FROM insight_publication_review_event WHERE dashboard_id=?",id);db.update("DELETE FROM insight_publication_approval WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard_version WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard WHERE id=?",id);return Map.of("ok",true);}
  static void mode(String s){if(!Set.of("grid","free").contains(s))throw new IllegalArgumentException("画布模式无效");}
 }
 @RestControllerAdvice class ApiErrors {
