@@ -589,7 +589,7 @@ class GovernanceApi {
     if(dashboardId==null||dashboardId.isBlank()||
        !effectiveDashboardIds(userId).contains(dashboardId))return false;
     List<Map<String,Object>> matched=db.queryForList(
-      "SELECT folder_id FROM insight_dashboard WHERE id=? AND kind='analysis' "+
+      "SELECT folder_id FROM insight_dashboard WHERE id=? "+
       "AND status='published' AND published_json IS NOT NULL",dashboardId);
     return matched.size()==1&&canAccessFolder(userId,(String)matched.get(0).get("folder_id"));
   }
