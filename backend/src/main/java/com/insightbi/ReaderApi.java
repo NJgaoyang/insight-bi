@@ -42,7 +42,7 @@ class ReaderApi {
       if(recent.size()>=8)throw new IllegalArgumentException("登录失败过多，请15分钟后重试");
     }
     List<Map<String,Object>> found=db.queryForList(
-      "SELECT id,role,enabled,password_hash FROM insight_governance_user WHERE username=?",username);
+      "SELECT id,role,enabled,password_hash,auth_version FROM insight_governance_user WHERE username=?",username);
     Map<String,Object> row=found.size()==1?found.get(0):Map.of();
     String credential=(String)row.get("password_hash");
     boolean verified=ReaderPassword.matches(password,credential==null?DUMMY_HASH:credential);
@@ -59,6 +59,7 @@ class ReaderApi {
     HttpSession session=servlet.getSession(true);
     session.setAttribute("readerId",String.valueOf(row.get("id")));
     session.setAttribute("readerCredential",credential);
+    session.setAttribute("readerAuthVersion",((Number)row.get("auth_version")).intValue());
     session.setAttribute("csrf",UUID.randomUUID().toString());
     return Map.of("user",username,"role",row.get("role"),"csrf",session.getAttribute("csrf"));
   }
