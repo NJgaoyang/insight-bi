@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {onMounted,ref} from 'vue'
-import {api} from './api'
+import {api,post} from './api'
 import {ElMessage} from 'element-plus'
 
 type Metrics={
@@ -15,6 +15,24 @@ type Status={
  analysis:{concurrencyLimit:number;activeQueries:number;waitingQueries:number;rejectedQueries:number};
  connectionPool?:{active:number;idle:number;pending:number;total:number}
 }
+type Source={id:string;name:string;state:string;consecutiveFailures:number;retryAfterSeconds:number}
+const sources=ref<Source[]>([])
+const checkingSource=ref('')
+const sourceLabel=(s:Source)=>s.state==='open'?'熔断中':s.state==='checking'?'恢复检查中':
+ s.state==='ready_to_retry'?'可尝试恢复':s.consecutiveFailures?'最近发生连接失败':'正常'
+async function recheckSource(source:Source){
+ if(checkingSource.value||loading.value)return
+ checkingSource.value=source.id
+ try{
+  await post('/admin/operations/sources/'+encodeURIComponent(source.id)+'/recheck',{})
+  ElMessage.success('数据源连通性已确认')
+ }catch(e){
+  ElMessage.warning(e instanceof Error?e.message:'数据源仍不可用')
+ }finally{
+  checkingSource.value=''
+  await refresh()
+ }
+}
 const data=ref<Status|null>(null)
 const loading=ref(false)
 const error=ref('')
@@ -24,6 +42,8 @@ async function refresh(){
  loading.value=true;error.value=''
  try{
   data.value=await api<Status>('/admin/operations/status')
+  try{sources.value=await api<Source[]>('/admin/operations/sources')}
+  catch{sources.value=[]}
   measuredAt.value=new Date().toLocaleString()
  }catch(e){
   data.value=null
@@ -79,6 +99,25 @@ onMounted(refresh)
      <td>{{data.analysis.activeQueries}}</td>
      <td>{{data.analysis.waitingQueries}}</td>
      <td>{{data.analysis.rejectedQueries}}</td></tr></tbody>
+   </table>
+   <div class="fine-list-tabs"><strong>业务数据源故障隔离</strong></div>
+   <p class="fine-dialog-tip">
+    连续两次连接类故障后暂停该数据源 30 秒，冷却结束允许一次自动恢复尝试。
+    下方状态不会主动访问业务数据库；点击“检查连接”只执行只读 SELECT 1，不会重试分析 SQL。
+   </p>
+   <table>
+    <thead><tr><th>数据源</th><th>状态</th><th>连续失败</th><th>冷却剩余</th><th>操作</th></tr></thead>
+    <tbody>
+     <tr v-for="source in sources" :key="source.id">
+      <td>{{source.name}}</td>
+      <td>{{sourceLabel(source)}}</td>
+      <td>{{source.consecutiveFailures}}</td>
+      <td>{{source.retryAfterSeconds?source.retryAfterSeconds+' 秒':'—'}}</td>
+      <td><button :disabled="!!checkingSource||loading||(source.state==='open'&&source.retryAfterSeconds>0)"
+        @click="recheckSource(source)">{{checkingSource===source.id?'正在检查':'检查连接'}}</button></td>
+     </tr>
+     <tr v-if="!sources.length"><td colspan="5">暂无已配置的数据源，或暂时无法读取连接列表</td></tr>
+    </tbody>
    </table>
    <template v-if="data.connectionPool">
     <div class="fine-list-tabs"><strong>元数据库连接池</strong></div>
