@@ -337,6 +337,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - H2 定向 `GovernanceApiTest`、`ReaderApiTest` 覆盖三层继承、账号禁用、迁出/调回、迁移祖先、撤销、未发布报告、直接授权独立和删除部门清理；后端定向工作流 [38675258178](https://github.com/NJgaoyang/insight-bi/actions/runs/38675258178) 及 [38675230566](https://github.com/NJgaoyang/insight-bi/actions/runs/38675230566) **SUCCESS**。新增 Chromium 部门授权弹窗回归用例的最终结论另以该次工作流结果为准，不冒充生产浏览器和真实数据库验收。
 - 边界：不实现部门行级权限继承、资源目录 ACL、审批流程、V1 旧组件、安全跨租户查询、MySQL/StarRocks 真库验证或生产部署。管理员**原有个人行级过滤**在继承报表后继续由服务器强制执行。该切片并非完整企业级权限系统交付。
 
+## P2-02 第八批：普通用户列级拒绝与敏感字段保护（2026-10-15）
+
+- 新增 `insight_reader_column_deny` 元数据表：按用户+数据集登记最多 20 个**禁止查看的原始字段**，原用户及行级授权保持不变。管理员可通过 `GET /api/governance/users/{id}/denied-columns` 查看、`PUT /api/governance/users/{id}/denied-columns/{datasetId}` 原子替换、`DELETE` 清理；严格校验数据集存在、字段真实属于该数据集、字段无重复及请求无多余参数。删除账号时连同字段禁止规则一起清理。
+- 安全策略为**拒绝含受限字段的整份已发布分析主题**，而非仅前端隐藏数据列。新 `ReaderColumnGuard` 在普通用户的 `/api/reader/catalog`、`/api/reader/dashboards/{id}` 与 `/api/reader/dashboards/{id}/widgets/{widgetId}/query` 执行同一策略，避免目录展示与查询权限不一致；报表聚合、筛选、组件引用任一受限字段即拒绝返回。因为尚未形成可审计的计算字段依赖图，**对存在字段限制的数据集，任何计算字段引用或启用数据加工链的报表均先拒绝**；限制解除后可恢复访问，无需重新发布。这是有意偏保守的安全策略。
+- 管理员“系统管理 → 权限治理 → 敏感列限制”页面支持选择用户、数据集、多个字段，保存后即生效；清空已有规则需二次确认，因为会扩大数据可见范围。普通用户仍只能访问已授权的、符合列级规则的已发布 V2 组件；原有部门报表继承和个人行级过滤均保留。
+- H2 定向 `ReaderApiTest` 覆盖：收入可看而薪资聚合拒绝、通过计算字段/加工链间接读取拒绝、目录与查询拒绝一致、无效/重复/越权字段不能保存、清空规则立即恢复、删除用户清理规则。[38675814074](https://github.com/NJgaoyang/insight-bi/actions/runs/38675814074) **SUCCESS**。Vue/TypeScript 前端受影响构建 [38675870187](https://github.com/NJgaoyang/insight-bi/actions/runs/38675870187) **SUCCESS**。
+- **验收边界**：本轮未完成新增配置弹窗的独立 Chromium 验收；真实 MySQL 原地迁移与 StarRocks 的数据核算仍未验证，未部署生产。当前只防止通过受控 V2 报表组件引用禁止的元数据字段，不具备原始 SQL 语义血缘识别，不能承诺能阻止管理员数据集 SQL 提前生成的派生敏感字段泄露。资源目录 ACL、字段掩码、跨部门继承策略和完整审计仍未完成，不可宣称列级安全治理全量完成。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
