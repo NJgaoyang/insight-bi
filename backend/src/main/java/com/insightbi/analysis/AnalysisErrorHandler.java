@@ -13,6 +13,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice(assignableTypes=AnalysisApi.class)
 public class AnalysisErrorHandler {
+  @ExceptionHandler(SourceRecoveryGuard.Unavailable.class)
+  public ResponseEntity<Map<String,String>> sourceUnavailable(SourceRecoveryGuard.Unavailable e){
+    return result(HttpStatus.SERVICE_UNAVAILABLE,"数据源暂不可用，请稍后重试");
+  }
   @ExceptionHandler(AnalysisQueryLimiter.BusyException.class)
   public ResponseEntity<Map<String,String>> busy(AnalysisQueryLimiter.BusyException e){
     return result(HttpStatus.TOO_MANY_REQUESTS,e.getMessage());
