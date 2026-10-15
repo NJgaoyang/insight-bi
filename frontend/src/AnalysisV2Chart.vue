@@ -15,11 +15,17 @@ let activeRequest:AbortController|null=null
 const supported=['bar','hbar','line','area','pie','donut','combo','metric','table']
 const dimNames=computed(()=>result.value?.columns.filter(c=>c.kind==='dimension')??[])
 const measureNames=computed(()=>result.value?.columns.filter(c=>c.kind==='measure')??[])
-const hiddenColumnIds=ref<string[]>([])
+const hiddenColumnIds=ref<string[]>([...(bindings.value?.tableHiddenColumnIds??[])])
+watch(()=>bindings.value?.tableHiddenColumnIds,ids=>{hiddenColumnIds.value=[...(ids??[])]},{deep:true})
 const tableSearch=ref('')
 const visibleColumns=computed(()=>result.value?.columns.filter(c=>!hiddenColumnIds.value.includes(c.id))??[])
 const tableRows=computed(()=>{const q=tableSearch.value.trim().toLowerCase();return q?rows.value.filter(row=>visibleColumns.value.some(c=>String(row[c.name]??'').toLowerCase().includes(q))):rows.value})
-function toggleColumn(id:string){hiddenColumnIds.value=hiddenColumnIds.value.includes(id)?hiddenColumnIds.value.filter(x=>x!==id):[...hiddenColumnIds.value,id]}
+function toggleColumn(id:string){
+ const next=hiddenColumnIds.value.includes(id)?hiddenColumnIds.value.filter(x=>x!==id):[...hiddenColumnIds.value,id]
+ if(result.value&&next.length>=result.value.columns.length)return
+ hiddenColumnIds.value=next
+ if(!props.readonly&&bindings.value)bindings.value.tableHiddenColumnIds=[...next]
+}
 
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
 const format=(v:unknown)=>v===undefined||v===null?'—':typeof v==='number'?new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(v):String(v)
