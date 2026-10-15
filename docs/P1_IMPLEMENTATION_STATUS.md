@@ -398,8 +398,8 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 
 - 本次按用户提供的 `81.69.15.136:9030` 目标新增 `StarRocksExistingInstanceReadOnlyTest`，使用 StarRocks 的 SELECT 字面量虚拟源而非业务表，覆盖 `SELECT 1`、V2 单城市/多城市 `IN` 参数化聚合（北京 150、北京+上海 350、上海+广州 500）、JDBC 只读连接状态；元数据保存在临时 H2 中，没有向目标实例创建、删除、更新任何表。
 - 提供 `scripts/p3-starrocks-existing-readonly.sh`：仅在能访问 FE 的授权 Linux 环境执行，密码使用无回显输入或运行时环境变量，**没有把用户提供的密码写入 GitHub**。脚本先检查 `81.69.15.136:9030` TCP 可用性，失败则退出；操作见 [P3_STARROCKS_EXISTING_INSTANCE_READONLY.md](P3_STARROCKS_EXISTING_INSTANCE_READONLY.md)。
-- 当前执行环境对目标端口的 TCP 连接返回 `Connection refused`，同时无法正常外连其他公共目的地，尚不能断言 StarRocks FE 本身故障。**该真实 FE 上的 JDBC V2 验收未执行、不得称为通过**；独立 SQL 编译测试 [38687551869](https://github.com/NJgaoyang/insight-bi/actions/runs/38687551869) **SUCCESS**，真实 FE 测试在未设置显式环境开关时跳过。
-- 使用的是管理员 `root` 账号，**即使 SELECT 成功也不证明最小权限**。生产应使用独立只读账号；本轮没有进行 FE/BE 停机故障切换、不操作已有业务表、不执行全量回归或生产部署。
+- 最初的隔离执行环境 TCP 连接返回 `Connection refused`，但随后 **2026-10-15 在用户授权开发机 VM-0-13-tencentos** 实测 `81.69.15.136:9030` 可连接，`SELECT VERSION()` 返回 **5.1.0**；通过开发机真正执行 `StarRocksExistingInstanceReadOnlyTest` 的在线 JDBC V2 查询及多城市 SUM 聚合，Maven Surefire 报告 **2 tests / 0 failures / 0 errors / 0 skipped**。执行的 SQL 仅引用 SELECT 字面量虚拟数据集，没有操作生产业务表；开发机本地检出仍为旧提交 `36732c4`，这不是最新版应用部署验证。测试类现支持受保护的本地 MySQL defaults 文件读取密码，避免在命令行或 GitHub 中存放敏感值。离线编译 CI [38687551869](https://github.com/NJgaoyang/insight-bi/actions/runs/38687551869) 也已通过。
+- 使用的是管理员 `root` 账号，**已通过 SELECT 查询仍不证明最小权限**。生产应使用独立只读账号；本轮没有进行 FE/BE 停机故障切换、不操作已有业务表、不执行全量回归或生产部署。
 
 ## 本轮仅测试受影响模块
 
