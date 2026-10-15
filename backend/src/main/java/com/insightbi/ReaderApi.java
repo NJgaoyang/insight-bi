@@ -81,12 +81,16 @@ class ReaderApi {
   @GetMapping("/catalog")
   List<Map<String,Object>> catalog(HttpSession session){
     String userId=(String)session.getAttribute("readerId");
-    return db.queryForList(
-      "SELECT d.id,d.name,d.kind,d.status FROM insight_dashboard d "+
-      "JOIN insight_dashboard_grant g ON g.dashboard_id=d.id "+
-      "WHERE g.user_id=? AND g.permission='READ_PUBLISHED' AND d.kind='analysis' "+
-      "AND d.status='published' AND d.published_json IS NOT NULL ORDER BY d.name,d.id LIMIT 200",
-      userId);
+    Set<String> granted=governance.effectiveDashboardIds(userId);
+    if(granted.isEmpty())return List.of();
+    // Use the exact same effective grants as report() and widget query().
+    // Parameterized resource IDs; no unrelated reports can appear in catalog.
+    List<String> ids=new ArrayList<>(granted);
+    String placeholders=String.join(",",Collections.nCopies(ids.size(),"?"));
+    return db.queryForList("SELECT id,name,kind,status FROM insight_dashboard "+
+      "WHERE id IN ("+placeholders+") AND kind='analysis' "+
+      "AND status='published' AND published_json IS NOT NULL "+
+      "ORDER BY name,id LIMIT 200",ids.toArray());
   }
 
   @GetMapping("/dashboards/{id}")
