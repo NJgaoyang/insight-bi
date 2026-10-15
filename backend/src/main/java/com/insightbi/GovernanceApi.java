@@ -87,8 +87,58 @@ class GovernanceApi {
       throw new IllegalStateException("部门包含子部门，请先迁移或删除子部门");
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE department_id=?",Integer.class,id)>0)
       throw new IllegalStateException("部门仍有用户，请先调整用户归属");
+    db.update("DELETE FROM insight_department_dashboard_grant WHERE department_id=?",id);
     db.update("DELETE FROM insight_governance_department WHERE id=?",id);
     return Map.of("ok",true);
+  }
+
+  // A department may grant published-read access to its own members and all
+  // descendants. No write, dataset, or administrator role inherits from it.
+  @GetMapping("/departments/{id}/grants")
+  List<Map<String,Object>> departmentGrants(@PathVariable String id){
+    requireDepartment(id);
+    return db.queryForList("SELECT dashboard_id,permission,created_at "+
+      "FROM insight_department_dashboard_grant WHERE department_id=? "+
+      "ORDER BY created_at,dashboard_id",id);
+  }
+
+  @PostMapping("/departments/{id}/grants")
+  @Transactional
+  Map<String,Object> grantDepartmentRead(@PathVariable String id,
+                                        @RequestBody Map<String,Object> body){
+    if(body.size()!=1||!body.containsKey("dashboardId"))
+      throw new IllegalArgumentException("部门授权只能指定报表 ID");
+    requireDepartment(id);
+    String dashboardId=text(body.get("dashboardId"),"报表 ID",128);
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_dashboard "+
+        "WHERE id=? AND kind='analysis' AND status='published' AND published_json IS NOT NULL",
+        Integer.class,dashboardId)!=1)
+      throw new NoSuchElementException("已发布分析主题不存在");
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_department_dashboard_grant "+
+        "WHERE department_id=? AND dashboard_id=? AND permission=?",
+        Integer.class,id,dashboardId,READ)>0)
+      return Map.of("departmentId",id,"dashboardId",dashboardId,
+        "permission",READ,"alreadyGranted",true);
+    db.update("INSERT INTO insight_department_dashboard_grant "+
+      "(department_id,dashboard_id,permission) VALUES(?,?,?)",id,dashboardId,READ);
+    return Map.of("departmentId",id,"dashboardId",dashboardId,
+      "permission",READ,"alreadyGranted",false);
+  }
+
+  @DeleteMapping("/departments/{id}/grants/{dashboardId}")
+  Map<String,Object> revokeDepartmentRead(@PathVariable String id,
+                                           @PathVariable String dashboardId){
+    requireDepartment(id);
+    db.update("DELETE FROM insight_department_dashboard_grant "+
+      "WHERE department_id=? AND dashboard_id=? AND permission=?",
+      id,dashboardId,READ);
+    return Map.of("ok",true);
+  }
+
+  private void requireDepartment(String id){
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_department WHERE id=?",
+        Integer.class,id)!=1)
+      throw new NoSuchElementException("部门不存在");
   }
 
   @PutMapping("/users/{id}/department")
@@ -350,16 +400,52 @@ class GovernanceApi {
     return Map.of("ok",true);
   }
 
-  /** Fail-closed resource policy, not yet exposed as ordinary-user HTTP access. */
+  /**
+   * Resolve only enabled reader accounts, then merge explicit grants and
+   * grants from the current department ancestor chain. No role escalation.
+   * Recomputed per request, so membership changes/revocations take effect now.
+   */
+  Set<String> effectiveDashboardIds(String userId){
+    if(userId==null||userId.isBlank())return Set.of();
+    List<Map<String,Object>> accounts=db.queryForList(
+      "SELECT role,enabled,department_id FROM insight_governance_user WHERE id=?",userId);
+    if(accounts.size()!=1)return Set.of();
+    Map<String,Object> user=accounts.get(0);
+    if(!Boolean.TRUE.equals(user.get("enabled"))||
+       !ROLES.contains(String.valueOf(user.get("role"))))return Set.of();
+    Set<String> ids=new HashSet<>();
+    for(String dashboard:db.queryForList("SELECT dashboard_id FROM insight_dashboard_grant "+
+        "WHERE user_id=? AND permission=? LIMIT 10001",String.class,userId,READ)){
+      ids.add(dashboard);
+    }
+    if(ids.size()>10000)throw new IllegalStateException("授权资源过多");
+
+    String dept=(String)user.get("department_id");
+    Set<String> visited=new HashSet<>();
+    while(dept!=null){
+      if(!visited.add(dept)||visited.size()>10)
+        throw new IllegalStateException("部门层级异常，拒绝继承权限");
+      List<Map<String,Object>> parents=db.queryForList(
+        "SELECT parent_id FROM insight_governance_department WHERE id=?",dept);
+      if(parents.size()!=1)
+        throw new IllegalStateException("部门归属无效，拒绝继承权限");
+      for(String dashboard:db.queryForList("SELECT dashboard_id "+
+          "FROM insight_department_dashboard_grant WHERE department_id=? "+
+          "AND permission=? LIMIT 10001",String.class,dept,READ)){
+        ids.add(dashboard);
+        if(ids.size()>10000)throw new IllegalStateException("授权资源过多");
+      }
+      dept=(String)parents.get(0).get("parent_id");
+    }
+    return Set.copyOf(ids);
+  }
+
   boolean canReadPublished(String userId,String dashboardId){
-    if(userId==null||dashboardId==null||userId.isBlank()||dashboardId.isBlank())return false;
-    Integer found=db.queryForObject(
-      "SELECT COUNT(*) FROM insight_governance_user u JOIN insight_dashboard_grant g ON g.user_id=u.id "+
-      "JOIN insight_dashboard d ON d.id=g.dashboard_id WHERE u.id=? AND u.enabled=TRUE "+
-      "AND u.role IN ('VIEWER','EDITOR') AND g.dashboard_id=? AND g.permission=? "+
-      "AND d.status='published' AND d.published_json IS NOT NULL",
-      Integer.class,userId,dashboardId,READ);
-    return found!=null&&found==1;
+    if(dashboardId==null||dashboardId.isBlank()||
+       !effectiveDashboardIds(userId).contains(dashboardId))return false;
+    return db.queryForObject("SELECT COUNT(*) FROM insight_dashboard "+
+      "WHERE id=? AND status='published' AND published_json IS NOT NULL",
+      Integer.class,dashboardId)==1;
   }
 
   private void requireUser(String id){
