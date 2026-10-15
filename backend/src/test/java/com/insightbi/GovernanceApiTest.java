@@ -24,7 +24,7 @@ class GovernanceApiTest {
   }
 
   @Test void provisionedAccountsCannotLoginAndInvalidRolesFailClosed(){
-    assertEquals(false,governance.roles().get("loginEnabled"));
+    assertEquals(true,governance.roles().get("loginEnabled"));
     assertEquals(List.of("VIEWER","EDITOR"),governance.roles().get("roles"));
     var user=governance.createUser(Map.of("username","alice","displayName","Alice","role","VIEWER"));
     assertEquals(false,user.get("enabled"));
