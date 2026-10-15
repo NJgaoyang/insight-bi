@@ -449,13 +449,20 @@ class BiApi {
  static void mode(String s){if(!Set.of("grid","free").contains(s))throw new IllegalArgumentException("画布模式无效");}
 }
 @RestControllerAdvice class ApiErrors {
+ @ExceptionHandler(com.insightbi.analysis.SourceRecoveryGuard.Unavailable.class)
+ ResponseEntity<Map<String,Object>> unavailable(com.insightbi.analysis.SourceRecoveryGuard.Unavailable x){
+  return ResponseEntity.status(503).body(Map.of("error","数据源暂不可用，请稍后重试"));
+ }
  @ExceptionHandler(com.insightbi.analysis.AnalysisQueryLimiter.BusyException.class)
  ResponseEntity<Map<String,Object>> busy(com.insightbi.analysis.AnalysisQueryLimiter.BusyException x){
   return ResponseEntity.status(429).body(Map.of("error","分析查询繁忙，请稍后重试"));
  }
  @ExceptionHandler(Exception.class)ResponseEntity<Map<String,Object>> error(Exception x){
-  int status=x instanceof NoSuchElementException?404:x instanceof IllegalStateException?409:x instanceof SQLException?502:400;
-  String msg=x instanceof SQLException?"数据库查询失败，请检查连接和SQL":x.getMessage();
+  boolean databaseError=x instanceof SQLException||
+    x instanceof org.springframework.dao.DataAccessException;
+  int status=x instanceof NoSuchElementException?404:x instanceof IllegalStateException?409:
+    databaseError?502:400;
+  String msg=databaseError?"数据库连接或查询失败，请稍后重试":x.getMessage();
   if(msg==null||msg.length()>250)msg="操作失败，请检查服务日志";
   return ResponseEntity.status(status).body(Map.of("error",msg));
  }
