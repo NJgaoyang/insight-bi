@@ -95,6 +95,9 @@ public class SourceRecoveryGuard {
   }
 
   static boolean isConnectionError(Throwable error){
+    // Query deadline exceeded is not a broken source connection. Do not
+    // isolate unrelated readers merely because one SQL exceeded its budget.
+    if(AnalysisExecutionMetrics.isTimeout(error))return false;
     for(Throwable current=error;current!=null;current=current.getCause()){
       if(current instanceof SQLTransientConnectionException||
          current instanceof SQLRecoverableException)return true;
