@@ -35,6 +35,7 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_publication_audit (id VARCHAR(36) PRIMARY KEY, dashboard_id VARCHAR(36) NOT NULL, event_type VARCHAR(20) NOT NULL, actor VARCHAR(64) NOT NULL, version_no INT, created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6))");
   // Opt-in approval gate: unchanged existing dashboards continue their legacy publish flow.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_publication_approval (dashboard_id VARCHAR(36) PRIMARY KEY, state VARCHAR(16) NOT NULL, submitted_revision INT, reviewed_revision INT, comment VARCHAR(255), requested_at TIMESTAMP(6), reviewed_at TIMESTAMP(6))");
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_publication_review_event (id VARCHAR(36) PRIMARY KEY, dashboard_id VARCHAR(36) NOT NULL, event_type VARCHAR(20) NOT NULL, revision INT NOT NULL, actor VARCHAR(64) NOT NULL, comment VARCHAR(255), created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6))");
   // P2-02 foundations: provisioned principals are deliberately disabled.
   // No ordinary-user login is enabled until role and resource gates cover every API.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_user (id VARCHAR(36) PRIMARY KEY, username VARCHAR(80) NOT NULL UNIQUE, display_name VARCHAR(100) NOT NULL, role VARCHAR(16) NOT NULL, enabled BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
