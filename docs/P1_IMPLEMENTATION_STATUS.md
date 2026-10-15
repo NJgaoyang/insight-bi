@@ -407,6 +407,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 新增 opt-in `StarRocksScopedAccessTest`，通过真实 `DatabaseStore.open`、`FieldCatalog`、`AnalysisApi.query` 进行 StarRocks OLAP 表参数化 V2 聚合：北京 150、上海 200、广州 300，单城/多城查询全部正确；同时**真实使用只读账号**尝试 INSERT 和 CREATE TABLE，两种操作均遭服务器拒绝，不是只看 JDBC read-only 标志。JUnit **Tests run: 1, Failures: 0, Errors: 0, Skipped: 0**，最终执行成功；初期只因测试断言误将 BigDecimal 不同 scale 判为不同值，已修复数值比较，实际查询结果始终正确。
 - 不包含原有业务表的数据核验、实际生产账号权限验证、FE/BE 关停与故障切换、长查询性能/容量、完整版本生产部署。专用只读测试账号已删除，没有把任何 StarRocks 密码写入 GitHub；详细证据、复验命令及风险界限见 [P3_STARROCKS_SCOPED_OLAP_ACCEPTANCE.md](P3_STARROCKS_SCOPED_OLAP_ACCEPTANCE.md)。本轮只运行相关定向测试，不执行全量回归。
 
+## P3-07：V2 查询超时语义、慢查询指标和资源释放（2026-10-15）
+
+- 核对现有 V2 已有 JDBC `setQueryTimeout(15)`、4 并发/250ms 等待、连接 5 秒/Socket 18 秒超时和 try-with-resources 关闭，不重复开发；本轮仅针对慢查询失败的处理、可观测性及故障恢复可靠性补全代码。
+- 新增 `AnalysisExecutionMetrics`：进程内聚合成功/失败/超时/≥3秒慢查询数和累计查询毫秒，不保留 SQL、绑定变量、用户、主机、异常消息或敏感凭据。`AnalysisApi.query` 在原有许可及 JDBC 连接生命周期中记录指标；管理员 `GET /api/admin/operations/status` 返回 `queryExecution`，前端「运行监控」新增 V2 查询耗时与超时表格。
+- 明确的 JDBC `SQLTimeoutException` 返回统一脱敏 HTTP **504**（V2 分析 API 及普通读者已发布查询）；原有并发 429、连接熔断 503 保持不变。熔断器忽略 JDBC 超时异常，避免把单条慢 SQL 错判成整份数据源不可用。
+- `AnalysisQueryTimeoutTest` 注入 JDBC 超时，不执行耗时 15 秒 SQL，检查 `setQueryTimeout(15)`、`setMaxRows`、Statement/Connection 关闭、许可释放、同源后续真实 H2 查询成功、HTTP 504 脱敏和统计；`OperationsMonitoringTest` 验证管理员查询指标及读者错误响应；`SourceRecoveryGuardTest` 补充 `08xxx` 状态的 SQLTimeoutException 不熔断。相关单测定向工作流 [38690656193](https://github.com/NJgaoyang/insight-bi/actions/runs/38690656193) 和 [38690864257](https://github.com/NJgaoyang/insight-bi/actions/runs/38690864257) 均 **SUCCESS**；前端 TypeScript/Vite [38690726339](https://github.com/NJgaoyang/insight-bi/actions/runs/38690726339) **SUCCESS**。
+- 操作说明和限制见 [P3_QUERY_TIMEOUT_AND_LATENCY.md](P3_QUERY_TIMEOUT_AND_LATENCY.md)。**尚未执行**：真实 StarRocks 慢查询取消或网络分区注入、FE/BE 停机、生产负载压测、真正服务端杀查询能力验证；JDBC 超时是驱动层取消请求，不能承诺所有情况严格不超过 15 秒。没有执行全量回归、远端破坏性测试或生产部署。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
