@@ -25,7 +25,7 @@ class GovernanceApi {
 
   @GetMapping("/roles")
   Map<String,Object> roles(){
-    return Map.of("roles",List.of("VIEWER","EDITOR"),"loginEnabled",false);
+    return Map.of("roles",List.of("VIEWER","EDITOR"),"loginEnabled",true);
   }
 
   // Department tree is administrative metadata. No automatic permission
@@ -179,6 +179,34 @@ class GovernanceApi {
     if(db.update("UPDATE insight_governance_user SET role=? WHERE id=?",role,id)!=1)
       throw new NoSuchElementException("用户不存在");
     return Map.of("id",id,"role",role);
+  }
+
+
+  @PutMapping("/users/{id}/password")
+  @Transactional
+  Map<String,Object> setPassword(@PathVariable String id,@RequestBody Map<String,Object> body){
+    if(body.size()!=1||!body.containsKey("password"))throw new IllegalArgumentException("只允许设置密码");
+    requireUser(id);
+    String password=ReaderPassword.hash(
+      body.get("password") instanceof String value?value:null);
+    db.update("UPDATE insight_governance_user SET password_hash=?,enabled=FALSE WHERE id=?",
+      password,id);
+    // Password reset revokes the account until the administrator re-enables it.
+    return Map.of("id",id,"enabled",false,"passwordConfigured",true);
+  }
+
+  @PutMapping("/users/{id}/activation")
+  @Transactional
+  Map<String,Object> setActivation(@PathVariable String id,@RequestBody Map<String,Object> body){
+    if(body.size()!=1||!(body.get("enabled") instanceof Boolean enabled))
+      throw new IllegalArgumentException("启用状态必须为布尔值");
+    requireUser(id);
+    if(enabled&&db.queryForObject(
+        "SELECT COUNT(*) FROM insight_governance_user WHERE id=? AND password_hash IS NOT NULL AND role IN ('VIEWER','EDITOR')",
+        Integer.class,id)!=1)
+      throw new IllegalStateException("启用账号前必须设置密码和有效角色");
+    db.update("UPDATE insight_governance_user SET enabled=? WHERE id=?",enabled,id);
+    return Map.of("id",id,"enabled",enabled);
   }
 
   @DeleteMapping("/users/{id}")
