@@ -4,7 +4,7 @@ import * as echarts from 'echarts'
 import {analysisCsv} from './analysis/exportCsv'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
-const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null}>()
+const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null;viewerReportId?:string}>()
 const emit=defineEmits<{(e:'navigate'):void;(e:'selectDimension',selection:{fieldId:string;value:string|number}|null):void;(e:'tableColumnsChange',hiddenIds:string[]):void}>()
 const element=ref<HTMLElement|null>(null)
 const loading=ref(false),error=ref(''),rows=ref<Record<string,unknown>[]>([])
@@ -75,8 +75,12 @@ async function load(){
  loading.value=true;error.value=''
  const controller=new AbortController();activeRequest=controller
  try{
-  const response=await api<QueryV2Result>('/analysis/v2/query',{method:'POST',body:JSON.stringify({datasetId:props.widget.datasetId,...config,
-   filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilter?[props.linkedFilter]:[])],post:config.filters?.post||[]}}),signal:controller.signal})
+  const path=props.viewerReportId
+   ?'/reader/dashboards/'+encodeURIComponent(props.viewerReportId)+'/widgets/'+encodeURIComponent(props.widget.id)+'/query'
+   :'/analysis/v2/query'
+  const request=props.viewerReportId?{}:{datasetId:props.widget.datasetId,...config,
+   filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilter?[props.linkedFilter]:[])],post:config.filters?.post||[]}}
+  const response=await api<QueryV2Result>(path,{method:'POST',body:JSON.stringify(request),signal:controller.signal})
   if(gen!==generation)return
   result.value=response;rows.value=response.rows
   await nextTick();render()
