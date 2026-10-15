@@ -293,6 +293,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - “系统管理 → 权限治理”增加管理员预配置界面、未启用提醒和授权窗口，保持原数据连接页面。前端 TypeScript/Vite 和真实 Chromium（模拟 REST）定向 CI 以最终运行记录为准。仅在原受影响范围内构建、测试。
 - **安全边界：本批没有开放普通用户登录或创建密码，也没有把 `canReadPublished` 接到所有数据集、V1/V2 查询及历史版本接口。** 因此后台的授权是未来接入时的预配置，不宣称读者已经可以登录、安全查看报表，不允许在生产中当作多用户权限平台使用。部门组织结构、发布审批、行列级权限、目录共享、完整审计、StarRocks 真库验证和 P3 可靠性仍未完成。
 
+## P2-02 第三批：部门组织树和禁用账号归属（2026-10-15）
+
+- 新增独立 `insight_governance_department`（UUID、部门名称、父部门、创建时间），通过可重复执行的数据库初始化给旧 `insight_governance_user` 增加可空 `department_id` 字段；原账号仍禁用，无密码/登录入口改动。
+- 管理员专属 API `GET/POST /api/governance/departments`、`PUT/DELETE /api/governance/departments/{id}`，以及 `PUT /api/governance/users/{id}/department`，允许创建、重命名、迁移层级、删除空部门和用户调入/移出部门。约束总数 ≤500、树深 ≤10、同级部门名称不重复、父部门必须存在、不允许自环/移动到子部门、含用户或子部门不可删除。全部操作仍需既有 admin 会话及 CSRF 校验。
+- 「系统管理 → 权限治理」已增加紧凑型部门树、创建/编辑、层级调整与账号归属选择；普通账号仍默认 `enabled=false`。**部门归属不等于授权，不能通过切换部门继承报表访问、数据集访问或启用登录。**
+- 定向 H2 测试覆盖树结构、重复名称、孤儿父节点、祖孙环、删除保护、归属与解除归属、重新执行元数据初始化；后端 CI [38671023626](https://github.com/NJgaoyang/insight-bi/actions/runs/38671023626) **PASS**。前端 TypeScript/Vite 构建及真实 Chromium 模拟 REST 交互 [38671156424](https://github.com/NJgaoyang/insight-bi/actions/runs/38671156424) **SUCCESS**。
+- 未完成普通用户登录、部门级继承、所有 V1/V2 查询/数据集接口的资源权限校验、行列权限、共享目录审批及生产 MySQL 数据迁移验证；本阶段不可作为完整多用户权限系统投产。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
