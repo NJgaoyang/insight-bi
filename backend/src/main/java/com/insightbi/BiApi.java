@@ -239,12 +239,13 @@ class BiApi {
   if(db.update("UPDATE insight_folder SET name=? WHERE id=?",name,id)!=1)throw new NoSuchElementException("文件夹不存在");
   return Map.of("id",id,"name",name);
  }
- @DeleteMapping("/folders/{id}")Map<String,Object> deleteFolder(@PathVariable String id){
+ @DeleteMapping("/folders/{id}")@Transactional Map<String,Object> deleteFolder(@PathVariable String id){
   assertFolder(id);
   if(db.queryForObject("SELECT COUNT(*) FROM insight_folder WHERE parent_id=?",Integer.class,id)>0)
    throw new IllegalStateException("文件夹包含子文件夹，请先处理子文件夹");
   if(db.queryForObject("SELECT COUNT(*) FROM insight_dashboard WHERE folder_id=?",Integer.class,id)>0)
    throw new IllegalStateException("文件夹内仍有分析主题，请先移动或删除主题");
+  db.update("DELETE FROM insight_folder_acl WHERE folder_id=?",id);
   db.update("DELETE FROM insight_folder WHERE id=?",id);
   return Map.of("ok",true);
  }
