@@ -1,0 +1,24 @@
+name: Analysis Workspace Scoped
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/finebi-analysis-engine-p0
+    paths:
+      - frontend/src/analysis/dashboardLayout.ts
+      - frontend/src/AnalysisSubject.vue
+      - frontend/src/style.css
+      - scripts/analysis_workspace_layout.test.mjs
+      - .github/workflows/analysis-workspace-scoped.yml
+
+jobs:
+  layout-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test view-local drag and shared-component copy semantics
+        run: node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mjs
