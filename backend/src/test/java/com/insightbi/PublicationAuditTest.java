@@ -110,6 +110,16 @@ class PublicationAuditTest {
       .filter(e->"REJECT".equals(e.get("event_type"))).count());
     assertEquals(3,api.publicationAudit(id).stream()
       .filter(e->"APPROVE".equals(e.get("event_type"))).count());
+    var history=api.approvalHistory(id);
+    assertEquals(9,history.size(),"one enable, four submissions and four reviews");
+    assertEquals(4,history.stream().filter(e->"SUBMITTED".equals(e.get("event_type"))).count());
+    assertEquals(3,history.stream().filter(e->"APPROVED".equals(e.get("event_type"))).count());
+    assertTrue(history.stream().anyMatch(e->"REJECTED".equals(e.get("event_type"))&&
+      "指标需要核验".equals(e.get("comment"))&&Integer.valueOf(1).equals(e.get("revision"))));
+    assertTrue(history.stream().anyMatch(e->"APPROVED".equals(e.get("event_type"))&&
+      "通过".equals(e.get("comment"))));
+    assertTrue(history.stream().allMatch(e->"admin".equals(e.get("actor"))));
+
   }
 
   @Test void invalidApprovalPayloadAndRejectedOrChangedSubmissionNeverPublish(){
@@ -130,6 +140,8 @@ class PublicationAuditTest {
     assertThrows(IllegalStateException.class,()->api.publish(id));
     assertEquals(0,db.queryForObject(
       "SELECT COUNT(*) FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id));
+    assertEquals(2,api.approvalHistory(id).size(),
+      "invalid review or stale revision must not create approval events");
     api.submitApproval(id,Map.of());
     api.reviewApproval(id,Map.of("approved",false));
     assertThrows(IllegalStateException.class,()->api.publish(id));
