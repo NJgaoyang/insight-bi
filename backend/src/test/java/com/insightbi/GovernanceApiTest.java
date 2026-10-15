@@ -216,4 +216,79 @@ class GovernanceApiTest {
     assertThrows(NoSuchElementException.class,()->
       governance.departmentGrants(dept));
   }
+
+  @Test void folderAclRestrictsButNeverGrantsAndParentConditionsAreCumulative(){
+    String folder=(String)reports.createFolder(Map.of("name","核心业务")).get("id");
+    String child=(String)reports.createFolder(Map.of("name","财务数据","parentId",folder)).get("id");
+    String dept=(String)governance.createDepartment(Map.of("name","财务部")).get("id");
+    String other=(String)governance.createDepartment(Map.of("name","市场部")).get("id");
+    String alice=(String)governance.createUser(Map.of(
+      "username","alice","displayName","Alice","role","VIEWER")).get("id");
+    String bob=(String)governance.createUser(Map.of(
+      "username","bobby","displayName","Bob","role","VIEWER")).get("id");
+    governance.assignDepartment(alice,Map.of("departmentId",dept));
+    governance.assignDepartment(bob,Map.of("departmentId",other));
+    db.update("UPDATE insight_governance_user SET enabled=TRUE WHERE id IN (?,?)",alice,bob);
+    String report=(String)reports.create(Map.of(
+      "name","薪资月报","kind","analysis","mode","grid")).get("id");
+    reports.publish(report);
+    reports.moveDashboard(report,Map.of("parentId",child));
+    governance.grantRead(alice,Map.of("dashboardId",report));
+    governance.grantRead(bob,Map.of("dashboardId",report));
+    assertTrue(governance.canReadPublished(alice,report));
+    assertTrue(governance.canReadPublished(bob,report));
+
+    governance.setFolderAccess(folder,Map.of("rules",List.of(
+      Map.of("principalType","USER","principalId",alice))));
+    governance.setFolderAccess(child,Map.of("rules",List.of(
+      Map.of("principalType","DEPARTMENT","principalId",dept))));
+    assertTrue(governance.canReadPublished(alice,report));
+    assertFalse(governance.canReadPublished(bob,report));
+    assertEquals(1,governance.folderAccess(folder).size());
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setFolderAccess(folder,Map.of("rules",List.of(
+        Map.of("principalType","ADMIN","principalId",bob)))));
+    assertThrows(NoSuchElementException.class,()->
+      governance.setFolderAccess(folder,Map.of("rules",List.of(
+        Map.of("principalType","USER","principalId","unknown")))));
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setFolderAccess(folder,Map.of("rules",List.of(
+        Map.of("principalType","USER","principalId",alice),
+        Map.of("principalType","USER","principalId",alice)))));
+    assertEquals(1,governance.folderAccess(folder).size(),
+      "failed update must not clear existing rules");
+
+    // A granted directory without a report grant never authorizes that report.
+    governance.revokeRead(alice,report);
+    assertFalse(governance.canReadPublished(alice,report));
+    governance.grantRead(alice,Map.of("dashboardId",report));
+
+    governance.assignDepartment(alice,Map.of("departmentId",other));
+    assertFalse(governance.canReadPublished(alice,report),
+      "moving to another department invalidates child folder access");
+    governance.assignDepartment(alice,Map.of("departmentId",dept));
+    assertTrue(governance.canReadPublished(alice,report));
+
+    governance.setFolderAccess(folder,Map.of("rules",List.of()));
+    assertFalse(governance.canReadPublished(bob,report),
+      "child policy still denies even after parent ACL is cleared");
+    governance.setFolderAccess(child,Map.of("rules",List.of()));
+    assertTrue(governance.canReadPublished(bob,report));
+    reports.unpublish(report);
+    assertFalse(governance.canReadPublished(bob,report));
+  }
+
+  @Test void folderDeleteAndUserDeleteCleanupAclMetadata(){
+    String folder=(String)reports.createFolder(Map.of("name","临时目录")).get("id");
+    String alice=(String)governance.createUser(Map.of(
+      "username","alice","displayName","Alice","role","VIEWER")).get("id");
+    governance.setFolderAccess(folder,Map.of("rules",List.of(
+      Map.of("principalType","USER","principalId",alice))));
+    governance.deleteUser(alice);
+    assertTrue(governance.folderAccess(folder).isEmpty());
+    governance.setFolderAccess(folder,Map.of("rules",List.of()));
+    reports.deleteFolder(folder);
+    assertEquals(0,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_folder_acl WHERE folder_id=?",Integer.class,folder));
+  }
 }
