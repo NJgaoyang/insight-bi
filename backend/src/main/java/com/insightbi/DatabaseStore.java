@@ -37,6 +37,8 @@ public class DatabaseStore {
   // No ordinary-user login is enabled until role and resource gates cover every API.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_user (id VARCHAR(36) PRIMARY KEY, username VARCHAR(80) NOT NULL UNIQUE, display_name VARCHAR(100) NOT NULL, role VARCHAR(16) NOT NULL, enabled BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard_grant (user_id VARCHAR(36) NOT NULL, dashboard_id VARCHAR(36) NOT NULL, permission VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,dashboard_id,permission))");
+  // Optional per-user dataset restriction: one exact string value, checked before aggregations.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_reader_row_policy (user_id VARCHAR(36) NOT NULL, dataset_id VARCHAR(36) NOT NULL, field_id VARCHAR(36) NOT NULL, allowed_value VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,dataset_id))");
   // P2-02: optional department tree for disabled, provisioned users only.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_department (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   if(!columnExists("insight_governance_user","department_id"))
