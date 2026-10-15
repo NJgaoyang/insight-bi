@@ -638,6 +638,16 @@ onMounted(load)
         <el-option v-for="t in types.filter(t=>['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(t.type))"
          :key="t.type" :label="t.name" :value="t.type"/>
        </el-select>
+       <template v-if="chosen.type==='table'">
+        <label>明细表默认隐藏列</label>
+        <el-select multiple collapse-tags clearable placeholder="全部显示"
+         :model-value="chosen.analysisV2.tableHiddenColumnIds||[]"
+         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.tableHiddenColumnIds=Array.isArray(v)?v.map(String):[];mark()}}">
+         <el-option v-for="d in chosen.analysisV2.dimensions" :key="'dim-'+d.fieldId"
+          :label="v2Fields.find(f=>f.id===d.fieldId)?.name||d.fieldId" :value="d.fieldId"/>
+         <el-option v-for="m in chosen.analysisV2.measures" :key="'measure-'+m.id" :label="m.alias||m.id" :value="m.id"/>
+        </el-select>
+       </template>
        <label>查询行数上限</label><el-input-number v-model="chosen.analysisV2.limit" :min="1" :max="500" @change="mark"/>
        <label>排序指标</label>
        <el-select :model-value="chosen.analysisV2.sort[0]?.ref||''" clearable placeholder="不排序"
