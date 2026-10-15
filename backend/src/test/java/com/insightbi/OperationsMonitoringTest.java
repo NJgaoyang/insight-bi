@@ -88,6 +88,44 @@ class OperationsMonitoringTest {
     assertTrue(auth.preHandle(adminRequest,new MockHttpServletResponse(),new Object()));
   }
 
+  @Test void adminSourceStateDoesNotRevealHostsAndCooldownPreventsRepeatedReconnect()throws Exception{
+    JdbcTemplate db=healthyDatabase();
+    var store=new DatabaseStore(db,new com.fasterxml.jackson.databind.ObjectMapper(),
+      Base64.getEncoder().encodeToString(new byte[32]));
+    store.schema();
+    db.update("INSERT INTO insight_connection(id,name,engine,host,port,db_name,username,credential) "+
+      "VALUES(?,?,?,?,?,?,?,?)","source1","经营仓库","starrocks","internal-private.example",
+      9030,"warehouse","svc-reader",store.encrypt("not-for-dashboard"));
+    var guard=new com.insightbi.analysis.SourceRecoveryGuard();
+    var operator=new OperationsApi(db,new OperationsMetrics(),store,guard);
+    var records=operator.sources().getBody();
+    assertEquals(1,records.size());
+    assertEquals("经营仓库",records.get(0).get("name"));
+    String safe=records.toString();
+    assertFalse(safe.contains("internal-private.example"));
+    assertFalse(safe.contains("not-for-dashboard"));
+    assertFalse(safe.contains("svc-reader"));
+    for(int i=0;i<2;i++)
+      assertThrows(com.insightbi.analysis.SourceRecoveryGuard.Unavailable.class,
+        ()->guard.execute("source1",()->{
+          throw new java.sql.SQLTransientConnectionException("sensitive-host", "08001");
+        }));
+    assertEquals("open",operator.sources().getBody().get(0).get("state"));
+    assertEquals(HttpStatus.SERVICE_UNAVAILABLE,operator.recheck("source1").getStatusCode());
+    assertFalse(operator.recheck("source1").getBody().toString().contains("sensitive-host"));
+    var auth=new ReaderAccessInterceptor(db);
+    var request=new MockHttpServletRequest("POST","/api/admin/operations/sources/source1/recheck");
+    var session=new MockHttpSession();
+    session.setAttribute("admin",true);
+    session.setAttribute("csrf","secret-csrf");
+    request.setSession(session);
+    var denied=new MockHttpServletResponse();
+    assertFalse(auth.preHandle(request,denied,new Object()));
+    assertEquals(403,denied.getStatus());
+    request.addHeader("X-CSRF-Token","secret-csrf");
+    assertTrue(auth.preHandle(request,new MockHttpServletResponse(),new Object()));
+  }
+
   @Test void queryLimiterReportsLoadAndRejectionsAndRestoresPermit(){
     AnalysisQueryLimiter limiter=new AnalysisQueryLimiter(1,0);
     assertEquals(0,limiter.snapshot().active());
