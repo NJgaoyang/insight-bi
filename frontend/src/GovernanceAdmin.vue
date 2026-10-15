@@ -3,10 +3,53 @@ import {computed,onMounted,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,remove} from './api'
 
-const props=defineProps<{dashboards:{id:string;name:string;status:string;kind?:string}[];datasets:{id:string;name:string}[]}>()
+const props=defineProps<{dashboards:{id:string;name:string;status:string;kind?:string}[];datasets:{id:string;name:string}[];folders:{id:string;name:string;parent_id:string|null}[]}>()
 type User={id:string;username:string;display_name:string;role:'VIEWER'|'EDITOR';enabled:boolean;department_id?:string|null;password_configured?:boolean}
 type Department={id:string;name:string;parent_id:string|null}
 type Grant={dashboard_id:string;permission:string}
+type FolderAccessRule={principal_type:'USER'|'DEPARTMENT';principal_id:string;permission:string}
+const aclDialog=ref(false),aclFolder=ref<{id:string;name:string}|null>(null)
+const aclSaved=ref<FolderAccessRule[]>([]),aclSelection=ref<string[]>([])
+const aclFolderRows=computed(()=>{
+ const rows:{id:string;name:string;depth:number}[]=[],seen=new Set<string>()
+ function visit(parent:string,depth:number){
+  for(const folder of props.folders.filter(v=>(v.parent_id??'')===parent)){
+   if(seen.has(folder.id))continue
+   seen.add(folder.id);rows.push({id:folder.id,name:folder.name,depth})
+   if(depth<20)visit(folder.id,depth+1)
+  }
+ }
+ visit('',0);return rows
+})
+async function openFolderAcl(folder:{id:string;name:string}){
+ aclFolder.value=folder;aclSaved.value=[];aclSelection.value=[];aclDialog.value=true
+ try{
+  aclSaved.value=await api<FolderAccessRule[]>('/governance/folders/'+
+    encodeURIComponent(folder.id)+'/access')
+  aclSelection.value=aclSaved.value.map(r=>r.principal_type+':'+r.principal_id)
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'加载目录权限失败')}
+}
+async function saveFolderAcl(){
+ if(!aclFolder.value)return
+ busy.value=true
+ try{
+  if(aclSaved.value.length>0&&aclSelection.value.length===0)
+   await ElMessageBox.confirm(
+    '清空规则后，该目录及下级目录不再额外限制有报表授权的读者。确认移除目录访问限制吗？',
+    '清空目录限制',{type:'warning'})
+  const rules=aclSelection.value.map(item=>{
+   const colon=item.indexOf(':')
+   return {principalType:item.slice(0,colon),principalId:item.slice(colon+1)}
+  })
+  await put('/governance/folders/'+encodeURIComponent(aclFolder.value.id)+'/access',{rules})
+  aclSaved.value=await api<FolderAccessRule[]>('/governance/folders/'+
+    encodeURIComponent(aclFolder.value.id)+'/access')
+  ElMessage.success('目录权限已更新')
+  aclDialog.value=false
+ }catch(e){if(e!=='cancel')ElMessage.error(e instanceof Error?e.message:'保存目录权限失败')}
+ finally{busy.value=false}
+}
+
 const departments=ref<Department[]>([])
 const departmentDialog=ref(false)
 const departmentDraft=ref<{id:string;name:string;parentId:string}>({id:'',name:'',parentId:''})
@@ -270,6 +313,23 @@ onMounted(refresh)
 
 <template>
  <section class="resource-table">
+  <div class="fine-list-tabs"><strong>分析主题目录权限</strong>
+   <span class="fine-list-count">{{folders.length}} 个目录</span></div>
+  <p class="fine-dialog-tip">目录规则仅限制已有报表查看授权，不会单独授予报表权限。受限目录的子目录还必须符合全部上级目录规则。</p>
+  <table>
+   <thead><tr><th>目录</th><th>操作</th></tr></thead>
+   <tbody>
+    <tr v-for="folder in aclFolderRows" :key="folder.id">
+     <td :style="{paddingLeft:12+20*folder.depth+'px'}">
+      {{folder.depth?'↳ ':''}}{{folder.name}}
+     </td>
+     <td><button @click="openFolderAcl(folder)">目录访问规则</button></td>
+    </tr>
+    <tr v-if="!folders.length"><td colspan="2">暂无分析主题目录</td></tr>
+   </tbody>
+  </table>
+ </section>
+ <section class="resource-table">
   <div class="fine-list-tabs">
    <strong>部门管理</strong><span class="fine-list-count">{{departments.length}} 个部门</span>
    <button class="primary-soft" @click="openDepartment()">＋ 新建部门</button>
@@ -344,6 +404,25 @@ onMounted(refresh)
     <td><button class="danger-link" @click="revokeDepartmentReport(g.dashboard_id)">撤销</button></td>
    </tr></tbody>
   </table>
+ </el-dialog>
+ <el-dialog v-model="aclDialog" :title="'目录访问规则 · '+(aclFolder?.name||'')" width="580px">
+  <p class="fine-dialog-tip">目录内报表必须先获得个人或部门的报表授权；若此目录设置了访问规则，还须满足本目录及所有已设规则的上级目录。清空规则表示不再额外限制。</p>
+  <div class="modal-fields">
+   <label>允许访问此目录的用户或部门（最多50个）</label>
+   <el-select v-model="aclSelection" multiple filterable collapse-tags clearable placeholder="不设置额外限制">
+    <el-option v-for="user in users" :key="'user-'+user.id"
+     :label="'用户 · '+user.display_name+' ('+user.username+')'"
+     :value="'USER:'+user.id"/>
+    <el-option v-for="dept in departmentRows" :key="'dept-'+dept.id"
+     :label="'部门 · '+dept.name" :value="'DEPARTMENT:'+dept.id"/>
+   </el-select>
+   <small>部门规则涵盖该部门及其子部门成员；不会扩大报表授权范围。</small>
+  </div>
+  <template #footer>
+   <button @click="aclDialog=false">取消</button>
+   <button class="primary-button" :disabled="busy||aclSelection.length>50"
+    @click="saveFolderAcl">保存目录规则</button>
+  </template>
  </el-dialog>
  <el-dialog v-model="departmentDialog" :title="departmentDraft.id?'编辑部门':'新建部门'" width="460px">
   <div class="modal-fields">
