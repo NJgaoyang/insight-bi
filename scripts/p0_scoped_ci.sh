@@ -25,9 +25,11 @@ for path in "${paths[@]}"; do
       add_test MetadataBackupRecoveryTest;;
     */OperationsApi.java|*/OperationsMetrics.java)
       add_test OperationsMonitoringTest;;
+    */SourceRecoveryGuard.java)
+      add_test SourceRecoveryGuardTest;add_test OperationsMonitoringTest;;
     */ReaderApi.java|*/ReaderPassword.java) add_test ReaderApiTest;add_test GovernanceApiTest;;
     */DatabaseStore.java|*/BiApi.java)
-      add_test ReaderApiTest;add_test GovernanceApiTest;add_test PublicationAuditTest;add_test OperationsMonitoringTest
+      add_test ReaderApiTest;add_test GovernanceApiTest;add_test PublicationAuditTest;add_test OperationsMonitoringTest;add_test SourceRecoveryGuardTest
       add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest
       add_test BiQueryInTest;add_test AnalysisResourceGraphTest
       add_test AnalysisPipelineApiTest;add_test AnalysisPipelineDependencyGuardTest
@@ -45,7 +47,7 @@ for path in "${paths[@]}"; do
     */DatasetSchemaGuard.java)
       add_test DatasetSchemaGuardTest;add_test DatasetAliasUpdateIntegrationTest;;
     */AnalysisApi.java)
-      add_test OperationsMonitoringTest
+      add_test OperationsMonitoringTest;add_test SourceRecoveryGuardTest
       add_test AnalysisFormulaValidationTest;add_test AnalysisFormulaDependencyTest
       add_test FormulaSnapshotGuardTest;add_test FieldDisplayNameTest
       add_test AnalysisPipelineReuseTest;;
@@ -58,7 +60,7 @@ for path in "${paths[@]}"; do
     */StarRocksInlineFixture.java) add_test StarRocksInlineFixtureTest;;
     */ReadOnlySqlGuard.java) add_test ReadOnlySqlGuardTest;;
     */ReadOnlyConnectionPolicy.java) add_test ReadOnlyConnectionPolicyTest;;
-    */AnalysisQueryLimiter.java|*/AnalysisErrorHandler.java) add_test AnalysisQueryLimiterTest;add_test OperationsMonitoringTest;;
+    */AnalysisQueryLimiter.java|*/AnalysisErrorHandler.java) add_test AnalysisQueryLimiterTest;add_test OperationsMonitoringTest;add_test SourceRecoveryGuardTest;;
    esac;;
   frontend/*)frontend=true;;
   scripts/*)scripts=true;;
