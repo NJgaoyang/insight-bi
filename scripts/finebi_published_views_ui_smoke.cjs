@@ -28,6 +28,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
    if(path==='/api/me')return send({user:'admin',csrf:'csrf'})
    if(path==='/api/dashboards/published-analysis'&&method==='GET')return send(analysis)
    if(path==='/api/dashboards/legacy'&&method==='GET')return send(legacy)
+   if(path==='/api/dashboards/audit-demo'&&method==='GET')
+    return send({...analysis,id:'audit-demo',status:'draft',
+      content:{mode:'grid',theme:'light',widgets:[]}})
+   if(path==='/api/dashboards/audit-demo/publication-audit'&&method==='GET')
+    return send([{event_type:'PUBLISH',actor:'admin',version_no:2,
+      created_at:'2026-10-15T09:00:00'}, {event_type:'UNPUBLISH',actor:'admin',
+      version_no:null,created_at:'2026-10-15T09:30:00'}])
    if(path==='/api/datasets')return send([])
    if(path==='/api/analysis/v2/query'&&method==='POST')return send({
     columns:[{id:'city',name:'d1',kind:'dimension',label:'城市'},
@@ -131,6 +138,15 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await page.locator('.toolbar-left').waitFor()
   assert.equal(await page.locator('.analysis-published-view').count(),0)
   assert.equal(await page.locator('.toolbar-left input[disabled]').count(),1)
+  // P2 admin publication audit: populated table in the theme editor.
+  await page.goto(origin+'/#/analysis/audit-demo',{waitUntil:'domcontentloaded'})
+  await page.locator('.analysis-header-actions').getByRole('button',{name:'发布记录'}).click()
+  const publicationDialog=page.locator('.el-dialog').filter({hasText:'发布记录'})
+  await publicationDialog.getByText('撤销发布').waitFor()
+  assert.ok((await publicationDialog.innerText()).includes('发布'))
+  assert.ok((await publicationDialog.innerText()).includes('admin'))
+  assert.ok((await publicationDialog.innerText()).includes('2026-10-15'))
+  assert.equal(await publicationDialog.locator('tbody tr').count(),2)
   assert.deepEqual(errors,[])
   console.log('PASS P1 published routes: multi-view V2 readonly and original legacy Designer readonly')
  }finally{await browser.close()}
