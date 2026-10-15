@@ -13,6 +13,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  */
 @RestControllerAdvice(assignableTypes=AnalysisApi.class)
 public class AnalysisErrorHandler {
+  @ExceptionHandler(java.sql.SQLTimeoutException.class)
+  public ResponseEntity<Map<String,String>> timeout(java.sql.SQLTimeoutException ignored){
+    return result(HttpStatus.GATEWAY_TIMEOUT,"分析查询超时，请缩小数据范围后重试");
+  }
   @ExceptionHandler(SourceRecoveryGuard.Unavailable.class)
   public ResponseEntity<Map<String,String>> sourceUnavailable(SourceRecoveryGuard.Unavailable e){
     return result(HttpStatus.SERVICE_UNAVAILABLE,"数据源暂不可用，请稍后重试");
