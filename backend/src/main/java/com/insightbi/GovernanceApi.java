@@ -214,9 +214,58 @@ class GovernanceApi {
   Map<String,Object> deleteUser(@PathVariable String id){
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE id=?",Integer.class,id)!=1)
       throw new NoSuchElementException("用户不存在");
+    db.update("DELETE FROM insight_reader_row_policy WHERE user_id=?",id);
     db.update("DELETE FROM insight_dashboard_grant WHERE user_id=?",id);
     db.update("DELETE FROM insight_governance_user WHERE id=?",id);
     return Map.of("ok",true);
+  }
+
+  // Optional exact STRING match, not organizational inheritance.
+  // Without a row rule, the existing report grant permits all its configured rows.
+  @GetMapping("/users/{id}/row-policies")
+  List<Map<String,Object>> rowPolicies(@PathVariable String id){
+    requireUser(id);
+    return db.queryForList("SELECT dataset_id,field_id,allowed_value FROM insight_reader_row_policy "+
+      "WHERE user_id=? ORDER BY dataset_id",id);
+  }
+
+  @PutMapping("/users/{id}/row-policies/{datasetId}")
+  @Transactional
+  Map<String,Object> setRowPolicy(@PathVariable String id,@PathVariable String datasetId,
+                                  @RequestBody Map<String,Object> body){
+    requireUser(id);
+    if(body.size()!=2||!body.containsKey("fieldId")||!body.containsKey("allowedValue"))
+      throw new IllegalArgumentException("行级规则只允许字段 ID 和匹配值");
+    String fieldId=text(body.get("fieldId"),"字段 ID",36);
+    String allowedValue=text(body.get("allowedValue"),"允许值",255);
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,datasetId)!=1)
+      throw new NoSuchElementException("数据集不存在");
+    Integer valid=db.queryForObject(
+      "SELECT COUNT(*) FROM insight_dataset_field WHERE id=? AND dataset_id=? AND logical_type='STRING'",
+      Integer.class,fieldId,datasetId);
+    if(valid==null||valid!=1)throw new IllegalArgumentException("行限制必须选择当前数据集的原始文本字段");
+    db.update("DELETE FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",id,datasetId);
+    db.update("INSERT INTO insight_reader_row_policy(user_id,dataset_id,field_id,allowed_value) "+
+      "VALUES(?,?,?,?)",id,datasetId,fieldId,allowedValue);
+    return Map.of("datasetId",datasetId,"fieldId",fieldId,"allowedValue",allowedValue);
+  }
+
+  @DeleteMapping("/users/{id}/row-policies/{datasetId}")
+  Map<String,Object> deleteRowPolicy(@PathVariable String id,@PathVariable String datasetId){
+    requireUser(id);
+    db.update("DELETE FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",id,datasetId);
+    return Map.of("ok",true);
+  }
+
+  /** Used only by the reader query gateway after published-report authorization. */
+  List<Map<String,Object>> mandatoryRowFilters(String userId,String datasetId){
+    List<Map<String,Object>> rows=db.queryForList(
+      "SELECT field_id,allowed_value FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",
+      userId,datasetId);
+    if(rows.isEmpty())return List.of();
+    if(rows.size()!=1)throw new IllegalStateException("行级权限配置异常");
+    return List.of(Map.of("fieldId",rows.get(0).get("field_id"),
+       "op","eq","value",rows.get(0).get("allowed_value")));
   }
 
   @GetMapping("/users/{id}/grants")
