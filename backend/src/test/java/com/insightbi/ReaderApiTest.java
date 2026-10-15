@@ -300,4 +300,85 @@ class ReaderApiTest {
     assertTrue(reader.catalog(session).isEmpty());
     assertThrows(NoSuchElementException.class,()->reader.report(dashboard,session));
   }
+
+  @Test void columnDenialsHidePublishedReportsAndBlockRawAggregateAndCalculatedLeaks()throws Exception{
+    String userId=user();
+    governance.setPassword(userId,Map.of("password","complex-password-of-reader-1"));
+    governance.setActivation(userId,Map.of("enabled",true));
+    String ds="protected-data";
+    db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json) VALUES(?,?,?,?,?)",
+      ds,"部门经营","unused","SELECT city,revenue,salary FROM sales",
+      store.json(List.of(Map.of("name","city","type","VARCHAR"),
+        Map.of("name","revenue","type","DECIMAL"),
+        Map.of("name","salary","type","DECIMAL"))));
+    var fields=new FieldCatalog(store,db).fields(ds);
+    String city=fields.stream().filter(x->x.sourceColumn().equals("city"))
+      .findFirst().orElseThrow().id();
+    String revenue=fields.stream().filter(x->x.sourceColumn().equals("revenue"))
+      .findFirst().orElseThrow().id();
+    String salary=fields.stream().filter(x->x.sourceColumn().equals("salary"))
+      .findFirst().orElseThrow().id();
+    String computed="computed-sensitive";
+    db.update("INSERT INTO insight_calculated_field(id,dataset_id,name,expression,phase,output_type) VALUES(?,?,?,?,?,?)",
+      computed,ds,"薪资派生",salary,"ROW","DECIMAL");
+
+    var safeCfg=Map.of("dimensions",List.of(Map.of("fieldId",city)),
+      "measures",List.of(Map.of("id","sum_revenue","fieldId",revenue,"aggregate","SUM")),
+      "filters",Map.of("pre",List.of(),"post",List.of()),"limit",40);
+    var deniedCfg=Map.of("dimensions",List.of(Map.of("fieldId",city)),
+      "measures",List.of(Map.of("id","sum_salary","fieldId",salary,"aggregate","SUM")),
+      "filters",Map.of("pre",List.of(),"post",List.of()),"limit",40);
+    var computedCfg=Map.of("dimensions",List.of(Map.of("fieldId",city)),
+      "measures",List.of(Map.of("id","sum_computed","fieldId",computed,"aggregate","SUM")),
+      "filters",Map.of("pre",List.of(),"post",List.of()),"limit",40);
+
+    String safe=(String)admin.create(Map.of("name","经营指标","kind","analysis","mode","grid")).get("id");
+    String denied=(String)admin.create(Map.of("name","薪资数据","kind","analysis","mode","grid")).get("id");
+    String calc=(String)admin.create(Map.of("name","薪资衍生","kind","analysis","mode","grid")).get("id");
+    String processed=(String)admin.create(Map.of("name","加工分析","kind","analysis","mode","grid")).get("id");
+    java.util.function.BiConsumer<String,Map<String,Object>> release=(id,config)->{
+      Map<String,Object> widget=Map.of("id","w1","title","敏感字段测试",
+        "datasetId",ds,"type","bar","analysisV2",config);
+      db.update("UPDATE insight_dashboard SET status='published',published_json=? WHERE id=?",
+        store.json(Map.of("mode","grid","widgets",List.of(widget))),id);
+      governance.grantRead(userId,Map.of("dashboardId",id));
+    };
+    release.accept(safe,safeCfg);
+    release.accept(denied,deniedCfg);
+    release.accept(calc,computedCfg);
+    var pipelineCfg=new HashMap<String,Object>(safeCfg);
+    pipelineCfg.put("usePipeline",true);
+    pipelineCfg.put("pipelineRevision",1);
+    release.accept(processed,pipelineCfg);
+    HttpSession session=login("analyst01","complex-password-of-reader-1").getSession(false);
+    assertEquals(4,reader.catalog(session).size());
+
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setDeniedColumns(userId,ds,Map.of("fieldIds",List.of("unknown"))));
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setDeniedColumns(userId,ds,Map.of("fieldIds",List.of(salary,salary))));
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setDeniedColumns(userId,ds,Map.of("fieldIds",List.of(salary),"admin",true)));
+    governance.setDeniedColumns(userId,ds,Map.of("fieldIds",List.of(salary)));
+    assertEquals(1,governance.deniedColumns(userId).size());
+    assertEquals(List.of(safe),reader.catalog(session).stream().map(v->v.get("id")).toList());
+    assertEquals("经营指标",reader.report(safe,session).get("name"));
+    reader.query(safe,"w1",Map.of(),session);
+    assertEquals(ds,analysis.received.get("datasetId"));
+    for(String forbidden:List.of(denied,calc,processed)){
+      assertThrows(NoSuchElementException.class,()->reader.report(forbidden,session));
+      assertThrows(NoSuchElementException.class,()->
+        reader.query(forbidden,"w1",Map.of(),session));
+    }
+    // Revoking the denial restores access without rewriting published content.
+    governance.setDeniedColumns(userId,ds,Map.of("fieldIds",List.of()));
+    assertEquals(4,reader.catalog(session).size());
+    reader.query(denied,"w1",Map.of(),session);
+    governance.setDeniedColumns(userId,ds,Map.of("fieldIds",List.of(revenue)));
+    assertThrows(NoSuchElementException.class,()->reader.report(safe,session));
+    assertTrue(reader.catalog(session).stream().noneMatch(v->safe.equals(v.get("id"))));
+    governance.deleteUser(userId);
+    assertEquals(0,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_reader_column_deny WHERE user_id=?",Integer.class,userId));
+  }
 }
