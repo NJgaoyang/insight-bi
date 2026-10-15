@@ -277,6 +277,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - Chromium 模拟 REST 的真实浏览器用例验证发布页默认隐藏“城市”、临时显示、刷新后恢复已保存隐藏状态，以及 CSV 导出表头仍只包含可见列：[38669546022](https://github.com/NJgaoyang/insight-bi/actions/runs/38669546022) **SUCCESS**，包含前端构建和原有发布页兼容测试。
 - 尚未验证真实 StarRocks、生产部署、跨用户权限与生产备份恢复。P2-01 仅完成此批列配置保存和发布展示闭环，不代表整个 P2-01、P2-02 或 P3 完成。
 
+## P2-02 第一批：发布操作审计基础（2026-10-15）
+
+- 新增独立 `insight_publication_audit` 元数据表，存储报表 ID、事件、操作者、版本号与时间，不存业务查询结果、账号密码或数据源凭据。仍沿用现有 H2/MySQL 初始化方案，不改旧主题/数据集结构。
+- 发布 `PUBLISH`、撤销发布 `UNPUBLISH`、历史版本恢复 `RESTORE` 在各业务操作成功后写入审计表；发布和恢复与审计写入处于同一个 Spring 事务，撤销发布改用受控事务。对未发布草稿重复撤销不生成假事件。
+- 新增受当前单管理员会话和 CSRF 基础机制保护的 `GET /api/dashboards/{id}/publication-audit` 只读接口，仅返回指定已有报表最多 100 条事件元数据；分析主题编辑页加入“发布记录”弹窗。
+- H2 定向 [38669871212](https://github.com/NJgaoyang/insight-bi/actions/runs/38669871212) **PASS**，覆盖成功发布、撤销发布、版本恢复、失败恢复无审计记录、无操作不重复及不同资源 ID 隔离；前端构建 [38669943290](https://github.com/NJgaoyang/insight-bi/actions/runs/38669943290) **PASS**，Chromium 模拟 REST 浏览器验收 [38670019914](https://github.com/NJgaoyang/insight-bi/actions/runs/38670019914) **PASS**，覆盖“发布记录”操作与表格展示。
+- **这是 P2-02 的首个基础审计切片，不是完整权限系统**。当前登录仍是单管理员，操作者固定记录 `admin`；未实现用户/部门/角色、资源和行列权限、目录共享规则、发布审批工作流、删除审计、日志留存/脱敏策略以及多用户并发治理。未执行真实 MySQL 迁移、StarRocks 对账、生产部署或全量回归。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
