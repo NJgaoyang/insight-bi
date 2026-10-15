@@ -87,7 +87,7 @@ public class SourceRecoveryGuard {
   public void clear(String sourceId){if(sourceId!=null)entries.remove(sourceId);}
 
   private Entry entry(String id){
-    if(id==null||id.isBlank()||id.length()>128)throw new IllegalArgumentException("数据源标识无效");
+    if(id==null||!id.matches("[A-Za-z0-9_-]{1,128}"))throw new IllegalArgumentException("数据源标识无效");
     Entry found=entries.get(id);
     if(found!=null)return found;
     if(entries.size()>=MAX_TRACKED)throw new Unavailable();
