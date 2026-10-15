@@ -43,6 +43,9 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_reader_row_policy_value (user_id VARCHAR(36) NOT NULL, dataset_id VARCHAR(36) NOT NULL, allowed_value VARCHAR(255) NOT NULL, PRIMARY KEY(user_id,dataset_id,allowed_value))");
   // P2-02: optional department tree for disabled, provisioned users only.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_department (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+  // Only published analysis read grants; never confers dataset, editor, or admin access.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_department_dashboard_grant (department_id VARCHAR(36) NOT NULL, dashboard_id VARCHAR(36) NOT NULL, permission VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(department_id,dashboard_id,permission))");
+
   if(!columnExists("insight_governance_user","department_id"))
     jdbc.execute("ALTER TABLE insight_governance_user ADD COLUMN department_id VARCHAR(36)");
   // Optional, per-user PBKDF2 credential for the isolated reader login.
