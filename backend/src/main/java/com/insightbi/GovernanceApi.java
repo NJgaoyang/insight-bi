@@ -189,7 +189,7 @@ class GovernanceApi {
     requireUser(id);
     String password=ReaderPassword.hash(
       body.get("password") instanceof String value?value:null);
-    db.update("UPDATE insight_governance_user SET password_hash=?,enabled=FALSE WHERE id=?",
+    db.update("UPDATE insight_governance_user SET password_hash=?,enabled=FALSE,auth_version=auth_version+1 WHERE id=?",
       password,id);
     // Password reset revokes the account until the administrator re-enables it.
     return Map.of("id",id,"enabled",false,"passwordConfigured",true);
@@ -205,7 +205,7 @@ class GovernanceApi {
         "SELECT COUNT(*) FROM insight_governance_user WHERE id=? AND password_hash IS NOT NULL AND role IN ('VIEWER','EDITOR')",
         Integer.class,id)!=1)
       throw new IllegalStateException("启用账号前必须设置密码和有效角色");
-    db.update("UPDATE insight_governance_user SET enabled=? WHERE id=?",enabled,id);
+    db.update("UPDATE insight_governance_user SET enabled=?,auth_version=auth_version+1 WHERE id=?",enabled,id);
     return Map.of("id",id,"enabled",enabled);
   }
 
