@@ -272,6 +272,14 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.ok(requests.slice(mark).includes('POST /api/reader/dashboards/published-analysis/widgets/w1/query'))
   assert.ok(!requests.slice(mark).includes('POST /api/analysis/v2/query'))
   assert.ok(!requests.slice(mark).includes('GET /api/datasets'))
+  const beforeReload=requests.length
+  await page.reload({waitUntil:'domcontentloaded'})
+  await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').waitFor()
+  assert.ok(requests.slice(beforeReload).includes('GET /api/reader/me'),
+    'reader session must survive reload through the reader-only identity API')
+  assert.ok(requests.slice(beforeReload).includes(
+    'POST /api/reader/dashboards/published-analysis/widgets/w1/query'))
+  assert.ok(!requests.slice(beforeReload).includes('GET /api/datasets'))
   assert.deepEqual(errors,[])
   console.log('PASS P1 published routes: multi-view V2 readonly and original legacy Designer readonly')
  }finally{await browser.close()}
