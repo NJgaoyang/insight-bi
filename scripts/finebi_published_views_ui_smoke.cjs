@@ -11,6 +11,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const errors=[],requests=[]
   const provisioned=[],preconfiguredGrants=[]
   const departments=[]
+  let sessionMode='admin'
   page.on('pageerror',error=>errors.push(error.message))
   const widget=id=>({id,title:'指标'+id,type:'bar',datasetId:id==='w1'?'ds1':'',
     analysisV2:{dimensions:id==='w1'?[{fieldId:'city'}]:[],measures:id==='w1'?[{id:'total',fieldId:'revenue',aggregate:'SUM'}]:[],filters:{pre:[],post:[]},sort:[],limit:200},
@@ -27,7 +28,33 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
    requests.push(method+' '+path)
    const send=(value,status=200)=>route.fulfill({status,contentType:'application/json',
      body:JSON.stringify(value)})
-   if(path==='/api/me')return send({user:'admin',csrf:'csrf'})
+   if(path==='/api/me')return sessionMode==='admin'
+    ?send({user:'admin',csrf:'csrf'}):send({error:'Unauthorized'},401)
+   if(path==='/api/logout'&&method==='POST'){sessionMode='none';return send({ok:true})}
+   if(path==='/api/reader/login'&&method==='POST'){
+    assert.equal(req.postDataJSON().username,'analyst01')
+    assert.equal(req.postDataJSON().password,'the-long-reader-password')
+    sessionMode='reader'
+    return send({user:'analyst01',role:'VIEWER',csrf:'reader-csrf'})
+   }
+   if(path==='/api/reader/me'&&method==='GET')
+    return sessionMode==='reader'?send({user:'analyst01',role:'VIEWER',csrf:'reader-csrf'}):send({error:'Unauthorized'},401)
+   if(path==='/api/reader/logout'&&method==='POST'){
+    assert.equal(req.headers()['x-csrf-token'],'reader-csrf')
+    sessionMode='none';return send({ok:true})
+   }
+   if(path==='/api/reader/catalog'&&method==='GET')
+    return send([{id:'published-analysis',name:'经营分析',kind:'analysis',status:'published'}])
+   if(path==='/api/reader/dashboards/published-analysis'&&method==='GET')
+    return send({...analysis,content:{...analysis.content,widgets:[widget('w1')],
+     dashboards:[{id:'all',name:'整体经营',widgetIds:['w1']}]}})
+   if(path==='/api/reader/dashboards/published-analysis/widgets/w1/query'&&method==='POST'){
+    assert.deepEqual(req.postDataJSON(),{})
+    assert.equal(req.headers()['x-csrf-token'],'reader-csrf')
+    return send({columns:[{id:'city',name:'d1',kind:'dimension',label:'城市'},
+     {id:'total',name:'total',kind:'measure',label:'收入'}],
+     rows:[{d1:'北京',total:120},{d1:'上海',total:80}],executionMs:3,truncated:false})
+   }
    if(method==='GET'&&path==='/api/connections')return send([])
    if(method==='GET'&&path==='/api/folders')return send([])
    if(method==='GET'&&path==='/api/data-folders')return send([])
@@ -53,6 +80,18 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
      assert.equal(body.role,'VIEWER')
      provisioned.push({id:'u1',username:body.username,display_name:body.displayName,role:body.role,enabled:false})
      return send({id:'u1',username:body.username,role:body.role,enabled:false})
+   }
+   if(method==='PUT'&&path==='/api/governance/users/u1/password'){
+     assert.equal(req.headers()['x-csrf-token'],'csrf')
+     assert.equal(req.postDataJSON().password,'the-long-reader-password')
+     provisioned[0].enabled=false;provisioned[0].password_configured=true
+     return send({id:'u1',enabled:false,passwordConfigured:true})
+   }
+   if(method==='PUT'&&path==='/api/governance/users/u1/activation'){
+     assert.equal(req.headers()['x-csrf-token'],'csrf')
+     assert.equal(req.postDataJSON().enabled,true)
+     provisioned[0].enabled=true
+     return send({id:'u1',enabled:true})
    }
    if(method==='GET'&&path==='/api/governance/users/u1/grants')return send(preconfiguredGrants)
    if(method==='POST'&&path==='/api/governance/users/u1/grants'){
@@ -204,13 +243,35 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(provisioned[0].department_id,'dept1')
   assert.equal(provisioned[0].enabled,false)
   assert.equal(preconfiguredGrants.length,0)
-  await page.getByRole('button',{name:'预配置授权'}).click()
+  await page.getByRole('button',{name:'授权报表'}).click()
   const accessDialog=page.locator('.el-dialog').filter({hasText:'预配置报表授权'})
   await accessDialog.locator('.el-select').click()
   await page.locator('.el-select-dropdown__item:visible').filter({hasText:'经营分析'}).first().click()
   await accessDialog.getByRole('button',{name:'添加'}).click()
   await accessDialog.getByText('只读（预配置）').waitFor()
   assert.equal(preconfiguredGrants.length,1)
+  // Explicitly configure a password, activate, sign in and run V2 only via reader API.
+  await accessDialog.getByRole('button',{name:'取消'}).count().catch(()=>0)
+  await page.keyboard.press('Escape')
+  const editableUser=page.locator('tbody tr').filter({hasText:'analyst01'})
+  await editableUser.getByRole('button',{name:'设置密码'}).click()
+  const credentialDialog=page.locator('.el-dialog').filter({hasText:'设置读者密码'})
+  await credentialDialog.getByPlaceholder('输入读者的新密码').fill('the-long-reader-password')
+  await credentialDialog.getByRole('button',{name:'保存密码'}).click()
+  await page.waitForFunction(()=>document.querySelector('button')!==null)
+  await editableUser.getByRole('button',{name:'启用',exact:true}).click()
+  assert.equal(provisioned[0].enabled,true)
+  await page.locator('button.signout').click()
+  await page.locator('.login-panel input').first().fill('analyst01')
+  await page.locator('.login-panel input').nth(1).fill('the-long-reader-password')
+  await page.getByRole('button',{name:/登录工作台/}).click()
+  await page.getByText('已授权分析').waitFor()
+  const mark=requests.length
+  await page.getByRole('button',{name:'查看分析'}).click()
+  await page.locator('.analysis-dashboard-card[data-widget-id="w1"] canvas').waitFor()
+  assert.ok(requests.slice(mark).includes('POST /api/reader/dashboards/published-analysis/widgets/w1/query'))
+  assert.ok(!requests.slice(mark).includes('POST /api/analysis/v2/query'))
+  assert.ok(!requests.slice(mark).includes('GET /api/datasets'))
   assert.deepEqual(errors,[])
   console.log('PASS P1 published routes: multi-view V2 readonly and original legacy Designer readonly')
  }finally{await browser.close()}
