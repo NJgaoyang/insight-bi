@@ -93,9 +93,15 @@ class ReaderApiTest {
     governance.setActivation(id,Map.of("enabled",false));
     assertFalse(permitted(session,"GET","/api/reader/catalog",null),"disable revokes active sessions");
     governance.setActivation(id,Map.of("enabled",true));
-    assertTrue(permitted(session,"GET","/api/reader/catalog",null));
+    assertFalse(permitted(session,"GET","/api/reader/catalog",null),
+      "re-activation must not revalidate a prior session");
+    MockHttpServletRequest newLogin=login("analyst01","complex-password-of-reader-1");
+    HttpSession newerSession=newLogin.getSession(false);
+    assertTrue(permitted(newerSession,"GET","/api/reader/catalog",null));
     governance.setPassword(id,Map.of("password","new-complex-password-for-reader-1"));
-    assertFalse(permitted(session,"GET","/api/reader/catalog",null),"reset revokes sessions");
+    assertFalse(permitted(session,"GET","/api/reader/catalog",null),"reset revokes old sessions");
+    assertFalse(permitted(newerSession,"GET","/api/reader/catalog",null),
+      "password reset revokes the latest login too");
   }
 
   @Test void readerGetsOnlyPublishedAuthorizedReportAndPinnedWidgetQuery()throws Exception{
