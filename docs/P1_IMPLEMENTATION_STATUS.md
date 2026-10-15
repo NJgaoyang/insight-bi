@@ -442,7 +442,7 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 
 - 依据剩余业务功能清单，暂停重复扩充 P3 测试，转入分析产品主线。针对现有 `AnalysisSubject.vue` 分析主题 + 共享 `widgets[]` + 多 `dashboardViews[]` 模型补真实可交互画布：仅通过拖动手柄重新排列**当前视图**组件；直接选中并进入该组件已有的数据/样式编辑工作台；“复制视图”仅复制可独立调整的布局与组件引用列表，不复制数据集、图表查询或编辑器状态。保留原有按钮排序和宽高调整，旧版 `Designer.vue` 报表路径不强制迁移，发布快照结构不改。
 - `frontend/src/analysis/dashboardLayout.ts` 新增视图局部排序、独立视图副本纯函数，拒绝错误 ID 和无效拖拽；跳转/布局筛去悬空引用。右侧组件编辑始终使用同一共享组件对象。样式以紧凑拖动手柄、选中边框及拖动状态呈现。
-- 新增 Node 22 纯逻辑测试 `scripts/analysis_workspace_layout.test.mjs`、Chromium 浏览器测试 `scripts/analysis_workspace_browser_smoke.cjs`、独立相关文件触发的 `Analysis Workspace Scoped` 工作流；前端 `vue-tsc` / Vite 使用原改动范围 CI。**Node 布局契约 CI [38694698310](https://github.com/NJgaoyang/insight-bi/actions/runs/38694698310) 已 SUCCESS，前端构建 [38694698315](https://github.com/NJgaoyang/insight-bi/actions/runs/38694698315) 已 SUCCESS。浏览器专项以 [38694984079](https://github.com/NJgaoyang/insight-bi/actions/runs/38694984079) 实际最终结论为准**。
+- 新增 Node 22 纯逻辑测试 `scripts/analysis_workspace_layout.test.mjs`、Chromium 浏览器测试 `scripts/analysis_workspace_browser_smoke.cjs`、独立相关文件触发的 `Analysis Workspace Scoped` 工作流；前端 `vue-tsc` / Vite 使用原改动范围 CI。**Node 布局契约及 Chromium 浏览器专项 [38695278698](https://github.com/NJgaoyang/insight-bi/actions/runs/38695278698) 均 SUCCESS**（日志：`PASS unified analysis workspace: drag/copy/edit/save/reload/published layout`）；前端 TypeScript/Vite 构建 [38694984121](https://github.com/NJgaoyang/insight-bi/actions/runs/38694984121) SUCCESS。首次浏览器定位器假设了 Element Plus 内部节点，已改为验收实际持久化内容并通过。
 - 交付与仍未合并的历史编辑器能力见 [UNIFIED_ANALYSIS_WORKSPACE_PHASE1.md](UNIFIED_ANALYSIS_WORKSPACE_PHASE1.md)。旧版仪表板结构迁移、跨数据集模型、复杂表格和深度交互尚未完成。本批不运行全量回归、不修改现有数据库、不部署生产。
 
 ## 本轮仅测试受影响模块
