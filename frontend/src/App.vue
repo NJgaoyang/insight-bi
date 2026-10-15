@@ -386,7 +386,7 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
       <button :class="{selected:systemTab==='connections'}" @click="systemTab='connections'">数据连接</button>
       <button :class="{selected:systemTab==='governance'}" @click="systemTab='governance'">权限治理</button>
      </div>
-     <GovernanceAdmin v-if="systemTab==='governance'" :dashboards="dashboards" :datasets="datasets"/>
+     <GovernanceAdmin v-if="systemTab==='governance'" :dashboards="dashboards" :datasets="datasets" :folders="folders"/>
      <template v-else>
      <div v-if="!connections.length" class="empty-panel"><div class="empty-symbol">◫</div><h3>还没有数据连接</h3><p>添加 StarRocks 或 MySQL 连接后，即可发现真实表结构。</p><button class="primary-soft" @click="newConnection">＋ 添加数据连接</button></div>
      <div v-else class="resource-table"><table><thead><tr><th>连接名称</th><th>类型</th><th>主机</th><th>数据库</th><th>操作</th></tr></thead><tbody><tr v-for="c in connections" :key="c.id"><td><b>{{c.name}}</b></td><td><span class="engine-tag">{{c.engine==='starrocks'?'StarRocks':'MySQL'}}</span></td><td>{{c.host}}:{{c.port}}</td><td>{{c.db_name}}</td><td><button @click="editConnection(c)">编辑</button><button class="danger-link" @click="deleteConnection(c)">删除</button></td></tr></tbody></table></div>
