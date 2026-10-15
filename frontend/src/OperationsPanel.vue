@@ -13,6 +13,7 @@ type Status={
  database:{ready:boolean;probeMs:number};
  requests:Metrics;
  analysis:{concurrencyLimit:number;activeQueries:number;waitingQueries:number;rejectedQueries:number};
+ queryExecution?:{completedQueries:number;failedQueries:number;timedOutQueries:number;slowQueries:number;totalExecutionMs:number};
  connectionPool?:{active:number;idle:number;pending:number;total:number}
 }
 type Source={id:string;name:string;state:string;consecutiveFailures:number;retryAfterSeconds:number}
@@ -100,6 +101,20 @@ onMounted(refresh)
      <td>{{data.analysis.waitingQueries}}</td>
      <td>{{data.analysis.rejectedQueries}}</td></tr></tbody>
    </table>
+   <template v-if="data.queryExecution">
+    <div class="fine-list-tabs"><strong>V2 查询耗时与超时</strong></div>
+    <table>
+     <thead><tr><th>完成查询</th><th>失败查询</th><th>超时次数</th><th>慢查询（≥3秒）</th><th>累计执行时长</th></tr></thead>
+     <tbody><tr>
+      <td>{{data.queryExecution.completedQueries}}</td>
+      <td>{{data.queryExecution.failedQueries}}</td>
+      <td>{{data.queryExecution.timedOutQueries}}</td>
+      <td>{{data.queryExecution.slowQueries}}</td>
+      <td>{{data.queryExecution.totalExecutionMs}} ms</td>
+     </tr></tbody>
+    </table>
+    <p class="fine-dialog-tip">V2 数据源 JDBC 查询上限为 15 秒（驱动支持程度依赖数据库）。超时返回 504，不会自动重放查询。统计仅保留在当前进程内，不记录 SQL 或用户。</p>
+   </template>
    <div class="fine-list-tabs"><strong>业务数据源故障隔离</strong></div>
    <p class="fine-dialog-tip">
     连续两次连接类故障后暂停该数据源 30 秒，冷却结束允许一次自动恢复尝试。
