@@ -41,6 +41,8 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_reader_row_policy (user_id VARCHAR(36) NOT NULL, dataset_id VARCHAR(36) NOT NULL, field_id VARCHAR(36) NOT NULL, allowed_value VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,dataset_id))");
   // Additive multi-value table: old allowed_value policy remains a safe fallback.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_reader_row_policy_value (user_id VARCHAR(36) NOT NULL, dataset_id VARCHAR(36) NOT NULL, allowed_value VARCHAR(255) NOT NULL, PRIMARY KEY(user_id,dataset_id,allowed_value))");
+  // Explicit per-reader deny list; never grants or broadens access.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_reader_column_deny (user_id VARCHAR(36) NOT NULL, dataset_id VARCHAR(36) NOT NULL, field_id VARCHAR(36) NOT NULL, PRIMARY KEY(user_id,dataset_id,field_id))");
   // P2-02: optional department tree for disabled, provisioned users only.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_department (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   // Only published analysis read grants; never confers dataset, editor, or admin access.
