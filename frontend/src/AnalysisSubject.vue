@@ -642,7 +642,7 @@ onMounted(load)
         <label>明细表默认隐藏列</label>
         <el-select multiple collapse-tags clearable placeholder="全部显示"
          :model-value="chosen.analysisV2.tableHiddenColumnIds||[]"
-         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.tableHiddenColumnIds=Array.isArray(v)?v.map(String):[];mark()}}">
+         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.tableHiddenColumnIds=Array.isArray(v)?v.map(String).slice(0,Math.max(0,chosen.analysisV2.dimensions.length+chosen.analysisV2.measures.length-1)):[];mark()}}">
          <el-option v-for="d in chosen.analysisV2.dimensions" :key="'dim-'+d.fieldId"
           :label="v2Fields.find(f=>f.id===d.fieldId)?.name||d.fieldId" :value="d.fieldId"/>
          <el-option v-for="m in chosen.analysisV2.measures" :key="'measure-'+m.id" :label="m.alias||m.id" :value="m.id"/>
