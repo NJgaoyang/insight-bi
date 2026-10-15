@@ -214,6 +214,7 @@ class GovernanceApi {
   Map<String,Object> deleteUser(@PathVariable String id){
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE id=?",Integer.class,id)!=1)
       throw new NoSuchElementException("用户不存在");
+    db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=?",id);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=?",id);
     db.update("DELETE FROM insight_dashboard_grant WHERE user_id=?",id);
     db.update("DELETE FROM insight_governance_user WHERE id=?",id);
@@ -225,47 +226,95 @@ class GovernanceApi {
   @GetMapping("/users/{id}/row-policies")
   List<Map<String,Object>> rowPolicies(@PathVariable String id){
     requireUser(id);
-    return db.queryForList("SELECT dataset_id,field_id,allowed_value FROM insight_reader_row_policy "+
+    List<Map<String,Object>> rows=db.queryForList(
+      "SELECT dataset_id,field_id,allowed_value FROM insight_reader_row_policy "+
       "WHERE user_id=? ORDER BY dataset_id",id);
+    for(Map<String,Object> row:rows){
+      String dataset=String.valueOf(row.get("dataset_id"));
+      List<String> values=storedAllowedValues(id,dataset,String.valueOf(row.get("allowed_value")));
+      row.put("values",values);
+    }
+    return rows;
   }
 
+  // An existing exact-match rule is interpreted as a singleton; new requests
+  // can opt into up to 20 distinct values without replacing legacy records.
   @PutMapping("/users/{id}/row-policies/{datasetId}")
   @Transactional
   Map<String,Object> setRowPolicy(@PathVariable String id,@PathVariable String datasetId,
                                   @RequestBody Map<String,Object> body){
     requireUser(id);
-    if(body.size()!=2||!body.containsKey("fieldId")||!body.containsKey("allowedValue"))
-      throw new IllegalArgumentException("行级规则只允许字段 ID 和匹配值");
+    if(!Set.of("fieldId","allowedValue","allowedValues").containsAll(body.keySet())||
+       !body.containsKey("fieldId")||
+       body.containsKey("allowedValue")==body.containsKey("allowedValues"))
+      throw new IllegalArgumentException("行级规则仅允许一个字段及单值或多值配置");
     String fieldId=text(body.get("fieldId"),"字段 ID",36);
-    String allowedValue=text(body.get("allowedValue"),"允许值",255);
+    List<String> allowedValues=new ArrayList<>();
+    if(body.containsKey("allowedValue")){
+      allowedValues.add(text(body.get("allowedValue"),"允许值",255));
+    }else{
+      if(!(body.get("allowedValues") instanceof List<?> requested)||
+         requested.isEmpty()||requested.size()>20)
+        throw new IllegalArgumentException("允许值数量须为 1 至 20 个");
+      Set<String> seen=new HashSet<>();
+      for(Object raw:requested){
+        String value=text(raw,"允许值",255);
+        if(!seen.add(value))throw new IllegalArgumentException("允许值不能重复");
+        allowedValues.add(value);
+      }
+    }
     if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",Integer.class,datasetId)!=1)
       throw new NoSuchElementException("数据集不存在");
     Integer valid=db.queryForObject(
       "SELECT COUNT(*) FROM insight_dataset_field WHERE id=? AND dataset_id=? AND logical_type='STRING'",
       Integer.class,fieldId,datasetId);
     if(valid==null||valid!=1)throw new IllegalArgumentException("行限制必须选择当前数据集的原始文本字段");
+    db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=? AND dataset_id=?",id,datasetId);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",id,datasetId);
     db.update("INSERT INTO insight_reader_row_policy(user_id,dataset_id,field_id,allowed_value) "+
-      "VALUES(?,?,?,?)",id,datasetId,fieldId,allowedValue);
-    return Map.of("datasetId",datasetId,"fieldId",fieldId,"allowedValue",allowedValue);
+      "VALUES(?,?,?,?)",id,datasetId,fieldId,allowedValues.get(0));
+    for(String value:allowedValues){
+      db.update("INSERT INTO insight_reader_row_policy_value(user_id,dataset_id,allowed_value) "+
+        "VALUES(?,?,?)",id,datasetId,value);
+    }
+    return Map.of("datasetId",datasetId,"fieldId",fieldId,
+      "allowedValue",allowedValues.get(0),"allowedValues",List.copyOf(allowedValues));
   }
 
   @DeleteMapping("/users/{id}/row-policies/{datasetId}")
+  @Transactional
   Map<String,Object> deleteRowPolicy(@PathVariable String id,@PathVariable String datasetId){
     requireUser(id);
+    db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=? AND dataset_id=?",id,datasetId);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",id,datasetId);
     return Map.of("ok",true);
   }
 
-  /** Used only by the reader query gateway after published-report authorization. */
+  private List<String> storedAllowedValues(String userId,String datasetId,String legacyValue){
+    List<String> values=db.queryForList(
+      "SELECT allowed_value FROM insight_reader_row_policy_value "+
+      "WHERE user_id=? AND dataset_id=? ORDER BY allowed_value LIMIT 21",
+      String.class,userId,datasetId);
+    if(values.isEmpty())return List.of(legacyValue);
+    if(values.size()>20||values.stream().anyMatch(v->v==null||v.isBlank()||v.length()>255)||
+       !values.contains(legacyValue))
+      throw new IllegalStateException("行级权限配置异常");
+    return List.copyOf(values);
+  }
+
+  /** Reader-only server-managed predicate, never constructed from browser JSON. */
   List<Map<String,Object>> mandatoryRowFilters(String userId,String datasetId){
     List<Map<String,Object>> rows=db.queryForList(
       "SELECT field_id,allowed_value FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",
       userId,datasetId);
     if(rows.isEmpty())return List.of();
     if(rows.size()!=1)throw new IllegalStateException("行级权限配置异常");
-    return List.of(Map.of("fieldId",rows.get(0).get("field_id"),
-       "op","eq","value",rows.get(0).get("allowed_value")));
+    List<String> values=storedAllowedValues(userId,datasetId,
+      String.valueOf(rows.get(0).get("allowed_value")));
+    String fieldId=String.valueOf(rows.get(0).get("field_id"));
+    if(values.size()==1)
+      return List.of(Map.of("fieldId",fieldId,"op","eq","value",values.get(0)));
+    return List.of(Map.of("fieldId",fieldId,"op","in","values",values));
   }
 
   @GetMapping("/users/{id}/grants")
