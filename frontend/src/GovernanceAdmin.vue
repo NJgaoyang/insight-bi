@@ -4,7 +4,7 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,remove} from './api'
 
 const props=defineProps<{dashboards:{id:string;name:string;status:string}[]}>()
-type User={id:string;username:string;display_name:string;role:'VIEWER'|'EDITOR';enabled:boolean;department_id?:string|null}
+type User={id:string;username:string;display_name:string;role:'VIEWER'|'EDITOR';enabled:boolean;department_id?:string|null;password_configured?:boolean}
 type Department={id:string;name:string;parent_id:string|null}
 type Grant={dashboard_id:string;permission:string}
 const departments=ref<Department[]>([])
@@ -24,6 +24,29 @@ const departmentRows=computed(()=>{
 })
 const users=ref<User[]>([])
 const busy=ref(false),createOpen=ref(false),grantsOpen=ref(false)
+const credentialOpen=ref(false),credentialUser=ref<User|null>(null),credentialPassword=ref('')
+function openPassword(user:User){credentialUser.value=user;credentialPassword.value='';credentialOpen.value=true}
+async function savePassword(){
+ if(!credentialUser.value)return
+ busy.value=true
+ try{
+  await put('/governance/users/'+encodeURIComponent(credentialUser.value.id)+'/password',
+    {password:credentialPassword.value})
+  credentialPassword.value='';credentialOpen.value=false;await refresh()
+  ElMessage.success('密码已设置；账号仍需手动启用，已登录会话将失效')
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'设置密码失败')}
+ finally{busy.value=false}
+}
+async function toggleActivation(user:User){
+ busy.value=true
+ try{
+  await put('/governance/users/'+encodeURIComponent(user.id)+'/activation',
+    {enabled:!user.enabled})
+  await refresh()
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'启用状态更新失败');await refresh()}
+ finally{busy.value=false}
+}
+
 const newUser=ref({username:'',displayName:'',role:'VIEWER' as 'VIEWER'|'EDITOR'})
 const selected=ref<User|null>(null),grants=ref<Grant[]>([]),newReport=ref('')
 const published=()=>props.dashboards.filter(d=>d.status==='published')
@@ -144,7 +167,7 @@ onMounted(refresh)
    <span class="fine-list-count">{{users.length}} 个预配置账号</span>
    <button class="primary-soft" @click="addUser">＋ 预配置用户</button>
   </div>
-  <p class="fine-dialog-tip">安全预配置阶段：普通账号尚不能登录，也不能读取数据。启用前必须完成服务端权限控制和登录验收。</p>
+  <p class="fine-dialog-tip">普通用户只能访问已授权的已发布 V2 分析主题；管理员数据源、数据集和编辑接口始终不对普通用户开放。</p>
   <table>
    <thead><tr><th>账号</th><th>显示名称</th><th>归属部门</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
    <tbody>
@@ -160,8 +183,12 @@ onMounted(refresh)
       @update:model-value="v=>changeRole(u,v as 'VIEWER'|'EDITOR')">
       <el-option label="查看者" value="VIEWER"/><el-option label="编辑者" value="EDITOR"/>
      </el-select></td>
-     <td>未启用</td>
-     <td><button @click="openGrants(u)">预配置授权</button>
+     <td>{{u.enabled?'已启用':'未启用'}}</td>
+     <td><button @click="openPassword(u)">设置密码</button>
+      <button :disabled="busy||(!u.enabled&&!u.password_configured)" @click="toggleActivation(u)">
+       {{u.enabled?'禁用':'启用'}}
+      </button>
+      <button @click="openGrants(u)">授权报表</button>
       <button class="danger-link" @click="deleteUser(u)">删除</button></td>
     </tr>
     <tr v-if="!users.length"><td colspan="6">尚无预配置账号</td></tr>
@@ -197,6 +224,17 @@ onMounted(refresh)
   </div>
   <template #footer><button @click="createOpen=false">取消</button>
    <button class="primary-button" :disabled="busy" @click="saveUser">创建预配置账号</button></template>
+ </el-dialog>
+ <el-dialog v-model="credentialOpen" :title="'设置读者密码 · '+(credentialUser?.username||'')" width="460px">
+  <div class="modal-fields">
+   <label>新密码（12～128 个字符）</label>
+   <el-input v-model="credentialPassword" type="password" show-password
+    autocomplete="new-password" placeholder="输入读者的新密码" maxlength="128"/>
+   <small>密码只保存 PBKDF2 哈希；设置或重置密码后账号会被禁用，需管理员再次启用。</small>
+  </div>
+  <template #footer><button @click="credentialOpen=false">取消</button>
+   <button class="primary-button" :disabled="busy||credentialPassword.length<12"
+    @click="savePassword">保存密码</button></template>
  </el-dialog>
  <el-dialog v-model="grantsOpen" :title="'预配置报表授权 · '+(selected?.username||'')" width="540px">
   <p class="fine-dialog-tip">仅允许预配置已发布报表的读取权限；此设置不会立即开放普通用户访问。</p>
