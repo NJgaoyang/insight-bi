@@ -201,3 +201,15 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 基于第一批交叉表实现，现已新增 `PivotRollup` 服务端分组重算：依旧经 V2 安全 Planner + 已发布读者的强制明细过滤，先执行原分组查询，再在同一个只读连接及限流许可内执行独立行合计、列合计、总计 SQL，正确求 AVG 和 COUNT DISTINCT，而非将分组平均值/去重数相加。用于合计的 DECIMAL 返回字符串以避免 JavaScript Number 精度损失。截断、后置过滤、窗口计算、行列组不一致均禁用合计；旧前端/旧 V2 查询仍保持原接口。未创建任何新元数据表，也未修改 V1 Designer。
 
 定向 H2/JUnit 覆盖实际 API 和数据库 AVG/去重聚合、注入式读者过滤、出错与截断拒绝；TypeScript、Node 纯逻辑、独立 Chromium 展示/保存/发布/截断场景均属于本批范围。详细测试命令、兼容性、风险与下一批见 [ANALYSIS_PHASE2_02_PIVOT_ROLLUP.md](ANALYSIS_PHASE2_02_PIVOT_ROLLUP.md)。注意 4 次 SQL 非单语句快照一致性，也没有验证生产 StarRocks 的多语句一致性；未部署 18110，也不触碰原始业务表。第三批优先支持层次交叉表与多级小计。
+
+
+## 13. 接手后的执行补充：ANALYSIS-PHASE2-03 第三批三维交叉表与逐列小计（2026-10-15）
+
+在第二批精准 SQL 汇总之上，现支持两个或三个稳定 fieldId 维度的 V2 交叉表。三个维度的次序为「行一级 → 行二级 → 列一级」，后端在分组明细之外逐层计算叶子行合计、列合计、总计、一级行分组合计及「一级行分组 × 列」小计；所有 AVG、COUNT DISTINCT 必须由后端 SQL 重新计算。前端显示父级分组/子级明细以及父级结束的小计行，支持控制是否展示一级行小计，保留保存/撤销/发布快照及多个视图共用组件。
+
+本批仅补足了**受控三维层级交叉表**，不是无限层级、多维列组或完整 FineBI 企业级大表。接口继续是已有 V2 查询/已授权发布读者查询，沿用 4 并发+250ms 等待、JDBC 单条 SQL 15 秒超时和 LIMIT+1 截断。多 SQL 不是跨语句严格一致快照，复杂结果过滤和窗口分析仍拒绝合计。所有测试均在隔离 H2、模拟 REST 和本地静态构建下完成，未启动/重启线上服务。
+
+文件、专项测试命令与下一批待办参见 [ANALYSIS_PHASE2_03_PIVOT_HIERARCHY.md](ANALYSIS_PHASE2_03_PIVOT_HIERARCHY.md)。本批保留第一批和第二批的验收测试，且第三批专项 CI 通过才可标记远端验收成功。
+
+
+定向兼容补充：本批隔离 Chromium 复验旧版已发布 V2/V1 只读视图及读者授权，发现旧脚本 `scripts/finebi_published_views_ui_smoke.cjs` 误用页面第一张表定位部门，已改为严格定位「部门管理」区块；专项测试通过。原有授权后端及页面代码均未因此修改。

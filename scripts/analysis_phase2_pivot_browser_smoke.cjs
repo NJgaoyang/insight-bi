@@ -85,7 +85,7 @@ const grouped=[
     'AVG grand total must never be invented by summing averages')
   const help=page.locator('.analysis-pivot-help')
   await help.waitFor()
-  assert.match(await help.innerText(),/第 1 个维度/)
+  assert.match(await help.innerText(),/第 1 个为行/)
   await page.locator('.analysis-header-actions .analysis-primary').click()
   await page.waitForFunction(()=>document.querySelector('.analysis-save-indicator')?.textContent?.includes('已保存'))
   assert.equal(saves.length,1)

@@ -258,10 +258,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const deptDialog=page.locator('.el-dialog').filter({hasText:'新建部门'})
   await deptDialog.getByPlaceholder('例如：研发部').fill('研发部')
   await deptDialog.getByRole('button',{name:'保存部门'}).click()
-  await page.locator('table').first().getByText('研发部').waitFor()
+  // Target the actual department section; other tables can precede it
+  // when directory and authorization modules are rendered.
+  const departmentSection=page.locator('section.resource-table')
+    .filter({has:page.getByText('部门管理',{exact:true})})
+  await departmentSection.getByText('研发部',{exact:true}).waitFor()
   // Department read grants must be configured independently of direct user grants.
-  const orgRow=page.locator('section.resource-table').first().locator('tbody tr')
-    .filter({hasText:'研发部'})
+  const orgRow=departmentSection.locator('tbody tr').filter({hasText:'研发部'})
   await orgRow.getByRole('button',{name:'报表授权'}).click()
   const departmentGrantDialog=page.locator('.el-dialog').filter({hasText:'部门报表授权'})
   await departmentGrantDialog.locator('.el-select').click()

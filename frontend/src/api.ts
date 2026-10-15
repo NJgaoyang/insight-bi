@@ -33,7 +33,7 @@ export interface AnalysisV2Bindings {
   running?:{ref:string;id?:string;direction?:'asc'|'desc'}
   periodCompare?:{ref:string;mode:'mom'|'yoy';id?:string}
   /** V2 cross-table display only; first dimension is row, second column. */
-  pivot?:{rowOrder:'asc'|'desc';columnOrder:'asc'|'desc';showTotals:boolean}
+  pivot?:{rowOrder:'asc'|'desc';columnOrder:'asc'|'desc';showTotals:boolean;showSubtotals?:boolean}
   tableHiddenColumnIds?:string[]
   sort:{ref:string;direction:'asc'|'desc'}[]
   limit:number
@@ -42,6 +42,6 @@ export type AnalysisWidgetV2 = Widget & {analysisV2?:AnalysisV2Bindings}
 export interface PivotTotalsV2 {
  exact:boolean;reason?:string
  rows?:Record<string,unknown>[];columns?:Record<string,unknown>[]
- grand?:Record<string,unknown>
+ grand?:Record<string,unknown>;parents?:Record<string,unknown>[];parentCells?:Record<string,unknown>[]
 }
 export interface QueryV2Result {pivotTotals?:PivotTotalsV2;rows:Record<string,unknown>[];columns:{id:string;name:string;label:string;type:string;kind:string;additive?:boolean}[];executionMs:number;truncated:boolean;warnings:string[]}

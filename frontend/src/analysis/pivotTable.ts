@@ -1,20 +1,21 @@
 import type {AnalysisV2Bindings, QueryV2Result} from '../api'
 
-export interface PivotAxis {key:string; value:unknown; label:string}
+export interface PivotAxis {key:string; value:unknown; label:string;parentKey?:string;parentLabel?:string;parentValue?:unknown}
 export type PivotMeasure = QueryV2Result['columns'][number]
 export interface PivotModel {
- rows:PivotAxis[]; columns:PivotAxis[]; measures:PivotMeasure[]
+ rows:PivotAxis[]; columns:PivotAxis[]; measures:PivotMeasure[];rowLevels:1|2
  cells:Map<string,unknown>
- rowTotals:Map<string,unknown>; columnTotals:Map<string,unknown>; grandTotals:Map<string,unknown>
+ rowTotals:Map<string,unknown>; columnTotals:Map<string,unknown>; grandTotals:Map<string,unknown>;parentTotals:Map<string,unknown>;parentCells:Map<string,unknown>
  additive:Set<string>; error:string; warning:string
 }
 export const PIVOT_MAX_ROWS=100
 export const PIVOT_MAX_COLUMNS=24
 const collator=new Intl.Collator('zh-CN',{numeric:true,sensitivity:'base'})
-const empty=():PivotModel=>({rows:[],columns:[],measures:[],cells:new Map(),
- rowTotals:new Map(),columnTotals:new Map(),grandTotals:new Map(),
+const empty=():PivotModel=>({rows:[],columns:[],measures:[],rowLevels:1,cells:new Map(),
+ rowTotals:new Map(),columnTotals:new Map(),grandTotals:new Map(),parentTotals:new Map(),parentCells:new Map(),
  additive:new Set(),error:'',warning:''})
-const key=(value:unknown)=>JSON.stringify([value===undefined?null:value])
+const tupleKey=(values:unknown[])=>JSON.stringify(values.map(value=>value===undefined?null:value))
+const key=(value:unknown)=>tupleKey([value])
 const label=(value:unknown)=>value==null?'(空值)':String(value)
 const cellKey=(row:string,column:string,metric:string)=>JSON.stringify([row,column,metric])
 const sumKey=(axis:string,metric:string)=>JSON.stringify([axis,metric])
@@ -29,6 +30,12 @@ export function pivotColumnTotal(model:PivotModel,column:string,metric:string){
 }
 export function pivotGrandTotal(model:PivotModel,metric:string){
  return model.grandTotals.get(metric)??null
+}
+export function pivotParentTotal(model:PivotModel,parentKey:string,metric:string){
+ return model.parentTotals.get(sumKey(parentKey,metric))??null
+}
+export function pivotParentCell(model:PivotModel,parentKey:string,columnKey:string,metric:string){
+ return model.parentCells.get(cellKey(parentKey,columnKey,metric))??null
 }
 // Use decimal strings and BigInt rather than floating-point addition for
 // server-aggregated DECIMAL groups. Refuse unsafe JS numbers and exponents.
@@ -70,29 +77,33 @@ const sortAxes=(values:PivotAxis[],direction:'asc'|'desc')=>values.sort((a,b)=>{
 /** Only pivot already-aggregated, bounded V2 rows; SQL calculation and ACL stay on the server. */
 export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):PivotModel{
  const model=empty()
- if(config.dimensions.length!==2||!config.measures.length){
-  model.error='交叉表需要恰好两个维度（行、列）及至少一个指标'
+ if(![2,3].includes(config.dimensions.length)||!config.measures.length){
+  model.error='交叉表需要二至三个维度（行层级、列）及至少一个指标'
   return model
  }
- const [rowBinding,colBinding]=config.dimensions
- const rowColumn=result.columns.find(c=>c.kind==='dimension'&&c.id===rowBinding.fieldId)
+ model.rowLevels=(config.dimensions.length-1) as 1|2
+ const rowColumns=config.dimensions.slice(0,-1).map(binding=>
+  result.columns.find(c=>c.kind==='dimension'&&c.id===binding.fieldId))
+ const colBinding=config.dimensions[config.dimensions.length-1]
  const colColumn=result.columns.find(c=>c.kind==='dimension'&&c.id===colBinding.fieldId)
  model.measures=config.measures.map(m=>result.columns.find(c=>c.kind==='measure'&&c.id===m.id)).filter((m):m is PivotMeasure=>!!m)
- if(!rowColumn||!colColumn||model.measures.length!==config.measures.length||
+ if(rowColumns.some(c=>!c)||!colColumn||model.measures.length!==config.measures.length||
   new Set(result.columns.map(c=>c.name)).size!==result.columns.length){
   model.error='交叉表字段与查询结果不一致，请检查字段绑定'
   return model
  }
  const rowAxes=new Map<string,PivotAxis>(),colAxes=new Map<string,PivotAxis>()
  for(const record of result.rows){
-  if(!Object.prototype.hasOwnProperty.call(record,rowColumn.name)||
+  if(rowColumns.some(c=>!Object.prototype.hasOwnProperty.call(record,c!.name))||
     !Object.prototype.hasOwnProperty.call(record,colColumn.name)||
     model.measures.some(m=>!Object.prototype.hasOwnProperty.call(record,m.name))){
    model.error='交叉表查询结果缺少必要字段';return model
   }
-  const rv=record[rowColumn.name],cv=record[colColumn.name]
-  const rk=key(rv),ck=key(cv)
-  if(!rowAxes.has(rk))rowAxes.set(rk,{key:rk,value:rv,label:label(rv)})
+  const values=rowColumns.map(c=>record[c!.name])
+  const rv=values[values.length-1],cv=record[colColumn.name]
+  const rk=tupleKey(values),ck=key(cv)
+  if(!rowAxes.has(rk))rowAxes.set(rk,{key:rk,value:rv,label:label(rv),
+   ...(model.rowLevels===2?{parentKey:key(values[0]),parentLabel:label(values[0]),parentValue:values[0]}:{})})
   if(!colAxes.has(ck))colAxes.set(ck,{key:ck,value:cv,label:label(cv)})
   for(const metric of model.measures){
    const k=cellKey(rk,ck,metric.id)
@@ -105,6 +116,18 @@ export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):Pivot
   return model
  }
  model.rows=sortAxes([...rowAxes.values()],config.pivot?.rowOrder??'asc')
+ if(model.rowLevels===2){
+  const direction=config.pivot?.rowOrder??'asc'
+  model.rows.sort((a,b)=>{
+   const compare=(first:unknown,second:unknown)=>{
+    if(first==null)return second==null?0:1
+    if(second==null)return -1
+    const diff=collator.compare(String(first),String(second))
+    return direction==='desc'?-diff:diff
+   }
+   return compare(a.parentValue,b.parentValue)||compare(a.value,b.value)
+  })
+ }
  model.columns=sortAxes([...colAxes.values()],config.pivot?.columnOrder??'asc')
  if(result.truncated){
   model.warning='查询结果已截断；当前仅显示部分分组，合计已禁用'
@@ -128,7 +151,7 @@ export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):Pivot
    const seenRows=new Set<string>(),seenCols=new Set<string>()
    const hasMetrics=(r:Record<string,unknown>)=>model.measures.every(m=>Object.prototype.hasOwnProperty.call(r,m.name))
    for(const r of serverRows){
-    const k=key(r.d1)
+    const k=model.rowLevels===2?tupleKey([r.d1,r.d2]):key(r.d1)
     if(!rowKeys.has(k)||seenRows.has(k)||!hasMetrics(r)){model.warning='行合计结果异常，已隐藏合计';return model}
     seenRows.add(k)
    }
@@ -138,9 +161,41 @@ export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):Pivot
     seenCols.add(k)
    }
    if(!hasMetrics(grand)){model.warning='总计结果异常，已隐藏合计';return model}
+   if(model.rowLevels===2&&config.pivot?.showSubtotals!==false){
+    const parents=totals.parents,parentCells=totals.parentCells
+    const parentKeys=new Set(model.rows.map(row=>row.parentKey!))
+    const validPairs=new Set(model.rows.flatMap(row=>model.columns
+      .filter(col=>model.measures.some(m=>model.cells.has(cellKey(row.key,col.key,m.id))))
+      .map(col=>JSON.stringify([row.parentKey,col.key]))))
+    if(!Array.isArray(parents)||parents.length!==parentKeys.size||
+       !Array.isArray(parentCells)||parentCells.length!==validPairs.size){
+     model.warning='层级小计不完整，已隐藏合计';return model
+    }
+    const seenParents=new Set<string>(),seenPairs=new Set<string>()
+    for(const parent of parents){
+     const k=key(parent.d1)
+     if(!parentKeys.has(k)||seenParents.has(k)||!hasMetrics(parent)){
+      model.warning='层级小计异常，已隐藏合计';return model
+     }
+     seenParents.add(k)
+    }
+    for(const entry of parentCells){
+     const pair=JSON.stringify([key(entry.d1),key(entry.d2)])
+     if(!validPairs.has(pair)||seenPairs.has(pair)||!hasMetrics(entry)){
+      model.warning='层级列小计异常，已隐藏合计';return model
+     }
+     seenPairs.add(pair)
+    }
+    for(const parent of parents)
+     for(const m of model.measures)
+      model.parentTotals.set(sumKey(key(parent.d1),m.id),parent[m.name])
+    for(const entry of parentCells)
+     for(const m of model.measures)
+      model.parentCells.set(cellKey(key(entry.d1),key(entry.d2),m.id),entry[m.name])
+   }
    for(const m of model.measures){
     model.additive.add(m.id) // all metric formulas are recalculated by SQL
-    for(const r of serverRows)model.rowTotals.set(sumKey(key(r.d1),m.id),r[m.name])
+    for(const r of serverRows)model.rowTotals.set(sumKey(model.rowLevels===2?tupleKey([r.d1,r.d2]):key(r.d1),m.id),r[m.name])
     for(const c of serverCols)model.columnTotals.set(sumKey(key(c.d1),m.id),c[m.name])
     model.grandTotals.set(m.id,grand[m.name])
    }
@@ -154,6 +209,16 @@ export function buildPivot(result:QueryV2Result,config:AnalysisV2Bindings):Pivot
    for(const c of model.columns)
     model.columnTotals.set(sumKey(c.key,m.id),total(model.rows.map(r=>pivotCell(model,r.key,c.key,m.id)))??'')
    model.grandTotals.set(m.id,total(model.rows.flatMap(r=>model.columns.map(c=>pivotCell(model,r.key,c.key,m.id))))??'')
+   if(model.rowLevels===2&&config.pivot?.showSubtotals!==false){
+    for(const parentKey of new Set(model.rows.map(row=>row.parentKey!))){
+     const leaves=model.rows.filter(row=>row.parentKey===parentKey)
+     model.parentTotals.set(sumKey(parentKey,m.id),
+      total(leaves.flatMap(row=>model.columns.map(c=>pivotCell(model,row.key,c.key,m.id))))??'')
+     for(const column of model.columns)
+      model.parentCells.set(cellKey(parentKey,column.key,m.id),
+       total(leaves.map(row=>pivotCell(model,row.key,column.key,m.id)))??'')
+    }
+   }
   }
  }
  return model

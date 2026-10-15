@@ -2,7 +2,7 @@
 import {computed,nextTick,onBeforeUnmount,ref,watch} from 'vue'
 import * as echarts from 'echarts'
 import {analysisCsv} from './analysis/exportCsv'
-import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,formatPivotTotal,type PivotAxis} from './analysis/pivotTable'
+import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,pivotParentTotal,pivotParentCell,formatPivotTotal,type PivotAxis} from './analysis/pivotTable'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
 const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null;viewerReportId?:string}>()
@@ -34,6 +34,13 @@ function toggleColumn(id:string){
 
 const pivotModel=computed(()=>result.value&&bindings.value?buildPivot(result.value,bindings.value):null)
 const pivotShowTotals=computed(()=>bindings.value?.pivot?.showTotals!==false)
+const pivotShowSubtotals=computed(()=>pivotShowTotals.value&&
+ pivotModel.value?.rowLevels===2&&bindings.value?.pivot?.showSubtotals!==false)
+function lastInParent(axis:PivotAxis){
+ const all=pivotModel.value?.rows??[]
+ const index=all.findIndex(r=>r.key===axis.key)
+ return index>=0&&(index===all.length-1||all[index+1].parentKey!==axis.parentKey)
+}
 const pivotExact=computed(()=>result.value?.pivotTotals?.exact===true)
 function formatTotal(value:unknown,id:string){
  return pivotExact.value?formatPivotTotal(value,optionsFor(id)?.decimals):formatMeasure(value,id)
@@ -47,8 +54,9 @@ const visiblePivotRows=computed(()=>pivotModel.value?.rows.slice(
 function selectPivotRow(axis:PivotAxis){
  const field=bindings.value?.dimensions[0]
  if(!field)return
- if(typeof axis.value==='string'||typeof axis.value==='number')
-  emit('selectDimension',{fieldId:field.fieldId,value:axis.value})
+ const value=pivotModel.value?.rowLevels===2?axis.parentValue:axis.value
+ if(typeof value==='string'||typeof value==='number')
+  emit('selectDimension',{fieldId:field.fieldId,value})
  if(props.navigable)emit('navigate')
 }
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
@@ -89,8 +97,8 @@ async function load(){
  if(!props.widget.datasetId||!config||!config.measures.length){
   result.value=null;rows.value=[];error.value='请选择数据集并拖入至少一个指标';loading.value=false;dispose();return
  }
- if(props.widget.type==='pivot'&&config.dimensions.length!==2){
-  result.value=null;rows.value=[];error.value='交叉表需要恰好两个维度（行、列）及至少一个指标';loading.value=false;dispose();return
+ if(props.widget.type==='pivot'&&![2,3].includes(config.dimensions.length)){
+  result.value=null;rows.value=[];error.value='交叉表需要二至三个维度（行层级、列）及至少一个指标';loading.value=false;dispose();return
  }
  if(!supported.includes(props.widget.type)){
   result.value=null;rows.value=[];error.value='当前 V2 图表类型尚未支持，请选择柱图、折线图、饼图、指标卡或明细表';dispose();return
@@ -215,10 +223,9 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
     <div v-if="pivotModel.warning" class="v2-pivot-warning" role="status">{{pivotModel.warning}}</div>
     <table aria-label="V2 交叉表">
      <thead>
-      <tr><th :rowspan="2" class="v2-pivot-corner">
-       {{result?.columns.find(c=>c.kind==='dimension'&&c.id===bindings?.dimensions[0]?.fieldId)?.label||'行'}}
-       /
-       {{result?.columns.find(c=>c.kind==='dimension'&&c.id===bindings?.dimensions[1]?.fieldId)?.label||'列'}}
+      <tr><th v-for="(dimension,i) in bindings?.dimensions.slice(0,-1)||[]" :key="dimension.fieldId"
+       :rowspan="2" class="v2-pivot-corner">
+        {{result?.columns.find(c=>c.kind==='dimension'&&c.id===dimension.fieldId)?.label||'行'+(i+1)}}
       </th><th v-for="column in pivotModel.columns" :key="column.key" :colspan="pivotModel.measures.length">{{column.label}}</th>
        <th v-if="pivotShowTotals" :colspan="pivotModel.measures.length">行合计</th>
       </tr>
@@ -228,19 +235,38 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
        <th v-for="metric in pivotModel.measures" :key="metric.id">{{metric.label}}</th>
       </template></tr>
      </thead>
-     <tbody><tr v-for="axis in visiblePivotRows" :key="axis.key">
-      <th scope="row" :tabindex="navigable?0:undefined" @click="selectPivotRow(axis)"
-       @keydown.enter="selectPivotRow(axis)">{{axis.label}}</th>
-      <template v-for="column in pivotModel.columns" :key="column.key">
-       <td v-for="metric in pivotModel.measures" :key="metric.id">{{formatMeasure(pivotCell(pivotModel,axis.key,column.key,metric.id),metric.id)}}</td>
+     <tbody>
+      <template v-for="axis in visiblePivotRows" :key="axis.key">
+       <tr>
+        <th v-if="pivotModel.rowLevels===2" scope="row">{{axis.parentLabel}}</th>
+        <th scope="row" :tabindex="navigable?0:undefined"
+         @click="selectPivotRow(axis)" @keydown.enter="selectPivotRow(axis)">{{axis.label}}</th>
+        <template v-for="column in pivotModel.columns" :key="column.key">
+         <td v-for="metric in pivotModel.measures" :key="metric.id">{{formatMeasure(pivotCell(pivotModel,axis.key,column.key,metric.id),metric.id)}}</td>
+        </template>
+        <template v-if="pivotShowTotals">
+         <td v-for="metric in pivotModel.measures" :key="metric.id" class="v2-pivot-total">
+          {{pivotModel.additive.has(metric.id)?formatTotal(pivotRowTotal(pivotModel,axis.key,metric.id),metric.id):'—'}}
+         </td>
+        </template>
+       </tr>
+       <tr v-if="pivotShowSubtotals&&pivotModel.parentTotals.size&&lastInParent(axis)"
+        class="v2-pivot-subtotal">
+        <th>{{axis.parentLabel}}</th><th>小计</th>
+        <template v-for="column in pivotModel.columns" :key="column.key">
+         <td v-for="metric in pivotModel.measures" :key="metric.id">
+          {{pivotModel.additive.has(metric.id)?formatTotal(pivotParentCell(pivotModel,axis.parentKey!,column.key,metric.id),metric.id):'—'}}
+         </td>
+        </template>
+        <template v-if="pivotShowTotals">
+         <td v-for="metric in pivotModel.measures" :key="metric.id">
+          {{formatTotal(pivotParentTotal(pivotModel,axis.parentKey!,metric.id),metric.id)}}
+         </td>
+        </template>
+       </tr>
       </template>
-      <template v-if="pivotShowTotals">
-       <td v-for="metric in pivotModel.measures" :key="metric.id" class="v2-pivot-total">
-        {{pivotModel.additive.has(metric.id)?formatTotal(pivotRowTotal(pivotModel,axis.key,metric.id),metric.id):'—'}}
-       </td>
-      </template>
-     </tr></tbody>
-     <tfoot v-if="pivotShowTotals"><tr><th>列合计</th>
+     </tbody>
+     <tfoot v-if="pivotShowTotals"><tr><th :colspan="pivotModel.rowLevels">列合计</th>
       <template v-for="column in pivotModel.columns" :key="column.key">
        <th v-for="metric in pivotModel.measures" :key="metric.id">
         {{pivotModel.additive.has(metric.id)?formatTotal(pivotColumnTotal(pivotModel,column.key,metric.id),metric.id):'—'}}

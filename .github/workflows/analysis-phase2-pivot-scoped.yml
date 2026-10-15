@@ -10,6 +10,7 @@ on:
       - backend/src/main/java/com/insightbi/analysis/PivotRollup.java
       - backend/src/main/java/com/insightbi/ReaderApi.java
       - backend/src/test/java/com/insightbi/analysis/AnalysisPivotRollupTest.java
+      - backend/src/test/java/com/insightbi/analysis/AnalysisPivotHierarchyTest.java
       - backend/src/test/java/com/insightbi/analysis/AnalysisPivotApiIntegrationTest.java
       - backend/src/test/java/com/insightbi/ReaderApiTest.java
       - backend/src/test/java/com/insightbi/analysis/AnalysisPivotGroupedQueryTest.java
@@ -21,6 +22,7 @@ on:
       - scripts/analysis_phase2_pivot.test.mjs
       - scripts/analysis_phase2_pivot_browser_smoke.cjs
       - scripts/analysis_phase2_pivot_rollup_browser_smoke.cjs
+      - scripts/analysis_phase2_pivot_hierarchy_browser_smoke.cjs
       - .github/workflows/analysis-phase2-pivot-scoped.yml
 
 jobs:
@@ -36,7 +38,7 @@ jobs:
           cache: maven
       - name: H2 planner + pivot aggregate/metadata checks only
         working-directory: backend
-        run: mvn -q -Dtest=AnalysisPivotGroupedQueryTest,AnalysisQueryPlannerTest,AnalysisPivotRollupTest,AnalysisPivotApiIntegrationTest,ReaderApiTest test
+        run: mvn -q -Dtest=AnalysisPivotGroupedQueryTest,AnalysisQueryPlannerTest,AnalysisPivotRollupTest,AnalysisPivotApiIntegrationTest,AnalysisPivotHierarchyTest,ReaderApiTest test
 
   scoped-frontend:
     runs-on: ubuntu-latest
@@ -75,3 +77,4 @@ jobs:
         run: |
           node scripts/analysis_phase2_pivot_browser_smoke.cjs
           node scripts/analysis_phase2_pivot_rollup_browser_smoke.cjs
+          node scripts/analysis_phase2_pivot_hierarchy_browser_smoke.cjs

@@ -777,23 +777,28 @@ onMounted(load)
          :key="t.type" :label="t.name" :value="t.type"/>
        </el-select>
        <template v-if="chosen.type==='pivot'">
-        <div class="analysis-pivot-help">按字段槽顺序使用第 1 个维度作为行、第 2 个维度作为列。可拖动维度槽或点击交换；多个指标按列展示。仅对可加且未截断的数据展示合计。</div>
+        <div class="analysis-pivot-help">两个维度时：第 1 个为行、第 2 个为列；三个维度时：前两个为两级行分组，第 3 个为列。可在字段槽调整顺序，服务端重新聚合合计及层级小计。</div>
         <button type="button" class="analysis-pivot-swap"
          :disabled="chosen.analysisV2.dimensions.length!==2"
          @click="moveV2Binding('dimension',0,1)">交换行列维度</button>
         <label>行分组排序</label>
         <el-select :model-value="chosen.analysisV2.pivot?.rowOrder||'asc'"
-         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:v as 'asc'|'desc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:chosen.analysisV2.pivot?.showTotals!==false};mark()}}">
+         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:v as 'asc'|'desc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:chosen.analysisV2.pivot?.showTotals!==false,showSubtotals:chosen.analysisV2.pivot?.showSubtotals!==false};mark()}}">
          <el-option label="升序" value="asc"/><el-option label="降序" value="desc"/>
         </el-select>
         <label>列分组排序</label>
         <el-select :model-value="chosen.analysisV2.pivot?.columnOrder||'asc'"
-         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:v as 'asc'|'desc',showTotals:chosen.analysisV2.pivot?.showTotals!==false};mark()}}">
+         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:v as 'asc'|'desc',showTotals:chosen.analysisV2.pivot?.showTotals!==false,showSubtotals:chosen.analysisV2.pivot?.showSubtotals!==false};mark()}}">
          <el-option label="升序" value="asc"/><el-option label="降序" value="desc"/>
         </el-select>
         <label>可加指标合计</label>
         <el-switch :model-value="chosen.analysisV2.pivot?.showTotals!==false"
-         @change="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:Boolean(v)};mark()}}"/>
+         @change="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:Boolean(v),showSubtotals:chosen.analysisV2.pivot?.showSubtotals!==false};mark()}}"/>
+        <template v-if="chosen.analysisV2.dimensions.length===3">
+         <label>两级行分组小计</label>
+         <el-switch :model-value="chosen.analysisV2.pivot?.showSubtotals!==false"
+          @change="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:chosen.analysisV2.pivot?.showTotals!==false,showSubtotals:Boolean(v)};mark()}}"/>
+        </template>
        </template>
        <template v-if="chosen.type==='table'">
         <label>明细表默认隐藏列</label>

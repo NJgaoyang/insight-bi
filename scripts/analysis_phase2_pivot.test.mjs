@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,
+import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,pivotParentTotal,pivotParentCell,
  PIVOT_MAX_COLUMNS,formatPivotTotal} from '../frontend/src/analysis/pivotTable.ts'
 
 const cols=[
@@ -77,7 +77,7 @@ test('bad schema, duplicate tuples, missing values and column cap are rejected',
  }))),bindings)
  assert.match(overflow.error,/上限/)
  const invalid=buildPivot(result(data),{...bindings,dimensions:[{fieldId:'city'}]})
- assert.match(invalid.error,/恰好两个维度/)
+ assert.match(invalid.error,/二至三个维度/)
 })
 
 
@@ -114,4 +114,65 @@ test('exact formatting keeps all integer digits and stable rounding',()=>{
  assert.equal(formatPivotTotal('0',0),'0')
  assert.equal(formatPivotTotal(null,2),'—')
  assert.equal(formatPivotTotal('1e100',2),'—')
+})
+undefined
+
+test('three dimensions create two row levels, one column and authoritative parent subtotal',()=>{
+ const three={...bindings,
+  dimensions:[{fieldId:'region'},{fieldId:'city'},{fieldId:'month'}],
+  pivot:{showTotals:true,showSubtotals:true,rowOrder:'asc',columnOrder:'asc'}}
+ const grouped=[
+  {d1:'北区',d2:'北京',d3:'1月',rev:20,avg:10},
+  {d1:'北区',d2:'北京',d3:'2月',rev:40,avg:20},
+  {d1:'北区',d2:'天津',d3:'1月',rev:5,avg:5},
+  {d1:'南区',d2:'上海',d3:'1月',rev:60,avg:60}
+ ]
+ const response={
+  ...result(grouped),columns:[
+   {id:'region',name:'d1',label:'区域',kind:'dimension',type:'STRING'},
+   {id:'city',name:'d2',label:'城市',kind:'dimension',type:'STRING'},
+   {id:'month',name:'d3',label:'月份',kind:'dimension',type:'STRING'},
+   {id:'rev',name:'rev',label:'收入',kind:'measure',type:'DECIMAL',additive:true},
+   {id:'avg',name:'avg',label:'均值',kind:'measure',type:'DECIMAL',additive:false},
+   {id:'cnt',name:'cnt',label:'计数',kind:'measure',type:'INTEGER',additive:true},
+   {id:'distinct',name:'distinct',label:'去重',kind:'measure',type:'INTEGER',additive:false}
+  ],
+  rows:grouped.map(r=>({...r,cnt:1,distinct:1})),
+  pivotTotals:{
+   exact:true,
+   rows:[
+    {d1:'北区',d2:'北京',rev:'60',avg:'15',cnt:'2',distinct:'1'},
+    {d1:'北区',d2:'天津',rev:'5',avg:'5',cnt:'1',distinct:'1'},
+    {d1:'南区',d2:'上海',rev:'60',avg:'60',cnt:'1',distinct:'1'}
+   ],
+   columns:[
+    {d1:'1月',rev:'85',avg:'28.33',cnt:'3',distinct:'2'},
+    {d1:'2月',rev:'40',avg:'20',cnt:'1',distinct:'1'}],
+   grand:{rev:'125',avg:'31.25',cnt:'4',distinct:'2'},
+   parents:[
+    {d1:'北区',rev:'65',avg:'16.25',cnt:'3',distinct:'1'},
+    {d1:'南区',rev:'60',avg:'60',cnt:'1',distinct:'1'}
+   ],parentCells:[
+    {d1:'北区',d2:'1月',rev:'25',avg:'8.333333',cnt:'2',distinct:'1'},
+    {d1:'北区',d2:'2月',rev:'40',avg:'20',cnt:'1',distinct:'1'},
+    {d1:'南区',d2:'1月',rev:'60',avg:'60',cnt:'1',distinct:'1'}
+   ]}
+ }
+ const model=buildPivot(response,three)
+ assert.equal(model.error,'')
+ assert.equal(model.warning,'')
+ assert.equal(model.rowLevels,2)
+ assert.equal(model.rows.length,3)
+ assert.deepEqual(model.rows.map(x=>[x.parentLabel,x.label]),[
+  ['北区','北京'],['北区','天津'],['南区','上海']])
+ assert.equal(pivotParentTotal(model,model.rows[0].parentKey,'rev'),'65')
+ assert.equal(pivotParentCell(model,model.rows[0].parentKey,JSON.stringify(['1月']),'rev'),'25')
+ assert.equal(pivotParentTotal(model,model.rows[0].parentKey,'distinct'),'1')
+ assert.equal(pivotGrandTotal(model,'rev'),'125')
+ const noParents=buildPivot({...response,pivotTotals:{...response.pivotTotals,parents:[]}},three)
+ assert.match(noParents.warning,/小计/)
+ assert.equal(noParents.additive.size,0)
+ const disabled=buildPivot(response,{...three,pivot:{...three.pivot,showSubtotals:false}})
+ assert.equal(disabled.parentTotals.size,0)
+ assert.equal(disabled.grandTotals.get('rev'),'125')
 })
