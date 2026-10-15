@@ -21,6 +21,22 @@ const selectedId=ref('')
 const name=ref('')
 const busy=ref(false)
 const dirty=ref(false)
+type PublicationAuditEntry={event_type:string;actor:string;version_no:number|null;created_at:string}
+const publicationAuditOpen=ref(false)
+const publicationAuditLoading=ref(false)
+const publicationAuditRows=ref<PublicationAuditEntry[]>([])
+async function openPublicationAudit(){
+ publicationAuditOpen.value=true
+ publicationAuditLoading.value=true
+ try{
+  publicationAuditRows.value=await api<PublicationAuditEntry[]>(
+   '/dashboards/'+encodeURIComponent(props.id)+'/publication-audit')
+ }catch(e:unknown){
+  ElMessage.error(e instanceof Error?e.message:'读取发布记录失败')
+ }finally{publicationAuditLoading.value=false}
+}
+const publicationAuditLabel=(event:string)=>({PUBLISH:'发布',UNPUBLISH:'撤销发布',RESTORE:'恢复历史版本'}[event]||event)
+
 const currentTab=ref<'component'|'dashboard'>('component')
 const propTab=ref<'data'|'style'>('data')
 const chosen=computed(()=>components.value.find(w=>w.id===selectedId.value))
@@ -456,6 +472,7 @@ onMounted(load)
     <button title="重做上一步操作" :disabled="busy||!redoStack.length" @click="redo">重做</button>
     <button class="analysis-primary" :disabled="busy" @click="save">保存</button>
     <button :disabled="busy" @click="publish">发布</button>
+    <button :disabled="busy" @click="openPublicationAudit">发布记录</button>
    </div>
   </header>
   <div v-if="busy&&!report" class="analysis-loading">正在读取分析主题…</div>
@@ -744,6 +761,20 @@ onMounted(load)
    </aside>
   </div>
  </div>
+ <el-dialog v-model="publicationAuditOpen" title="发布记录" width="640px">
+  <el-table v-loading="publicationAuditLoading" :data="publicationAuditRows" size="small" empty-text="暂无发布记录">
+   <el-table-column label="时间" min-width="185">
+    <template #default="{row}">{{String(row.created_at).replace('T',' ').slice(0,19)}}</template>
+   </el-table-column>
+   <el-table-column label="操作" min-width="115">
+    <template #default="{row}">{{publicationAuditLabel(row.event_type)}}</template>
+   </el-table-column>
+   <el-table-column label="版本" min-width="80">
+    <template #default="{row}">{{row.version_no??'—'}}</template>
+   </el-table-column>
+   <el-table-column prop="actor" label="操作账号" min-width="100"/>
+  </el-table>
+ </el-dialog>
  <FormulaEditor v-model="formulaDialog" :dataset-id="chosen?.datasetId||''"
   :fields="v2Fields" @created="refreshFormulaFields"/>
 </template>
