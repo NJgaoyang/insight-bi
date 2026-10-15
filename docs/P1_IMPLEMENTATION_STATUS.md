@@ -301,6 +301,15 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 定向 H2 测试覆盖树结构、重复名称、孤儿父节点、祖孙环、删除保护、归属与解除归属、重新执行元数据初始化；后端 CI [38671023626](https://github.com/NJgaoyang/insight-bi/actions/runs/38671023626) **PASS**。前端 TypeScript/Vite 构建及真实 Chromium 模拟 REST 交互 [38671156424](https://github.com/NJgaoyang/insight-bi/actions/runs/38671156424) **SUCCESS**。
 - 未完成普通用户登录、部门级继承、所有 V1/V2 查询/数据集接口的资源权限校验、行列权限、共享目录审批及生产 MySQL 数据迁移验证；本阶段不可作为完整多用户权限系统投产。
 
+## P2-02 第四批：独立普通用户登录与已发布 V2 报表受控查询（2026-10-15）
+
+- 单管理员架构保留；普通用户只通过新增的 `/api/reader/login` 建立独立的 reader 会话，`/api/reader/me`、`/api/reader/logout`、授权目录 `/api/reader/catalog` 及 `/api/reader/dashboards/{id}` 访问其**精确授权且当前已发布**的分析主题；普通用户会话不能使用 `/api/datasets`、`/api/query`、`/api/analysis/v2/query`、`/api/governance` 或管理员 CRUD 接口。
+- 新增可空的 `insight_governance_user.password_hash`，旧账号默认禁用。管理员必须为用户设置至少 12 字符的密码（随机盐 PBKDF2-HMAC-SHA256，210000 次迭代、常数时间比较），再显式启用。设置/重置密码会禁用该账号，启用条件必须包含密码和受控角色；账号禁用、密码更换与角色失效均在请求入口重新校验，已有 reader 会话随之拒绝。登录设 15 分钟失败次数限制，成功时销毁旧会话并生成新 CSRF 令牌，不泄露密码哈希至管理界面。
+- **只读数据查询来自服务端已发布快照**：`POST /api/reader/dashboards/{id}/widgets/{widgetId}/query` 不接受用户传入数据集、SQL、维度、指标、筛选、加工版本或 LIMIT，所有这些参数均由已授权报表的原始已发布 V2 组件装配，并使用已有受控 SQL 规划器、只读连接和并发上限；输出行上限额外限制在 200。未授权报表、失效发布、非法组件或自定义参数一律拒绝。普通用户直接打开 V1 或混合旧版组件的报表暂不支持。
+- 前端沿用登录屏幕，普通用户进入独立「授权报表」只读目录；`PublishedReport` 只在 reader 模式访问专属报表接口，`AnalysisV2Chart` 使用独立的、无客户端查询配置的只读 V2 请求，普通用户不能打开主工作台、数据源/数据集或编辑页；本轮 reader 模式暂未开启联动筛选与 V1 图表。
+- 定向 H2 `ReaderApiTest` 覆盖：初始禁用、强度校验、密码哈希、启用顺序、普通用户不能继承管理员权限、CSRF、禁用/重置后的旧会话即时失效、未授权报表拒绝、组件快照绑定与客户端伪造参数拒绝、报表取消发布后失效。对应后端 CI [38671828803](https://github.com/NJgaoyang/insight-bi/actions/runs/38671828803) **PASS**。Vue/TypeScript 构建与 Chromium 模拟 REST 的真实页面流（管理员设置读者密码→启用→读者登录→已授权目录→V2 图表只读查询）[38672208814](https://github.com/NJgaoyang/insight-bi/actions/runs/38672208814) **SUCCESS**。
+- **尚未具备生产级完整权限隔离**：此批只允许从已发布 V2 分析主题读取该组件完整预配置结果。未实现普通用户对 V1 报表/复杂加工/动态下钻的完整权限语义、行列级权限、组织继承、公共目录 ACL、多用户负载及真实 MySQL/StarRocks 对账；部署前必须确认 HTTPS、反向代理、会话 Cookie 和数据库元数据一致性备份。保持开发分支状态，不直接生产发布。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
