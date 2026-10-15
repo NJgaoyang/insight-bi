@@ -24,6 +24,21 @@ const dirty=ref(false)
 type ApprovalInfo={required:boolean;state:string;submitted_revision?:number|null;reviewed_revision?:number|null;comment?:string|null}
 const approvalInfo=ref<ApprovalInfo>({required:false,state:'DISABLED'})
 const approvalDialog=ref(false)
+type ReviewHistory={event_type:string;revision:number;actor:string;comment:string|null;created_at:string}
+const reviewHistory=ref<ReviewHistory[]>([])
+async function refreshReviewHistory(){
+ try{reviewHistory.value=await api<ReviewHistory[]>(
+   '/dashboards/'+encodeURIComponent(props.id)+'/approval/history')}
+ catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取审批历史失败')}
+}
+async function openApprovalDialog(){
+ approvalDialog.value=true
+ await Promise.all([refreshApproval(),refreshReviewHistory()])
+}
+const reviewHistoryLabel=(value:string)=>({
+ ENABLED:'开启审批',SUBMITTED:'提交申请',APPROVED:'审核通过',REJECTED:'驳回申请'
+} as Record<string,string>)[value]||value
+
 async function refreshApproval(){
  try{approvalInfo.value=await api<ApprovalInfo>('/dashboards/'+encodeURIComponent(props.id)+'/approval')}
  catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取发布审批状态失败')}
@@ -38,6 +53,7 @@ async function enableApproval(){
  try{
   await ElMessageBox.confirm('开启后，该分析主题每次发布均须经过当前版本的提交与审批，暂不支持关闭。当前系统仅有管理员，因此还不构成双人复核。','启用发布审批',{type:'warning'})
   approvalInfo.value=await post<ApprovalInfo>('/dashboards/'+props.id+'/approval/enable',{})
+  await refreshReviewHistory()
   ElMessage.success('发布审批已开启')
  }catch(e:any){if(e!=='cancel')ElMessage.error(e?.message||'启用审批失败')}
 }
@@ -45,6 +61,7 @@ async function submitForApproval(){
  if(dirty.value&&!(await save()))return
  try{
   approvalInfo.value=await post<ApprovalInfo>('/dashboards/'+props.id+'/approval/submit',{})
+  await refreshReviewHistory()
   ElMessage.success('当前版本已提交审批')
  }catch(e:any){ElMessage.error(e?.message||'提交审批失败')}
 }
@@ -59,6 +76,7 @@ async function reviewSubmitted(approved:boolean){
    comment=response.value
   }
   approvalInfo.value=await post<ApprovalInfo>('/dashboards/'+props.id+'/approval/review',{approved,comment})
+  await refreshReviewHistory()
   ElMessage.success(approved?'审批通过，可以发布':'申请已驳回')
  }catch(e:any){if(e!=='cancel')ElMessage.error(e?.message||'审核失败')}
 }
@@ -517,8 +535,8 @@ onMounted(load)
     <button title="撤销上一步操作" :disabled="busy||!undoStack.length" @click="undo">撤销</button>
     <button title="重做上一步操作" :disabled="busy||!redoStack.length" @click="redo">重做</button>
     <button class="analysis-primary" :disabled="busy" @click="save">保存</button>
-    <button :disabled="busy||(approvalInfo.required&&!approvalReady)" @click="publish">发布</button>
-    <button :disabled="busy" @click="approvalDialog=true">发布审批</button>
+    <button :disabled="busy||(approvalInfo.required&&(!approvalReady||dirty))" @click="publish">发布</button>
+    <button :disabled="busy" @click="openApprovalDialog">发布审批</button>
     <button :disabled="busy" @click="openPublicationAudit">发布记录</button>
    </div>
   </header>
@@ -817,6 +835,18 @@ onMounted(load)
     当前版本与已提交版本不同，需要重新提交审批。
    </p>
    <p>当前只有管理员账号；审批流程可以留痕，但尚不能实现提交人与审核人的独立隔离。</p>
+   <div v-if="reviewHistory.length" style="max-height:200px;overflow:auto">
+    <el-table :data="reviewHistory" size="small" empty-text="暂无审批事件">
+     <el-table-column label="动作" width="94">
+      <template #default="{row}">{{reviewHistoryLabel(row.event_type)}}</template>
+     </el-table-column>
+     <el-table-column prop="revision" label="保存版本" width="88"/>
+     <el-table-column label="意见" min-width="140">
+      <template #default="{row}">{{row.comment||'—'}}</template>
+     </el-table-column>
+     <el-table-column prop="actor" label="操作账号" width="90"/>
+    </el-table>
+   </div>
   </div>
   <template #footer>
    <button v-if="!approvalInfo.required" @click="enableApproval">启用发布审批</button>
