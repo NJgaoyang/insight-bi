@@ -6,7 +6,7 @@ import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
-import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
+import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -437,6 +437,47 @@ function switchKind(kind:string){
  }
  chosen.value.type=kind;mark()
 }
+const draggingWidget=ref('')
+function startViewDrag(event:DragEvent,widgetId:string){
+ const view=activeView.value
+ if(!view||!view.widgetIds.includes(widgetId)||!event.dataTransfer)return
+ event.dataTransfer.setData('application/x-insight-view-widget',
+  JSON.stringify({viewId:view.id,widgetId}))
+ event.dataTransfer.effectAllowed='move'
+ draggingWidget.value=widgetId
+}
+function dropViewWidget(event:DragEvent,targetId:string){
+ event.preventDefault()
+ const view=activeView.value
+ const value=event.dataTransfer?.getData('application/x-insight-view-widget')
+ draggingWidget.value=''
+ if(!view||!value)return
+ try{
+  const payload=JSON.parse(value) as {viewId:string;widgetId:string}
+  if(payload.viewId!==view.id)return
+  if(reorderViewWidget(view,payload.widgetId,targetId))mark()
+ }catch{ /* External drop cannot change an analysis view */ }
+}
+function selectDashboardWidget(widgetId:string,openEditor=false){
+ if(!components.value.some(w=>w.id===widgetId))return
+ selectedId.value=widgetId
+ if(openEditor){currentTab.value='component';propTab.value='data'}
+}
+function copyDashboardView(){
+ const current=activeView.value
+ if(!current)return
+ if(dashboardViews.value.length>=30){ElMessage.warning('每个主题最多 30 个仪表板');return}
+ const existing=new Set(dashboardViews.value.map(v=>v.name))
+ const base=(current.name+' 副本').slice(0,94)
+ let title=base,n=2
+ while(existing.has(title))title=base+' '+n++
+ const cloned=duplicateDashboardView(current,crypto.randomUUID(),title)
+ dashboardViews.value.push(cloned)
+ selectedViewId.value=cloned.id
+ draggingWidget.value=''
+ mark()
+ ElMessage.success('已复制当前视图；组件数据与配置仍为共享引用')
+}
 function addDashboardView(){
  if(dashboardViews.value.length>=30){ElMessage.warning('每个主题最多 30 个仪表板');return}
  const view:DashboardView={id:crypto.randomUUID(),name:'仪表板'+(dashboardViews.value.length+1),widgetIds:[]}
@@ -672,6 +713,7 @@ onMounted(load)
       </el-select>
       <button title="新建仪表板" @click="addDashboardView">＋ 新建</button>
       <button v-if="activeView" title="重命名仪表板" @click="renameDashboardView">重命名</button>
+      <button v-if="activeView" title="复制仪表板视图" @click="copyDashboardView">复制视图</button>
       <button v-if="dashboardViews.length>1" title="删除仪表板" @click="removeDashboardView">删除</button>
      </div>
      <div v-if="activeView" class="analysis-view-components">
@@ -685,12 +727,20 @@ onMounted(load)
       </el-select>
      </div>
      <div v-if="!dashboardWidgets.length" class="analysis-stage-empty">当前仪表板尚未选择组件</div>
-     <div v-else class="analysis-view-grid">
+     <div v-else class="analysis-view-grid" aria-label="可编辑仪表板画布">
       <div v-for="(component,index) in dashboardWidgets" :key="component.id"
        class="analysis-dashboard-card analysis-layout-card"
-       :data-widget-id="component.id" :style="cardStyle(activeView,component.id)">
+       :class="{'analysis-widget-selected':selectedId===component.id,'analysis-widget-dragging':draggingWidget===component.id}"
+       :data-widget-id="component.id" :style="cardStyle(activeView,component.id)"
+       @dragover.prevent @drop="dropViewWidget($event,component.id)">
        <div class="analysis-layout-toolbar">
+        <span class="analysis-widget-drag-handle" draggable="true"
+         role="button" tabindex="0" title="拖动调整组件顺序"
+         :aria-label="'拖动 '+component.title+' 调整顺序'"
+         @dragstart="startViewDrag($event,component.id)" @dragend="draggingWidget=''">⋮⋮</span>
         <strong>{{component.title}}</strong>
+        <button title="在当前画布选中组件" @click="selectDashboardWidget(component.id)">选中</button>
+        <button title="进入组件分析编辑" @click="selectDashboardWidget(component.id,true)">编辑</button>
         <el-select :model-value="activeView?.jumps?.[component.id]||''" size="small"
          style="width:126px" placeholder="点击后跳转" aria-label="组件跳转目标"
          @update:model-value="v=>{if(activeView){activeView.jumps ||= {};if(v)activeView.jumps[component.id]=String(v);else delete activeView.jumps[component.id];mark()}}">
