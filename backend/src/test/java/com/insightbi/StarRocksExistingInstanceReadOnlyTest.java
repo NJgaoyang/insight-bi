@@ -8,6 +8,8 @@ import com.insightbi.analysis.AnalysisQueryPlanner;
 import com.insightbi.analysis.FieldCatalog;
 import com.insightbi.analysis.ReadOnlyConnectionPolicy;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -41,6 +43,27 @@ class StarRocksExistingInstanceReadOnlyTest {
 
   private static String env(String name){
     return Optional.ofNullable(System.getenv(name)).orElse("");
+  }
+  private static String runtimePassword()throws Exception{
+    String direct=env("BI_ACCEPTANCE_STARROCKS_PASSWORD");
+    if(!direct.isBlank())return direct;
+    String filename=env("BI_ACCEPTANCE_STARROCKS_MYSQL_DEFAULTS_FILE");
+    if(filename.isBlank())return "";
+    Path source=Path.of(filename).toRealPath();
+    if(!Files.isRegularFile(source)||Files.size(source)>4096)
+      throw new IllegalArgumentException("本地 MySQL 选项文件无效");
+    // Explicit opt-in: read only the password from a local operator-owned
+    // mysql defaults file. Never log its path or credentials.
+    for(String line:Files.readAllLines(source)){
+      String row=line.trim();
+      if(row.startsWith("password=")){
+        String value=row.substring("password=".length()).trim();
+        if(value.length()>=2&&value.startsWith("\"")&&value.endsWith("\""))
+          value=value.substring(1,value.length()-1);
+        return value;
+      }
+    }
+    return "";
   }
 
   private Fixture fixture(String username,String password) {
@@ -93,7 +116,7 @@ class StarRocksExistingInstanceReadOnlyTest {
     Assumptions.assumeTrue("yes".equals(env("BI_ACCEPTANCE_EXISTING_STARROCKS")),
       "Existing instance not explicitly authorized in this test environment");
     String username=env("BI_ACCEPTANCE_STARROCKS_USERNAME");
-    String password=env("BI_ACCEPTANCE_STARROCKS_PASSWORD");
+    String password=runtimePassword();
     assertFalse(username.isBlank(),"StarRocks username must be set at runtime");
     assertFalse(password.isBlank(),"StarRocks password must be set at runtime");
     Fixture f=fixture(username,password);
