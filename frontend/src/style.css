@@ -267,3 +267,11 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .analysis-pipeline-version button{background:transparent;color:#2d61a8;border:0;padding:3px;cursor:pointer}
 .analysis-pipeline-version button:disabled{opacity:.4;cursor:default}
 .analysis-pipeline-warning{font-size:12px;color:#9b5b1b;padding:7px;border-left:2px solid #d1a05e;background:#fff9f0;word-break:break-word}
+
+/* Unified analysis workspace: drag only by the explicit grip, never from chart canvas. */
+.analysis-widget-drag-handle{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:25px;border:1px solid #d9e2ef;border-radius:4px;background:#f6f8fc;color:#70809a;cursor:grab;user-select:none;font-size:15px;line-height:1}
+.analysis-widget-drag-handle:active{cursor:grabbing}
+.analysis-widget-drag-handle:focus-visible{outline:2px solid #376ad6;outline-offset:2px}
+.analysis-view-grid>.analysis-widget-selected{border-color:#6b92e6;box-shadow:inset 0 0 0 1px #a5bdf3}
+.analysis-view-grid>.analysis-widget-dragging{opacity:.55;border-style:dashed}
+.analysis-view-grid>.analysis-layout-card:has(.analysis-widget-drag-handle):hover{border-color:#9fb9df}
