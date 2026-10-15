@@ -9,6 +9,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
  try{
   const page=await browser.newPage({viewport:{width:1480,height:900}})
   const errors=[],requests=[]
+  const provisioned=[],preconfiguredGrants=[]
   page.on('pageerror',error=>errors.push(error.message))
   const widget=id=>({id,title:'指标'+id,type:'bar',datasetId:id==='w1'?'ds1':'',
     analysisV2:{dimensions:id==='w1'?[{fieldId:'city'}]:[],measures:id==='w1'?[{id:'total',fieldId:'revenue',aggregate:'SUM'}]:[],filters:{pre:[],post:[]},sort:[],limit:200},
@@ -26,6 +27,25 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
    const send=(value,status=200)=>route.fulfill({status,contentType:'application/json',
      body:JSON.stringify(value)})
    if(path==='/api/me')return send({user:'admin',csrf:'csrf'})
+   if(method==='GET'&&path==='/api/connections')return send([])
+   if(method==='GET'&&path==='/api/folders')return send([])
+   if(method==='GET'&&path==='/api/data-folders')return send([])
+   if(method==='GET'&&path==='/api/dashboards')
+     return send([{id:'published-analysis',name:'经营分析',status:'published',kind:'analysis',folder_id:null}])
+   if(method==='GET'&&path==='/api/governance/users')return send(provisioned)
+   if(method==='POST'&&path==='/api/governance/users'){
+     const body=req.postDataJSON()
+     assert.equal(req.headers()['x-csrf-token'],'csrf')
+     assert.equal(body.role,'VIEWER')
+     provisioned.push({id:'u1',username:body.username,display_name:body.displayName,role:body.role,enabled:false})
+     return send({id:'u1',username:body.username,role:body.role,enabled:false})
+   }
+   if(method==='GET'&&path==='/api/governance/users/u1/grants')return send(preconfiguredGrants)
+   if(method==='POST'&&path==='/api/governance/users/u1/grants'){
+     assert.equal(req.postDataJSON().dashboardId,'published-analysis')
+     preconfiguredGrants.push({dashboard_id:'published-analysis',permission:'READ_PUBLISHED'})
+     return send({userId:'u1',dashboardId:'published-analysis',permission:'READ_PUBLISHED',alreadyGranted:false})
+   }
    if(path==='/api/dashboards/published-analysis'&&method==='GET')return send(analysis)
    if(path==='/api/dashboards/legacy'&&method==='GET')return send(legacy)
    if(path==='/api/dashboards/audit-demo'&&method==='GET')
@@ -147,6 +167,23 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.ok((await publicationDialog.innerText()).includes('admin'))
   assert.ok((await publicationDialog.innerText()).includes('2026-10-15'))
   assert.equal(await publicationDialog.locator('tbody tr').count(),2)
+  // P2-02: Admin creates a disabled user and preconfigures published-only access.
+  await page.goto(origin+'/#/connections',{waitUntil:'domcontentloaded'})
+  await page.getByRole('button',{name:'权限治理'}).click()
+  await page.getByRole('button',{name:'＋ 预配置用户'}).click()
+  const createUserDialog=page.locator('.el-dialog').filter({hasText:'预配置普通账号'})
+  await createUserDialog.getByPlaceholder('例如 analyst01').fill('analyst01')
+  await createUserDialog.locator('input').nth(1).fill('分析查看者')
+  await createUserDialog.getByRole('button',{name:'创建预配置账号'}).click()
+  await page.getByText('analyst01').waitFor()
+  assert.equal(provisioned[0].enabled,false)
+  await page.getByRole('button',{name:'预配置授权'}).click()
+  const accessDialog=page.locator('.el-dialog').filter({hasText:'预配置报表授权'})
+  await accessDialog.locator('.el-select').click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'经营分析'}).first().click()
+  await accessDialog.getByRole('button',{name:'添加'}).click()
+  await accessDialog.getByText('只读（预配置）').waitFor()
+  assert.equal(preconfiguredGrants.length,1)
   assert.deepEqual(errors,[])
   console.log('PASS P1 published routes: multi-view V2 readonly and original legacy Designer readonly')
  }finally{await browser.close()}
