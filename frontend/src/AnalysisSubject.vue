@@ -54,6 +54,12 @@ function mark(){
  }
  historyCurrent=updated;dirty.value=fingerprint()!==savedFingerprint
 }
+function setChosenTableColumns(hiddenIds:string[]){
+ const config=chosen.value?.analysisV2
+ if(!config)return
+ config.tableHiddenColumnIds=[...hiddenIds]
+ mark()
+}
 function restoreHistory(serialized:string){
  const state=JSON.parse(serialized) as EditorSnapshot
  name.value=state.name;components.value=state.components
@@ -571,7 +577,7 @@ onMounted(load)
       <div v-if="!chosen" class="analysis-stage-empty"><strong>暂无组件</strong><span>点击底部「＋组件」创建第一张图表</span><button @click="addComponent">新建组件</button></div>
       <div v-else class="analysis-stage-content">
        <div class="analysis-stage-title"><strong>{{chosen.title}}</strong><span>数据源实时查询</span></div>
-       <AnalysisV2Chart v-if="chosen.analysisV2" :key="chosen.id" :widget="chosen"/>
+       <AnalysisV2Chart v-if="chosen.analysisV2" :key="chosen.id" :widget="chosen" @table-columns-change="setChosenTableColumns"/>
        <ChartWidget v-else :key="chosen.id" :widget="chosen" :datasets="datasets" :readonly="false"/>
       </div>
      </div>
