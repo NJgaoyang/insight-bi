@@ -379,6 +379,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - H2 定向 `OperationsMonitoringTest` 检验匿名探针成功/失败、无敏感信息泄露、普通读者拒绝查看管理员面板、状态计数及查询饱和/释放/429。后端 [38683899131](https://github.com/NJgaoyang/insight-bi/actions/runs/38683899131) **SUCCESS**；前端编译及构建 [38683958392](https://github.com/NJgaoyang/insight-bi/actions/runs/38683958392) **SUCCESS**。详见 [P3_OPERATIONS_MONITORING.md](P3_OPERATIONS_MONITORING.md)。
 - 仍未实现持久化监控时序、主动告警、服务进程自动恢复、业务 StarRocks/MySQL 连接健康的多数据源探针、分布式并发统计、真实生产故障演练或生产部署。未执行全量回归。
 
+## P3-03：业务数据源短时故障隔离与安全恢复（2026-10-15）
+
+- V2 分析查询和读者已发布 V2 图表查询接入 `SourceRecoveryGuard`（按源 ID 隔离）。连续出现 2 次仅**连接类**异常（SQLState 08、JDBC 可恢复/暂时连接异常）后熔断 30 秒，期间不重复创建连接；过期只允许单一半开试探成功后恢复，失败则继续隔离。不会重放分析 SQL、不会改原始只读查询参数、不会因语法错误熔断。状态仅驻留 JVM 内存，最多 500 个源、重启自动归零。
+- 后端 `GET /api/admin/operations/sources` 提供仅含 ID、显示名称、状态及冷却时间的管理员诊断摘要；`POST /api/admin/operations/sources/{id}/recheck` 在原有 admin + CSRF 下运行只读 `SELECT 1`，冷却期间拒绝重复探测。普通读者不能访问。失败响应统一脱敏（HTTP 503），避免泄露原始 JDBC URL、密码或驱动错误。
+- 运行监控页面新增数据源熔断状态和手动“检查连接”，不会自动对每个业务源运行探针，也不会重新运行失败的 SQL。
+- `SourceRecoveryGuardTest` 用注入式时钟验证连续失败、隔离不影响其他源、冷却/半开恢复、并发只放行一个探测、语法故障不熔断和统一脱敏错误。`OperationsMonitoringTest` 验证管理员连接列表不含机密、熔断期间跳过实际连接、管理员 POST 的 CSRF 控制。定向 CI 测试及 Vue/TypeScript 构建不运行全量回归。
+- 操作手册详见 [P3_SOURCE_FAILURE_RECOVERY.md](P3_SOURCE_FAILURE_RECOVERY.md)。**仍未实现**：V1 老查询路径或自助数据源配置测试的统一熔断、集群级故障隔离、真实 MySQL/StarRocks 网络故障验收、自愈/定时告警和生产部署。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
