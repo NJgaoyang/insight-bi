@@ -7,7 +7,9 @@ import AnalysisSubject from './AnalysisSubject.vue'
 import PublishedReport from './PublishedReport.vue'
 import PipelineEditor from './PipelineEditor.vue'
 import GovernanceAdmin from './GovernanceAdmin.vue'
+import ReaderHome from './ReaderHome.vue'
 const logged=ref(false),loading=ref(true),username=ref('admin'),password=ref(''),loginBusy=ref(false)
+const readerMode=ref(false)
 const route=ref('dashboards'),activeId=ref(''),view=ref(false)
 const systemTab=ref<'connections'|'governance'>('connections')
 const connections=ref<any[]>([]),datasets=ref<Dataset[]>([]),dashboards=ref<any[]>([])
@@ -132,24 +134,45 @@ const menu=[
 ]
 const editor=computed(()=>['designer','view','analysis','pipeline'].includes(route.value))
 function handleHash(){
- const hash=window.location.hash.replace(/^#\/?/,'').split('/').filter(Boolean)
+ const hash=window.location.hash.replace(/^#\\/?/,'').split('/').filter(Boolean)
  route.value=hash[0]||'dashboards';activeId.value=hash[1]||'';view.value=route.value==='view'
+ if(readerMode.value){
+  if(!['reader','reader-view'].includes(route.value)||(route.value==='reader-view'&&!activeId.value)){
+   route.value='reader';activeId.value='';window.location.hash='/reader'
+  }
+  return
+ }
  if(!['designer','view','analysis','pipeline','datasets','dashboards','connections','catalog'].includes(route.value))route.value='dashboards'
  if(logged.value&&!editor.value)refresh()
 }
 function navigate(path:string){window.location.hash='/'+path;handleHash()}
 async function check(){
- try{const r=await api<{csrf:string}>('/me');csrf.value=r.csrf;logged.value=true;handleHash()}
- catch{logged.value=false}
- finally{loading.value=false}
+ try{
+  const r=await api<{csrf:string}>('/me')
+  readerMode.value=false;csrf.value=r.csrf;logged.value=true;handleHash()
+ }catch{
+  try{
+   const r=await api<{csrf:string}>('/reader/me')
+   readerMode.value=true;csrf.value=r.csrf;logged.value=true;handleHash()
+  }catch{logged.value=false;readerMode.value=false}
+ }finally{loading.value=false}
 }
 async function login(){
  loginBusy.value=true;error.value=''
- try{const x=await post<{csrf:string}>('/login',{username:username.value,password:password.value});csrf.value=x.csrf;logged.value=true;password.value='';handleHash()}
- catch(e:any){error.value=e.message}
+ try{
+  const isReader=username.value.trim().toLowerCase()!=='admin'
+  const x=await post<{csrf:string}>(isReader?'/reader/login':'/login',{
+   username:username.value.trim(),password:password.value})
+  readerMode.value=isReader;csrf.value=x.csrf;logged.value=true;password.value=''
+  if(isReader)window.location.hash='/reader'
+  handleHash()
+ }catch(e:any){error.value=e.message}
  finally{loginBusy.value=false}
 }
-async function logout(){try{await post('/logout',{})}catch{}logged.value=false;csrf.value='';password.value=''}
+async function logout(){
+ try{await post(readerMode.value?'/reader/logout':'/logout',{})}catch{}
+ logged.value=false;readerMode.value=false;csrf.value='';password.value=''
+}
 async function refresh(){
  try{const [a,b,c,d,e]=await Promise.all([api('/connections'),api('/datasets'),api('/dashboards'),api('/folders'),api('/data-folders')]);connections.value=a;datasets.value=b;dashboards.value=c;folders.value=d as Folder[];dataFolders.value=e as Folder[]}
  catch(e:any){if(e.message!=='请求失败 HTTP 401')ElMessage.error(e.message)}
@@ -273,7 +296,7 @@ async function deleteDashboard(x:any){
  try{await ElMessageBox.confirm('确定删除「'+x.name+'」？此操作无法恢复。','删除报表',{type:'warning'});await remove('/dashboards/'+x.id);await refresh()}
  catch(e:any){if(e!=='cancel')showError(e)}
 }
-function unauth(){logged.value=false;csrf.value=''}
+function unauth(){logged.value=false;readerMode.value=false;csrf.value=''}
 onMounted(()=>{window.addEventListener('hashchange',handleHash);window.addEventListener('bi-unauthorized',unauth);check()})
 onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.removeEventListener('bi-unauthorized',unauth)})
 </script>
@@ -284,11 +307,14 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
   <form class="login-panel" @submit.prevent="login">
    <div class="brand-mark">▦</div><h1>Insight <span>BI</span></h1><p>面向企业的数据分析与可视化设计平台</p>
    <label>账号</label><el-input v-model="username" size="large" autocomplete="username"/>
-   <label>密码</label><el-input v-model="password" size="large" type="password" show-password autocomplete="current-password" placeholder="请输入管理员密码"/>
+   <label>密码</label><el-input v-model="password" size="large" type="password" show-password autocomplete="current-password" placeholder="请输入账号密码"/>
    <div v-if="error" class="login-error">{{error}}</div><button class="primary-button login-submit" type="submit" :disabled="loginBusy">{{loginBusy?'正在登录…':'登录工作台 →'}}</button>
    <small>仅限授权用户访问 · 所有业务数据来自真实数据源</small>
   </form>
  </div>
+ <PublishedReport v-else-if="readerMode&&route==='reader-view'&&activeId"
+  :key="activeId+'reader'" :id="activeId" :viewer-mode="true" @back="navigate('reader')"/>
+ <ReaderHome v-else-if="readerMode" @open="id=>navigate('reader-view/'+id)" @logout="logout"/>
  <AnalysisSubject v-else-if="route==='analysis'&&activeId" :key="activeId" :id="activeId" @back="navigate('dashboards')"/>
  <PipelineEditor v-else-if="route==='pipeline'&&activeId" :key="activeId" :id="activeId" @back="navigate('datasets')"/>
  <PublishedReport v-else-if="route==='view'&&activeId" :key="activeId+route" :id="activeId" @back="navigate('dashboards')"/>
