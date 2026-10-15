@@ -22,13 +22,43 @@ import org.springframework.web.servlet.config.annotation.*;
 import jakarta.servlet.http.*;
 
 @Configuration class SecurityConfig implements WebMvcConfigurer {
- @Override public void addInterceptors(InterceptorRegistry r){r.addInterceptor(new HandlerInterceptor(){
-  @Override public boolean preHandle(HttpServletRequest q,HttpServletResponse a,Object h)throws Exception{
-   String p=q.getRequestURI();if(!p.startsWith("/api/")||p.equals("/api/login")||p.equals("/api/health"))return true;
-   HttpSession s=q.getSession(false);if(s==null||!Boolean.TRUE.equals(s.getAttribute("admin"))){a.sendError(401);return false;}
-   if(!Set.of("GET","HEAD","OPTIONS").contains(q.getMethod())&&!Objects.equals(q.getHeader("X-CSRF-Token"),s.getAttribute("csrf"))){a.sendError(403);return false;}
-   return true;
-  }});}
+ private final JdbcTemplate db;
+ SecurityConfig(JdbcTemplate db){this.db=db;}
+ @Override public void addInterceptors(InterceptorRegistry registry){
+  registry.addInterceptor(new ReaderAccessInterceptor(db));
+ }
+}
+/** Role-separated session boundary; new readers never inherit the admin API. */
+final class ReaderAccessInterceptor implements HandlerInterceptor {
+ private final JdbcTemplate db;
+ ReaderAccessInterceptor(JdbcTemplate db){this.db=db;}
+ @Override public boolean preHandle(HttpServletRequest q,HttpServletResponse a,Object h)throws Exception{
+  String path=q.getRequestURI(),method=q.getMethod();
+  if(!path.startsWith("/api/")||path.equals("/api/health")||
+     path.equals("/api/login")||path.equals("/api/reader/login"))return true;
+  HttpSession session=q.getSession(false);
+  if(path.startsWith("/api/reader/")){
+   if(session==null||!(session.getAttribute("readerId") instanceof String id)){
+    a.sendError(401);return false;
+   }
+   List<Map<String,Object>> users=db.queryForList(
+     "SELECT role,enabled,password_hash FROM insight_governance_user WHERE id=?",id);
+   if(users.size()!=1||!Boolean.TRUE.equals(users.get(0).get("enabled"))||
+      !Set.of("VIEWER","EDITOR").contains(String.valueOf(users.get(0).get("role")))||
+      !Objects.equals(users.get(0).get("password_hash"),session.getAttribute("readerCredential"))){
+    a.sendError(401);return false;
+   }
+  }else{
+   if(session==null||!Boolean.TRUE.equals(session.getAttribute("admin"))){
+    a.sendError(401);return false;
+   }
+  }
+  if(!Set.of("GET","HEAD","OPTIONS").contains(method)&&
+     !Objects.equals(q.getHeader("X-CSRF-Token"),session.getAttribute("csrf"))){
+    a.sendError(403);return false;
+  }
+  return true;
+ }
 }
 @RestController @RequestMapping("/api")
 class BiApi {
