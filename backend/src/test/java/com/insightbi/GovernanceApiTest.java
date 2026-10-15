@@ -221,12 +221,13 @@ class GovernanceApiTest {
     String folder=(String)reports.createFolder(Map.of("name","核心业务")).get("id");
     String child=(String)reports.createFolder(Map.of("name","财务数据","parentId",folder)).get("id");
     String dept=(String)governance.createDepartment(Map.of("name","财务部")).get("id");
+    String subDept=(String)governance.createDepartment(Map.of("name","薪资小组","parentId",dept)).get("id");
     String other=(String)governance.createDepartment(Map.of("name","市场部")).get("id");
     String alice=(String)governance.createUser(Map.of(
       "username","alice","displayName","Alice","role","VIEWER")).get("id");
     String bob=(String)governance.createUser(Map.of(
       "username","bobby","displayName","Bob","role","VIEWER")).get("id");
-    governance.assignDepartment(alice,Map.of("departmentId",dept));
+    governance.assignDepartment(alice,Map.of("departmentId",subDept));
     governance.assignDepartment(bob,Map.of("departmentId",other));
     db.update("UPDATE insight_governance_user SET enabled=TRUE WHERE id IN (?,?)",alice,bob);
     String report=(String)reports.create(Map.of(
@@ -266,7 +267,7 @@ class GovernanceApiTest {
     governance.assignDepartment(alice,Map.of("departmentId",other));
     assertFalse(governance.canReadPublished(alice,report),
       "moving to another department invalidates child folder access");
-    governance.assignDepartment(alice,Map.of("departmentId",dept));
+    governance.assignDepartment(alice,Map.of("departmentId",subDept));
     assertTrue(governance.canReadPublished(alice,report));
 
     governance.setFolderAccess(folder,Map.of("rules",List.of()));
