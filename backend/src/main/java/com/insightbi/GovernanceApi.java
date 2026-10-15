@@ -264,6 +264,7 @@ class GovernanceApi {
   Map<String,Object> deleteUser(@PathVariable String id){
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE id=?",Integer.class,id)!=1)
       throw new NoSuchElementException("用户不存在");
+    db.update("DELETE FROM insight_reader_column_deny WHERE user_id=?",id);
     db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=?",id);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=?",id);
     db.update("DELETE FROM insight_dashboard_grant WHERE user_id=?",id);
@@ -273,6 +274,55 @@ class GovernanceApi {
 
   // Optional exact STRING match, not organizational inheritance.
   // Without a row rule, the existing report grant permits all its configured rows.
+  // Column deny is additive and never turns an unauthorized dashboard into
+  // an authorized one. Only original catalog fields can be configured.
+  @GetMapping("/users/{id}/denied-columns")
+  List<Map<String,Object>> deniedColumns(@PathVariable String id){
+    requireUser(id);
+    return db.queryForList("SELECT dataset_id,field_id FROM insight_reader_column_deny "+
+      "WHERE user_id=? ORDER BY dataset_id,field_id",id);
+  }
+
+  @PutMapping("/users/{id}/denied-columns/{datasetId}")
+  @Transactional
+  Map<String,Object> setDeniedColumns(@PathVariable String id,@PathVariable String datasetId,
+                                      @RequestBody Map<String,Object> body){
+    requireUser(id);
+    if(body.size()!=1||!(body.get("fieldIds") instanceof List<?> requested)
+       ||requested.size()>20)
+      throw new IllegalArgumentException("受限列配置必须为至多 20 个字段 ID");
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset WHERE id=?",
+         Integer.class,datasetId)!=1)
+      throw new NoSuchElementException("数据集不存在");
+    Set<String> ids=new LinkedHashSet<>();
+    for(Object raw:requested){
+      String fieldId=text(raw,"字段 ID",36);
+      if(!ids.add(fieldId))throw new IllegalArgumentException("受限字段不得重复");
+      if(db.queryForObject("SELECT COUNT(*) FROM insight_dataset_field "+
+          "WHERE id=? AND dataset_id=?",Integer.class,fieldId,datasetId)!=1)
+        throw new IllegalArgumentException("字段不存在或不属于该数据集");
+    }
+    db.update("DELETE FROM insight_reader_column_deny WHERE user_id=? AND dataset_id=?",id,datasetId);
+    for(String fieldId:ids)
+      db.update("INSERT INTO insight_reader_column_deny(user_id,dataset_id,field_id) "+
+        "VALUES(?,?,?)",id,datasetId,fieldId);
+    return Map.of("datasetId",datasetId,"fieldIds",List.copyOf(ids));
+  }
+
+  @DeleteMapping("/users/{id}/denied-columns/{datasetId}")
+  Map<String,Object> clearDeniedColumns(@PathVariable String id,@PathVariable String datasetId){
+    requireUser(id);
+    db.update("DELETE FROM insight_reader_column_deny WHERE user_id=? AND dataset_id=?",id,datasetId);
+    return Map.of("ok",true);
+  }
+
+  Set<String> deniedFieldIds(String userId,String datasetId){
+    if(userId==null||datasetId==null||userId.isBlank()||datasetId.isBlank())return Set.of();
+    return Set.copyOf(db.queryForList(
+      "SELECT field_id FROM insight_reader_column_deny WHERE user_id=? AND dataset_id=?",
+      String.class,userId,datasetId));
+  }
+
   @GetMapping("/users/{id}/row-policies")
   List<Map<String,Object>> rowPolicies(@PathVariable String id){
     requireUser(id);
