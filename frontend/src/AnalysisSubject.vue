@@ -35,7 +35,7 @@ async function openPublicationAudit(){
   ElMessage.error(e instanceof Error?e.message:'读取发布记录失败')
  }finally{publicationAuditLoading.value=false}
 }
-const publicationAuditLabel=(event:string)=>({PUBLISH:'发布',UNPUBLISH:'撤销发布',RESTORE:'恢复历史版本'}[event]||event)
+const publicationAuditLabel=(event:string)=>(({PUBLISH:'发布',UNPUBLISH:'撤销发布',RESTORE:'恢复历史版本'} as Record<string,string>)[event]||event)
 
 const currentTab=ref<'component'|'dashboard'>('component')
 const propTab=ref<'data'|'style'>('data')
