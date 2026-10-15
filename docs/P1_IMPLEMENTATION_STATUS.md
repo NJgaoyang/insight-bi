@@ -387,6 +387,13 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - `SourceRecoveryGuardTest` 用注入式时钟验证连续失败、隔离不影响其他源、冷却/半开恢复、并发只放行一个探测、语法故障不熔断和统一脱敏错误。`OperationsMonitoringTest` 验证管理员连接列表不含机密、熔断期间跳过实际连接、管理员 POST 的 CSRF 控制。定向 CI 测试及 Vue/TypeScript 构建不运行全量回归。
 - 操作手册详见 [P3_SOURCE_FAILURE_RECOVERY.md](P3_SOURCE_FAILURE_RECOVERY.md)。**仍未实现**：V1 老查询路径或自助数据源配置测试的统一熔断、集群级故障隔离、真实 MySQL/StarRocks 网络故障验收、自愈/定时告警和生产部署。
 
+## P3-04：隔离 MySQL 8.4 真实 JDBC 验收与 StarRocks 只读验收入口（2026-10-15）
+
+- 新增 `RealJdbcAcceptanceTest`：在**本机 127.0.0.1 的一次性 MySQL 8.4 CI 服务**中初始化 Insight BI 20 张元数据表并验证重复初始化，使用 Connector/J 和真实 `AnalysisApi.query`/V2 SQL 规划器执行北京/上海测试记录的聚合及权限只读模式（北京 100+50=150），再将加密元数据备份恢复至另一个全新空 MySQL schema；同时校验原始业务测试表不会被纳入元数据备份、加密连接凭据和字段可恢复、不能覆盖非空库。使用真实 JDBC 向不可达本地端口触发两次断连，验证源熔断短路及健康源互不影响。
+- 专用工作流 `.github/workflows/p3-real-jdbc-acceptance.yml` 通过 `mysql:8.4` 服务容器执行，并限制用于写入的 JDBC 主机、端口及 schema。**没有连接历史公网数据库，不写入或删除任何实际业务数据表**；GitHub CI 的固定临时用户名/密码仅限销毁即弃的 Runner MySQL 容器。对应 [38686082239](https://github.com/NJgaoyang/insight-bi/actions/runs/38686082239) **SUCCESS（MySQL CI 实例）**；普通变动范围检查 [38686082234](https://github.com/NJgaoyang/insight-bi/actions/runs/38686082234) **SUCCESS**。
+- StarRocks 新增**可选、只读** JDBC `SELECT 1` 专项测试，只在操作员显式提供 `BI_ACCEPTANCE_STARROCKS_JDBC_URL`、独立只读用户名与密码时执行。当前 CI 未提供 StarRocks 连接，因此这一项是**跳过，未验收**，不能将 MySQL CI 通过解释成 StarRocks 通过。
+- 详细验收范围、运行命令、风险限制及下一步见 [P3_REAL_JDBC_ACCEPTANCE.md](P3_REAL_JDBC_ACCEPTANCE.md)。待补：StarRocks 实际 V2 SQL/FE 故障恢复、数据库最小权限实测、真实部署环境 MySQL/H2 迁移、性能与生产切换演练。本批不做全量回归或上线部署。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
