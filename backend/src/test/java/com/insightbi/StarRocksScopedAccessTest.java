@@ -115,7 +115,7 @@ class StarRocksScopedAccessTest {
     Map<String,BigDecimal> amounts=new HashMap<>();
     for(var row:rows){
       var prev=amounts.put(String.valueOf(row.get("d1")),
-        new BigDecimal(String.valueOf(row.get("m1"))));
+        new BigDecimal(String.valueOf(row.get("m1"))).stripTrailingZeros());
       assertNull(prev);
     }
     assertEquals(permitted.size(),amounts.size());
