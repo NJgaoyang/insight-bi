@@ -15,6 +15,15 @@ P3-07 已经在 H2/Mockito 中验证 `PreparedStatement.setQueryTimeout(15)`、�
 
 工作流仅在本批测试文件或专用工作流文件变化时自动运行，也支持手动触发。其他业务提交不会触发这批 15 秒取消测试。
 
+## 2026-10-15 实际 CI 验收结果
+
+- 运行：[`P3 MySQL Query Cancellation and Latency Baseline` #38691832683](https://github.com/NJgaoyang/insight-bi/actions/runs/38691832683)
+- 工作流状态 **SUCCESS**，一次性 `mysql:8.4` 启动、Maven `RealMySqlCancellationBaselineTest` 定向测试、报告上传与容器清理全部成功。
+- 合成 25 秒 `SLEEP` 读请求由 `DatabaseStore.readAnalysisRows` 的 **15 秒 JDBC statement timeout** 取消，驱动报 SQL timeout；观察到 **15,023 ms**；取消后**同一 JDBC 连接**成功执行 `SELECT 1` 及另一次 `readAnalysisRows`。
+- 240 条测试数据、3 次预热；**串行 12 次**：P50 **0 ms**、P95 **1 ms**；**4 并发共 24 次**：P50 **2 ms**、P95 **3 ms**。值在毫秒精度取整，`0 ms` 代表耗时小于 1 ms，不表示零成本。
+- GitHub Workflow artifact `p3-mysql-cancellation-latency` 已生成，包含 JSON 性能基线和 Surefire 报告，可从上述工作流下载。
+- 这些观测值只反映临时 GitHub Runner 上的固定测试条件，不应作为企业生产环境的 MySQL/StarRocks 性能承诺。
+
 ## 解读基线的限制
 
 - CI Runner 内小表的 P50/P95 **不是**生产 MySQL/StarRocks 的 SLA，也不能据此推断百万行数据集性能；执行规模和网络路径都不同。
@@ -22,4 +31,4 @@ P3-07 已经在 H2/Mockito 中验证 `PreparedStatement.setQueryTimeout(15)`、�
 - 只验证指定 SELECT 读路径，不测试前端大量并发用户、V1 查询接口、FE/BE 故障切换或真实集群的慢 SQL 终止。
 - 不把 `SQLTimeoutException` 自动视为连接整体故障，也不因超时自动重试 SQL。失败时保留精准测试报告，不启动无界重试。
 
-本次真正执行结果以 Github Actions `P3 MySQL Query Cancellation and Latency Baseline` 工作流为准；**失败、排队或尚未运行时，不得标为验收通过**。
+本次运行已完成并通过，参见上文工作流链接和实际测量结果。未来重新执行时仍应以当次工作流状态为准，不能沿用本次成功结论。
