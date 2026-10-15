@@ -115,6 +115,46 @@ class ReaderApiTest {
         assertFalse(rows.next());
       }
     }
+    // Multiple allowed cities remain pre-aggregation binds, never SQL text.
+    governance.setRowPolicy(userId,dataset,Map.of("fieldId",city,
+      "allowedValues",List.of("北京","上海")));
+    assertEquals(2,((List<?>)governance.rowPolicies(userId).get(0).get("values")).size());
+    reader.query(dashboard,"w1",Map.of(),session);
+    var multiple=(List<?>)((Map<?,?>)analysis.received.get("filters")).get("pre");
+    assertEquals("in",((Map<?,?>)multiple.get(0)).get("op"));
+    var multiPlan=new com.insightbi.analysis.AnalysisQueryPlanner(fields)
+      .compile("SELECT city,revenue FROM sales",analysis.received);
+    assertTrue(multiPlan.sql().contains(" IN (?,?)"));
+    assertEquals(Set.of("北京","上海"),new HashSet<>(multiPlan.params().subList(0,2)));
+    try(var conn=db.getDataSource().getConnection();
+        var stmt=conn.prepareStatement(multiPlan.sql())){
+      for(int i=0;i<multiPlan.params().size();i++)
+        stmt.setObject(i+1,multiPlan.params().get(i));
+      try(var result=stmt.executeQuery()){
+        java.math.BigDecimal total=java.math.BigDecimal.ZERO;
+        int count=0;
+        while(result.next()){total=total.add(result.getBigDecimal("m1"));count++;}
+        assertEquals(2,count);
+        assertEquals(0,new java.math.BigDecimal("350").compareTo(total));
+      }
+    }
+    assertThrows(IllegalArgumentException.class,()->governance.setRowPolicy(userId,dataset,
+      Map.of("fieldId",city,"allowedValues",List.of("北京","北京"))));
+    assertThrows(IllegalArgumentException.class,()->governance.setRowPolicy(userId,dataset,
+      Map.of("fieldId",city,"allowedValues",List.of())));
+    assertThrows(IllegalArgumentException.class,()->governance.setRowPolicy(userId,dataset,
+      Map.of("fieldId",city,"allowedValues",
+        java.util.stream.IntStream.range(0,21).mapToObj(String::valueOf).toList())));
+    assertThrows(IllegalArgumentException.class,()->governance.setRowPolicy(userId,dataset,
+      Map.of("fieldId",city,"allowedValue","北京","allowedValues",List.of("上海"))));
+    assertEquals(2,((List<?>)governance.rowPolicies(userId).get(0).get("values")).size(),
+      "invalid replacement must preserve old rule");
+    // An old singleton record without children must still restrict rows.
+    db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=? AND dataset_id=?",
+      userId,dataset);
+    reader.query(dashboard,"w1",Map.of(),session);
+    assertEquals(List.of(Map.of("fieldId",city,"op","eq","value","北京")),
+      ((Map<?,?>)analysis.received.get("filters")).get("pre"));
     // A malicious value remains a bind parameter; it can never become SQL.
     governance.setRowPolicy(userId,dataset,
       Map.of("fieldId",city,"allowedValue","北京' OR 1=1"));
