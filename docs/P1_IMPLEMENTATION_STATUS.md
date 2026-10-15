@@ -423,6 +423,13 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 工作流 [38691832683](https://github.com/NJgaoyang/insight-bi/actions/runs/38691832683) **SUCCESS**，保留 `p3-mysql-cancellation-latency` artifact（JSON 基线 + Surefire 报告，14 天）。独立 CI 临时容器运行后销毁；测试 `finally` 删除临时性能表。详细范围与数字见 [P3_MYSQL_CANCELLATION_BASELINE.md](P3_MYSQL_CANCELLATION_BASELINE.md)。
 - **未执行**：生产 StarRocks/FE 上的慢 SQL/故障切换、人为杀查询、真实业务数据容量压测、生产版本部署及全量回归。本轮未改已有生产查询实现，仅验证 Connector/J 实际取消和性能基线。
 
+## P3-09：8 个读者与 60k MySQL 记录的并发权限专项验收（2026-10-15）
+
+- 在不改动业务代码的前提下，新增 `DisposableReaderConcurrencyTest` 与专用 [P3 Disposable Reader Concurrency Acceptance 工作流](https://github.com/NJgaoyang/insight-bi/actions/runs/38692527238)，只连接 GitHub Runner 内的一次性 MySQL 8.4 `127.0.0.1:3306/insight_ci_acceptance`；模拟数据表固定名，包含 60k 条北京/上海/广州合成城市收入，测试完成后删除，元数据留在独立 H2 内存库。绝不使用已有 StarRocks/MySQL 业务环境。
+- 通过真正的 `ReaderApi.login` 建立 8 个不同的 VIEWER 会话，授权同一份已发布 V2 主题，但 4 个账号限北京、4 个限上海；单会话必须只返回 20k 行对应的 `SUM=200000`，禁止伪造浏览器传入 dataset/filter；未获授权者不能查询，测试完成撤销现有用户授权并断言其旧会话立即拒绝。
+- 8 条工作线程同时起跑、每条 3 次请求，总计 24 次已发布组件查询；通过既有 4 并发/250ms 等待限制，区分真正成功与合法 Busy/429；确认活跃与等待许可归零。输出实测成功/限流/P50/P95 至 `target/p3-reader-concurrency.json`，专项工作流上传 JSON 与 Surefire 报告。
+- 代码已提交，通用改动范围编译检查 [38692527178](https://github.com/NJgaoyang/insight-bi/actions/runs/38692527178) **SUCCESS**；独立 MySQL 60k/8 人专项检查是否通过以**工作流最终状态**为准，不因编译成功或临时状态将实际容量验收报告为通过。详细限制见 [P3_READER_CONCURRENCY_ACCEPTANCE.md](P3_READER_CONCURRENCY_ACCEPTANCE.md)。本次非真实浏览器并发与生产 SLA 测试，没有触碰现有业务环境或执行全量回归。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
