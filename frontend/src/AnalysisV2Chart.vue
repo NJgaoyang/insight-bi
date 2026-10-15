@@ -5,7 +5,7 @@ import {analysisCsv} from './analysis/exportCsv'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
 const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null}>()
-const emit=defineEmits<{(e:'navigate'):void;(e:'selectDimension',selection:{fieldId:string;value:string|number}|null):void}>()
+const emit=defineEmits<{(e:'navigate'):void;(e:'selectDimension',selection:{fieldId:string;value:string|number}|null):void;(e:'tableColumnsChange',hiddenIds:string[]):void}>()
 const element=ref<HTMLElement|null>(null)
 const loading=ref(false),error=ref(''),rows=ref<Record<string,unknown>[]>([])
 const result=ref<QueryV2Result|null>(null)
@@ -18,13 +18,17 @@ const measureNames=computed(()=>result.value?.columns.filter(c=>c.kind==='measur
 const hiddenColumnIds=ref<string[]>([...(bindings.value?.tableHiddenColumnIds??[])])
 watch(()=>bindings.value?.tableHiddenColumnIds,ids=>{hiddenColumnIds.value=[...(ids??[])]},{deep:true})
 const tableSearch=ref('')
-const visibleColumns=computed(()=>result.value?.columns.filter(c=>!hiddenColumnIds.value.includes(c.id))??[])
+const visibleColumns=computed(()=>{
+ const cols=result.value?.columns??[]
+ const visible=cols.filter(c=>!hiddenColumnIds.value.includes(c.id))
+ return visible.length?visible:cols.slice(0,1)
+})
 const tableRows=computed(()=>{const q=tableSearch.value.trim().toLowerCase();return q?rows.value.filter(row=>visibleColumns.value.some(c=>String(row[c.name]??'').toLowerCase().includes(q))):rows.value})
 function toggleColumn(id:string){
  const next=hiddenColumnIds.value.includes(id)?hiddenColumnIds.value.filter(x=>x!==id):[...hiddenColumnIds.value,id]
  if(result.value&&next.length>=result.value.columns.length)return
  hiddenColumnIds.value=next
- if(!props.readonly&&bindings.value)bindings.value.tableHiddenColumnIds=[...next]
+ if(!props.readonly)emit('tableColumnsChange',[...next])
 }
 
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
