@@ -328,6 +328,15 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 定向 H2 [38674817103](https://github.com/NJgaoyang/insight-bi/actions/runs/38674817103) **SUCCESS**：执行真实 SQL 验证北京150 + 上海200 = 350，验证 IN 参数化、重复/空/超限/双格式拒绝、非法替换不改变旧规则以及旧单值记录兼容。
 - **未完成项**：新增多值输入路径的独立 Chromium 实际交互尚未完成确认；真实 StarRocks JDBC、MySQL 原地迁移及生产部署未验证。仍不支持多字段 AND/OR、多用户继承、行列脱敏及完整目录 ACL。
 
+## P2-02 第七批：部门报表授权继承与读者目录一致性（2026-10-15）
+
+- 新增 `insight_department_dashboard_grant`，允许管理员按部门授予当前**已发布分析主题**的 `READ_PUBLISHED` 权限；部门自身和所有下级部门的有效 VIEWER/EDITOR 成员可继承该报表**只读**授权。不开放报表编辑、数据集管理、SQL/元数据 API；仍保留已有个人报表授权，二者取并集，不进行普通用户角色升级。
+- 管理员专属接口：`GET/POST /api/governance/departments/{id}/grants` 及 `DELETE /api/governance/departments/{id}/grants/{dashboardId}`。不存在部门、非分析主题、未发布报表、额外权限字段均拒绝；重复授权幂等。删除无人/无子部门的部门时一并清理其直接报表授权。
+- `GovernanceApi.effectiveDashboardIds` 基于当前账号启用状态和角色、现有用户直接授权以及当前组织树从用户部门至根节点逐级合并已授予的报表 ID。每次请求现查，不缓存：用户调出部门、父部门迁移、直接/继承授权撤销立即重新判定；树循环、孤儿父部门或超过深度上限时直接拒绝。读取目录 `/api/reader/catalog` 与报表查看、V2 组件只读查询共用此策略，并只返回已发布分析主题，避免目录和接口判权不一致。
+- 「系统管理 → 权限治理 → 部门管理」增加部门报表授权弹窗，支持查看、授权和撤销，只展示已发布分析主题并清楚标明下级部门继承、个人授权独立、行级数据限制依旧生效。
+- H2 定向 `GovernanceApiTest`、`ReaderApiTest` 覆盖三层继承、账号禁用、迁出/调回、迁移祖先、撤销、未发布报告、直接授权独立和删除部门清理；后端定向工作流 [38675258178](https://github.com/NJgaoyang/insight-bi/actions/runs/38675258178) 及 [38675230566](https://github.com/NJgaoyang/insight-bi/actions/runs/38675230566) **SUCCESS**。新增 Chromium 部门授权弹窗回归用例的最终结论另以该次工作流结果为准，不冒充生产浏览器和真实数据库验收。
+- 边界：不实现部门行级权限继承、资源目录 ACL、审批流程、V1 旧组件、安全跨租户查询、MySQL/StarRocks 真库验证或生产部署。管理员**原有个人行级过滤**在继承报表后继续由服务器强制执行。该切片并非完整企业级权限系统交付。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
