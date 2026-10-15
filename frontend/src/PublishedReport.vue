@@ -6,7 +6,7 @@ import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import {cardStyle,orderedViewWidgets,type DashboardView} from './analysis/dashboardLayout'
 
-const props=defineProps<{id:string}>()
+const props=defineProps<{id:string;viewerMode?:boolean}>()
 const emit=defineEmits<{(e:'back'):void}>()
 const loading=ref(true),error=ref('')
 const report=ref<Dashboard|null>(null)
@@ -24,7 +24,7 @@ const jumpTarget=(id:string)=>{
 }
 function navigateWidget(id:string){const target=jumpTarget(id);if(target){linkedSelection.value=null;selectedViewId.value=target}}
 function selectDimension(widget:AnalysisWidgetV2,selection:{fieldId:string;value:string|number}|null){
- if(!selection||jumpTarget(widget.id))return
+ if(props.viewerMode||!selection||jumpTarget(widget.id))return
  linkedSelection.value={datasetId:widget.datasetId,fieldId:selection.fieldId,
   value:selection.value,sourceWidgetId:widget.id}
 }
@@ -37,7 +37,9 @@ function linkedFilterFor(widget:AnalysisWidgetV2):FilterV2|null{
 
 async function load(){
  try{
-  const saved=await api<Dashboard&{kind:string}>('/dashboards/'+encodeURIComponent(props.id)+'?published=true')
+  const saved=await api<Dashboard&{kind:string}>(props.viewerMode
+   ?'/reader/dashboards/'+encodeURIComponent(props.id)
+   :'/dashboards/'+encodeURIComponent(props.id)+'?published=true')
   kind.value=saved.kind==='analysis'?'analysis':'dashboard'
   if(kind.value==='dashboard')return
   report.value=saved
@@ -47,7 +49,7 @@ async function load(){
    ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:widgets.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
-  datasets.value=await api<Dataset[]>('/datasets')
+  if(!props.viewerMode)datasets.value=await api<Dataset[]>('/datasets')
  }catch(e:unknown){error.value=e instanceof Error?e.message:'发布内容读取失败'}
  finally{loading.value=false}
 }
@@ -60,7 +62,7 @@ onMounted(load)
   <button @click="emit('back')">← 返回</button>
   <span>{{error}}</span>
  </div>
- <Designer v-else-if="kind==='dashboard'" :id="id" :readonly="true" @back="emit('back')"/>
+ <Designer v-else-if="kind==='dashboard'&&!viewerMode" :id="id" :readonly="true" @back="emit('back')"/>
  <div v-else class="analysis-published-view">
   <header class="analysis-published-header">
    <button class="analysis-back" @click="emit('back')">← 我的分析</button>
@@ -85,7 +87,8 @@ onMounted(load)
        @click="navigateWidget(widget.id)">前往 {{dashboardViews.find(v=>v.id===activeView?.jumps?.[widget.id])?.name}} →</button>
      </div>
      <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"
-      :navigable="!!jumpTarget(widget.id)" :linked-filter="linkedFilterFor(widget)"
+      :navigable="!!jumpTarget(widget.id)" :linked-filter="viewerMode?null:linkedFilterFor(widget)"
+      :viewer-report-id="viewerMode?id:undefined"
       @select-dimension="selection=>selectDimension(widget,selection)" @navigate="navigateWidget(widget.id)"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
     </div>
