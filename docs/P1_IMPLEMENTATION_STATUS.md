@@ -363,6 +363,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - **安全/产品边界**：当前管理员账号仍是唯一管理主体，审批者与提交者可以是同一 `admin`；此版具有流程状态及审计，但**不能等同于独立双人审批或职责分离**。出于兼容性，旧分析主题必须由管理员主动开启门禁，旧主题未开启仍可直接发布；后续需完善多用户审批角色/职责分离和管理员审批任务列表。
 - 定向 H2 `PublicationAuditTest` 检验未审批禁止、驳回拒绝、修改后审批失效、成功后一次性发布、版本冲突及审计信息；`P0 Changed-Area Checks` 执行后端相关测试及前端 TypeScript/Vite 构建。真实 MySQL 迁移、浏览器审批对话框的专项 Chromium 验收及生产环境未验证；不执行全量回归。
 
+## P3-01 第一批：加密元数据备份、校验及离线空库恢复（2026-10-15）
+
+- 新增 `MetadataBackupService`：枚举现有 20 张 `insight_*` 元数据表，按 `REPEATABLE_READ` 事务读取，生成 AES-256-GCM 加密逻辑归档（从现有 `BI_CREDENTIAL_KEY` 进行独立用途密钥派生、每次随机 IV、认证标签），含连接配置的原加密密文、用户密码哈希、报表/版本/发布审批、目录/用户/部门/行列授权等全部元数据。**不导出业务源数据库数据**。归档明文最大 32MB、单表记录最多 10 万行，超限会拒绝产生结果。
+- 新增**管理员专属** `GET /api/admin/metadata-backup` 加密下载、`POST /api/admin/metadata-backup/verify` 非破坏性格式/密钥/完整性/字段架构校验；普通读者无法访问；前端「系统管理 → 备份恢复」提供下载和本地文件校验。
+- 恢复仅由 `MetadataRestoreCli` 在**停机、显式确认目标 JDBC URL、离线加密备份和原始密钥**条件下执行，要求已初始化的目标全部 20 张表严格为空。在一个数据事务内恢复；没有任何 HTTP 一键恢复或覆盖现有元数据库入口。具体操作和恢复核验见 [P3_METADATA_BACKUP_AND_RECOVERY.md](P3_METADATA_BACKUP_AND_RECOVERY.md)。
+- `MetadataBackupRecoveryTest` 使用相互隔离的 H2 数据库执行导出/解密验证/跨库恢复、加密连接凭据与用户密码哈希保真、恶意篡改/错误密钥拒绝、非空库恢复拒绝、管理员下载与无缓存声明。定向 CI [38677618323](https://github.com/NJgaoyang/insight-bi/actions/runs/38677618323) **SUCCESS**；包含前端完整 TypeScript 编译和 Vite 构建的改动范围 CI [38677797267](https://github.com/NJgaoyang/insight-bi/actions/runs/38677797267) **SUCCESS**，后续 CI 映射 [38677824542](https://github.com/NJgaoyang/insight-bi/actions/runs/38677824542) **SUCCESS**。
+- **尚未完成**：真实 MySQL 备份/恢复演练、StarRocks 业务数据保护、生产一致性/并发压力、定时与异地备份、密钥轮换、恢复时间目标（RTO）与恢复点目标（RPO）量化。未部署生产，未运行全量回归，也没有宣称整体 P3 完成。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
