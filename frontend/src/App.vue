@@ -134,7 +134,7 @@ const menu=[
 ]
 const editor=computed(()=>['designer','view','analysis','pipeline'].includes(route.value))
 function handleHash(){
- const hash=window.location.hash.replace(/^#\\/?/,'').split('/').filter(Boolean)
+ const hash=window.location.hash.replace(/^#\/?/,'').split('/').filter(Boolean)
  route.value=hash[0]||'dashboards';activeId.value=hash[1]||'';view.value=route.value==='view'
  if(readerMode.value){
   if(!['reader','reader-view'].includes(route.value)||(route.value==='reader-view'&&!activeId.value)){
