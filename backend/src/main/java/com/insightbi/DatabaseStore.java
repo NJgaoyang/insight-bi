@@ -44,6 +44,8 @@ public class DatabaseStore {
   // Optional, per-user PBKDF2 credential for the isolated reader login.
   if(!columnExists("insight_governance_user","password_hash"))
     jdbc.execute("ALTER TABLE insight_governance_user ADD COLUMN password_hash VARCHAR(256)");
+  if(!columnExists("insight_governance_user","auth_version"))
+    jdbc.execute("ALTER TABLE insight_governance_user ADD COLUMN auth_version INT NOT NULL DEFAULT 0");
 
 
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
