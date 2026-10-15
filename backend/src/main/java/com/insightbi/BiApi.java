@@ -449,6 +449,10 @@ class BiApi {
  static void mode(String s){if(!Set.of("grid","free").contains(s))throw new IllegalArgumentException("画布模式无效");}
 }
 @RestControllerAdvice class ApiErrors {
+ @ExceptionHandler(java.sql.SQLTimeoutException.class)
+ ResponseEntity<Map<String,Object>> timeout(java.sql.SQLTimeoutException ignored){
+  return ResponseEntity.status(504).body(Map.of("error","分析查询超时，请缩小数据范围后重试"));
+ }
  @ExceptionHandler(com.insightbi.analysis.SourceRecoveryGuard.Unavailable.class)
  ResponseEntity<Map<String,Object>> unavailable(com.insightbi.analysis.SourceRecoveryGuard.Unavailable x){
   return ResponseEntity.status(503).body(Map.of("error","数据源暂不可用，请稍后重试"));
