@@ -13,7 +13,7 @@ class SourceRecoveryGuardTest {
     return new SQLTransientConnectionException("secret-db-host=private", "08001");
   }
 
-  @Test void twoConnectionFailuresOpenOnlyTheImpactedSourceThenAllowOneRecovery(){
+  @Test void twoConnectionFailuresOpenOnlyTheImpactedSourceThenAllowOneRecovery()throws Exception{
     AtomicLong nanos=new AtomicLong(TimeUnit.SECONDS.toNanos(100));
     SourceRecoveryGuard guard=new SourceRecoveryGuard(nanos::get);
     AtomicInteger attempts=new AtomicInteger();
