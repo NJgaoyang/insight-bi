@@ -3,7 +3,7 @@ import {computed,onMounted,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,remove} from './api'
 
-const props=defineProps<{dashboards:{id:string;name:string;status:string}[];datasets:{id:string;name:string}[]}>()
+const props=defineProps<{dashboards:{id:string;name:string;status:string;kind?:string}[];datasets:{id:string;name:string}[]}>()
 type User={id:string;username:string;display_name:string;role:'VIEWER'|'EDITOR';enabled:boolean;department_id?:string|null;password_configured?:boolean}
 type Department={id:string;name:string;parent_id:string|null}
 type Grant={dashboard_id:string;permission:string}
@@ -50,6 +50,43 @@ async function toggleActivation(user:User){
 const newUser=ref({username:'',displayName:'',role:'VIEWER' as 'VIEWER'|'EDITOR'})
 const selected=ref<User|null>(null),grants=ref<Grant[]>([]),newReport=ref('')
 const published=()=>props.dashboards.filter(d=>d.status==='published')
+type DepartmentGrant={dashboard_id:string;permission:string}
+const departmentGrantOpen=ref(false),grantDepartment=ref<Department|null>(null)
+const departmentGrantRows=ref<DepartmentGrant[]>([]),departmentReportId=ref('')
+const publishedAnalyses=()=>props.dashboards.filter(d=>d.status==='published'&&d.kind==='analysis')
+async function openDepartmentGrants(dept:Department){
+ grantDepartment.value=dept;departmentReportId.value='';departmentGrantOpen.value=true
+ await refreshDepartmentGrants()
+}
+async function refreshDepartmentGrants(){
+ if(!grantDepartment.value)return
+ try{
+  departmentGrantRows.value=await api<DepartmentGrant[]>(
+    '/governance/departments/'+encodeURIComponent(grantDepartment.value.id)+'/grants')
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'加载部门授权失败')}
+}
+async function grantDepartmentReport(){
+ if(!grantDepartment.value||!departmentReportId.value)return
+ busy.value=true
+ try{
+  await post('/governance/departments/'+encodeURIComponent(grantDepartment.value.id)+'/grants',
+    {dashboardId:departmentReportId.value})
+  departmentReportId.value='';await refreshDepartmentGrants()
+  ElMessage.success('部门及下属部门成员可读取该分析主题')
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'部门授权失败')}
+ finally{busy.value=false}
+}
+async function revokeDepartmentReport(reportId:string){
+ if(!grantDepartment.value)return
+ try{
+  await ElMessageBox.confirm('撤销后，该部门及下级部门将不再继承此授权；用户自己的直接授权不受影响。',
+    '撤销部门授权',{type:'warning'})
+  await remove('/governance/departments/'+encodeURIComponent(grantDepartment.value.id)+
+   '/grants/'+encodeURIComponent(reportId))
+  await refreshDepartmentGrants()
+ }catch(e){if(e!=='cancel')ElMessage.error(e instanceof Error?e.message:'撤销部门授权失败')}
+}
+
 type RowPolicy={dataset_id:string;field_id:string;allowed_value:string;values?:string[]}
 type PolicyField={id:string;name:string;logicalType:string;calculated:boolean}
 const rowDialog=ref(false),rowUser=ref<User|null>(null),rowPolicies=ref<RowPolicy[]>([])
@@ -202,7 +239,8 @@ onMounted(refresh)
     <tr v-for="d in departmentRows" :key="d.id">
      <td><span :style="{paddingLeft:(d.depth*20)+'px'}">{{d.depth?'↳ ':''}}{{d.name}}</span></td>
      <td>{{departments.find(parent=>parent.id===d.parent_id)?.name||'根目录'}}</td>
-     <td><button @click="openDepartment(d)">编辑 / 调整层级</button>
+     <td><button @click="openDepartmentGrants(d)">报表授权</button>
+      <button @click="openDepartment(d)">编辑 / 调整层级</button>
       <button class="danger-link" @click="deleteDepartment(d)">删除</button></td>
     </tr>
     <tr v-if="!departments.length"><td colspan="3">暂无部门</td></tr>
@@ -245,6 +283,26 @@ onMounted(refresh)
   </table>
  </section>
 
+ <el-dialog v-model="departmentGrantOpen"
+  :title="'部门报表授权 · '+(grantDepartment?.name||'')" width="570px">
+  <p class="fine-dialog-tip">仅授予已发布分析主题的查看权限，当前部门及所有下级部门用户自动继承。不会获得管理后台、数据集或编辑权限。原有个人行级过滤继续生效。</p>
+  <div class="horizontal-form">
+   <el-select v-model="departmentReportId" filterable placeholder="选择已发布分析主题">
+    <el-option v-for="r in publishedAnalyses()" :key="r.id" :label="r.name" :value="r.id"/>
+   </el-select>
+   <button class="primary-button" :disabled="busy||!departmentReportId"
+    @click="grantDepartmentReport">添加授权</button>
+  </div>
+  <div v-if="!departmentGrantRows.length" class="fine-dialog-tip">该部门暂无直接授予的分析主题</div>
+  <table v-else class="bi-table">
+   <thead><tr><th>已授权分析主题</th><th>继承范围</th><th>操作</th></tr></thead>
+   <tbody><tr v-for="g in departmentGrantRows" :key="g.dashboard_id">
+    <td>{{dashboards.find(d=>d.id===g.dashboard_id)?.name||g.dashboard_id}}</td>
+    <td>本部门及下级部门 · 只读</td>
+    <td><button class="danger-link" @click="revokeDepartmentReport(g.dashboard_id)">撤销</button></td>
+   </tr></tbody>
+  </table>
+ </el-dialog>
  <el-dialog v-model="departmentDialog" :title="departmentDraft.id?'编辑部门':'新建部门'" width="460px">
   <div class="modal-fields">
    <label>部门名称</label><el-input v-model="departmentDraft.name" maxlength="100"
