@@ -10,12 +10,12 @@ PORT='9030'
 if [[ -z "${BI_ACCEPTANCE_STARROCKS_USERNAME:-}" ]]; then
   BI_ACCEPTANCE_STARROCKS_USERNAME='root'
 fi
-if [[ -z "${BI_ACCEPTANCE_STARROCKS_PASSWORD:-}" ]]; then
+if [[ -z "${BI_ACCEPTANCE_STARROCKS_PASSWORD:-}" && -z "${BI_ACCEPTANCE_STARROCKS_MYSQL_DEFAULTS_FILE:-}" ]]; then
   read -rsp 'StarRocks password (input hidden): ' BI_ACCEPTANCE_STARROCKS_PASSWORD
   printf '\n'
 fi
-if [[ -z "$BI_ACCEPTANCE_STARROCKS_PASSWORD" ]]; then
-  echo 'StarRocks password missing' >&2
+if [[ -z "${BI_ACCEPTANCE_STARROCKS_PASSWORD:-}" && -z "${BI_ACCEPTANCE_STARROCKS_MYSQL_DEFAULTS_FILE:-}" ]]; then
+  echo 'Provide a temporary password or an operator-owned MySQL defaults file' >&2
   exit 2
 fi
 
