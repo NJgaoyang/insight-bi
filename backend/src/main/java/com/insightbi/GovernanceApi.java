@@ -23,6 +23,99 @@ class GovernanceApi {
 
   GovernanceApi(JdbcTemplate db){this.db=db;}
 
+  // Folder rules are restrictive allow lists: an ACL at a folder narrows the
+  // set of readers who ALREADY have a report grant. Parent ACLs are cumulative.
+  @GetMapping("/folders/{id}/access")
+  List<Map<String,Object>> folderAccess(@PathVariable String id){
+    requireFolder(id);
+    return db.queryForList("SELECT principal_type,principal_id,permission "+
+      "FROM insight_folder_acl WHERE folder_id=? ORDER BY principal_type,principal_id",id);
+  }
+
+  @PutMapping("/folders/{id}/access")
+  @Transactional
+  Map<String,Object> setFolderAccess(@PathVariable String id,@RequestBody Map<String,Object> body){
+    requireFolder(id);
+    if(body.size()!=1||!(body.get("rules") instanceof List<?> rules)||rules.size()>50)
+      throw new IllegalArgumentException("目录授权规则必须为至多 50 个成员");
+    Set<String> unique=new HashSet<>();
+    List<Map<String,String>> safe=new ArrayList<>();
+    for(Object item:rules){
+      if(!(item instanceof Map<?,?> entry)||entry.size()!=2||
+         !entry.containsKey("principalType")||!entry.containsKey("principalId"))
+        throw new IllegalArgumentException("目录规则只允许主体类型与 ID");
+      String type=text(entry.get("principalType"),"主体类型",12);
+      String principal=text(entry.get("principalId"),"主体 ID",36);
+      if(!Set.of("USER","DEPARTMENT").contains(type))
+        throw new IllegalArgumentException("目录授权主体类型无效");
+      if(!unique.add(type+":"+principal))throw new IllegalArgumentException("重复目录授权");
+      String target=type.equals("USER")?"insight_governance_user":"insight_governance_department";
+      if(db.queryForObject("SELECT COUNT(*) FROM "+target+" WHERE id=?",
+          Integer.class,principal)!=1)
+        throw new NoSuchElementException("目录授权主体不存在");
+      safe.add(Map.of("principalType",type,"principalId",principal));
+    }
+    db.update("DELETE FROM insight_folder_acl WHERE folder_id=?",id);
+    for(Map<String,String> rule:safe)
+      db.update("INSERT INTO insight_folder_acl "+
+        "(folder_id,principal_type,principal_id,permission) VALUES(?,?,?,?)",
+        id,rule.get("principalType"),rule.get("principalId"),READ);
+    return Map.of("folderId",id,"rules",safe);
+  }
+
+  private void requireFolder(String folderId){
+    if(db.queryForObject("SELECT COUNT(*) FROM insight_folder WHERE id=?",
+        Integer.class,folderId)!=1)
+      throw new NoSuchElementException("目录不存在");
+  }
+
+  // Fail closed on corrupt trees. A folder without ACL retains backward-
+  // compatible visibility, but NEVER grants access without a report grant.
+  boolean canAccessFolder(String userId,String folderId){
+    if(folderId==null)return true;
+    if(userId==null||userId.isBlank())return false;
+    List<Map<String,Object>> userRows=db.queryForList(
+      "SELECT department_id FROM insight_governance_user WHERE id=?",userId);
+    if(userRows.size()!=1)return false;
+    Set<String> departments=new HashSet<>();
+    String dept=(String)userRows.get(0).get("department_id");
+    while(dept!=null){
+      if(!departments.add(dept)||departments.size()>10)
+        throw new IllegalStateException("部门层级异常，拒绝目录访问");
+      List<Map<String,Object>> ancestors=db.queryForList(
+        "SELECT parent_id FROM insight_governance_department WHERE id=?",dept);
+      if(ancestors.size()!=1)throw new IllegalStateException("部门已失效，拒绝目录访问");
+      dept=(String)ancestors.get(0).get("parent_id");
+    }
+    Set<String> visitedFolders=new HashSet<>();
+    String folder=folderId;
+    while(folder!=null){
+      if(!visitedFolders.add(folder)||visitedFolders.size()>20)
+        throw new IllegalStateException("资源目录层级异常，拒绝访问");
+      List<Map<String,Object>> ancestors=db.queryForList(
+        "SELECT parent_id FROM insight_folder WHERE id=?",folder);
+      if(ancestors.size()!=1)throw new IllegalStateException("资源目录不存在");
+      List<Map<String,Object>> rules=db.queryForList(
+        "SELECT principal_type,principal_id FROM insight_folder_acl "+
+        "WHERE folder_id=? AND permission=? LIMIT 51",folder,READ);
+      if(rules.size()>50)throw new IllegalStateException("目录授权配置超限");
+      if(!rules.isEmpty()){
+        boolean matched=false;
+        for(Map<String,Object> rule:rules){
+          String type=String.valueOf(rule.get("principal_type"));
+          String principal=String.valueOf(rule.get("principal_id"));
+          if(type.equals("USER")&&principal.equals(userId)||
+             type.equals("DEPARTMENT")&&departments.contains(principal)){
+            matched=true;break;
+          }
+        }
+        if(!matched)return false;
+      }
+      folder=(String)ancestors.get(0).get("parent_id");
+    }
+    return true;
+  }
+
   @GetMapping("/roles")
   Map<String,Object> roles(){
     return Map.of("roles",List.of("VIEWER","EDITOR"),"loginEnabled",true);
@@ -87,6 +180,7 @@ class GovernanceApi {
       throw new IllegalStateException("部门包含子部门，请先迁移或删除子部门");
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE department_id=?",Integer.class,id)>0)
       throw new IllegalStateException("部门仍有用户，请先调整用户归属");
+    db.update("DELETE FROM insight_folder_acl WHERE principal_type='DEPARTMENT' AND principal_id=?",id);
     db.update("DELETE FROM insight_department_dashboard_grant WHERE department_id=?",id);
     db.update("DELETE FROM insight_governance_department WHERE id=?",id);
     return Map.of("ok",true);
@@ -264,6 +358,7 @@ class GovernanceApi {
   Map<String,Object> deleteUser(@PathVariable String id){
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE id=?",Integer.class,id)!=1)
       throw new NoSuchElementException("用户不存在");
+    db.update("DELETE FROM insight_folder_acl WHERE principal_type='USER' AND principal_id=?",id);
     db.update("DELETE FROM insight_reader_column_deny WHERE user_id=?",id);
     db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=?",id);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=?",id);
@@ -493,9 +588,10 @@ class GovernanceApi {
   boolean canReadPublished(String userId,String dashboardId){
     if(dashboardId==null||dashboardId.isBlank()||
        !effectiveDashboardIds(userId).contains(dashboardId))return false;
-    return db.queryForObject("SELECT COUNT(*) FROM insight_dashboard "+
-      "WHERE id=? AND status='published' AND published_json IS NOT NULL",
-      Integer.class,dashboardId)==1;
+    List<Map<String,Object>> matched=db.queryForList(
+      "SELECT folder_id FROM insight_dashboard WHERE id=? AND kind='analysis' "+
+      "AND status='published' AND published_json IS NOT NULL",dashboardId);
+    return matched.size()==1&&canAccessFolder(userId,(String)matched.get(0).get("folder_id"));
   }
 
   private void requireUser(String id){
