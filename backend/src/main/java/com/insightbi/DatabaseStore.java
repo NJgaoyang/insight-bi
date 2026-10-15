@@ -33,6 +33,10 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard_version (id VARCHAR(36) PRIMARY KEY, dashboard_id VARCHAR(36) NOT NULL, version_no INT NOT NULL, name VARCHAR(150) NOT NULL, mode VARCHAR(12) NOT NULL, content_json LONGTEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE (dashboard_id,version_no))");
   // P2-02: additive publication audit metadata, no report content or credentials.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_publication_audit (id VARCHAR(36) PRIMARY KEY, dashboard_id VARCHAR(36) NOT NULL, event_type VARCHAR(20) NOT NULL, actor VARCHAR(64) NOT NULL, version_no INT, created_at TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6))");
+  // P2-02 foundations: provisioned principals are deliberately disabled.
+  // No ordinary-user login is enabled until role and resource gates cover every API.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_user (id VARCHAR(36) PRIMARY KEY, username VARCHAR(80) NOT NULL UNIQUE, display_name VARCHAR(100) NOT NULL, role VARCHAR(16) NOT NULL, enabled BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dashboard_grant (user_id VARCHAR(36) NOT NULL, dashboard_id VARCHAR(36) NOT NULL, permission VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,dashboard_id,permission))");
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   boolean hasFolder=columnExists("insight_dashboard","folder_id");
    if(!hasFolder)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN folder_id VARCHAR(36)");
