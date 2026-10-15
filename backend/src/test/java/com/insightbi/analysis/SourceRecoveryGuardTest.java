@@ -74,6 +74,10 @@ class SourceRecoveryGuardTest {
     assertEquals(0,guard.snapshot("syntax").consecutiveFailures());
     assertTrue(SourceRecoveryGuard.isConnectionError(new SQLException("lost","08S01")));
     assertFalse(SourceRecoveryGuard.isConnectionError(new SQLException("invalid","42S02")));
+    assertFalse(SourceRecoveryGuard.isConnectionError(
+      new java.sql.SQLTimeoutException("deadline exceeded","08006")),
+      "A SQL deadline is not evidence that all other queries lost connectivity");
+
     assertThrows(IllegalArgumentException.class,()->guard.execute("../wrong",()->true),
       "bad source identifiers must be rejected");
   }
