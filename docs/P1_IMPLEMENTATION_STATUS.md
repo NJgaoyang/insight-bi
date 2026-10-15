@@ -371,6 +371,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - `MetadataBackupRecoveryTest` 使用相互隔离的 H2 数据库执行导出/解密验证/跨库恢复、加密连接凭据与用户密码哈希保真、恶意篡改/错误密钥拒绝、非空库恢复拒绝、管理员下载与无缓存声明。定向 CI [38677618323](https://github.com/NJgaoyang/insight-bi/actions/runs/38677618323) **SUCCESS**；包含前端完整 TypeScript 编译和 Vite 构建的改动范围 CI [38677797267](https://github.com/NJgaoyang/insight-bi/actions/runs/38677797267) **SUCCESS**，后续 CI 映射 [38677824542](https://github.com/NJgaoyang/insight-bi/actions/runs/38677824542) **SUCCESS**。
 - **尚未完成**：真实 MySQL 备份/恢复演练、StarRocks 业务数据保护、生产一致性/并发压力、定时与异地备份、密钥轮换、恢复时间目标（RTO）与恢复点目标（RPO）量化。未部署生产，未运行全量回归，也没有宣称整体 P3 完成。
 
+## P3-02：运行监控、数据库就绪检查与查询繁忙诊断（2026-10-15）
+
+- 新增匿名 `GET /api/ready`，用只读 `SELECT 1` 检查元数据库；可用时返回 HTTP 200 `{"ready":true}`，不可用时返回 HTTP 503 `{"ready":false}`，不泄露 JDBC 连接详情。原 `GET /api/health` 保留作为进程存活接口。
+- 新增管理员专用 `GET /api/admin/operations/status` 和“系统管理 → 运行监控”页面，展示进程运行时长、累计 2xx/4xx/5xx、401/403、慢请求（≥3 秒）、最近故障时间、元数据库就绪/探测耗时、V2 运行中/排队/拒绝查询数，以及可用时的 Hikari 元数据库连接池状态。前端手动刷新，不会主动访问业务数据源。普通读者仍不能访问管理路由。
+- 新增 `OperationsMetrics` 作为 MVC 拦截器，在现有身份拦截器**之前**计数，因此拒绝访问也会被统计；只保留固定内存大小的原子计数器，不采集 SQL、请求路径、IP、用户名、请求体或凭据，重启后清零。分析查询限流器新增安全统计接口，不改变原来的 4 并发和 250ms 等待语义；读者侧查询繁忙返回明确的 HTTP 429。
+- H2 定向 `OperationsMonitoringTest` 检验匿名探针成功/失败、无敏感信息泄露、普通读者拒绝查看管理员面板、状态计数及查询饱和/释放/429。后端 [38683899131](https://github.com/NJgaoyang/insight-bi/actions/runs/38683899131) **SUCCESS**；前端编译及构建 [38683958392](https://github.com/NJgaoyang/insight-bi/actions/runs/38683958392) **SUCCESS**。详见 [P3_OPERATIONS_MONITORING.md](P3_OPERATIONS_MONITORING.md)。
+- 仍未实现持久化监控时序、主动告警、服务进程自动恢复、业务 StarRocks/MySQL 连接健康的多数据源探针、分布式并发统计、真实生产故障演练或生产部署。未执行全量回归。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
