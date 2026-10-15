@@ -10,6 +10,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const page=await browser.newPage({viewport:{width:1480,height:900}})
   const errors=[],requests=[]
   const provisioned=[],preconfiguredGrants=[]
+  const departments=[]
   page.on('pageerror',error=>errors.push(error.message))
   const widget=id=>({id,title:'指标'+id,type:'bar',datasetId:id==='w1'?'ds1':'',
     analysisV2:{dimensions:id==='w1'?[{fieldId:'city'}]:[],measures:id==='w1'?[{id:'total',fieldId:'revenue',aggregate:'SUM'}]:[],filters:{pre:[],post:[]},sort:[],limit:200},
@@ -32,6 +33,19 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
    if(method==='GET'&&path==='/api/data-folders')return send([])
    if(method==='GET'&&path==='/api/dashboards')
      return send([{id:'published-analysis',name:'经营分析',status:'published',kind:'analysis',folder_id:null}])
+   if(method==='GET'&&path==='/api/governance/departments')return send(departments)
+   if(method==='POST'&&path==='/api/governance/departments'){
+     const body=req.postDataJSON()
+     assert.equal(req.headers()['x-csrf-token'],'csrf')
+     departments.push({id:'dept1',name:body.name,parent_id:body.parentId||null})
+     return send({...departments[0]})
+   }
+   if(method==='PUT'&&path==='/api/governance/users/u1/department'){
+     assert.equal(req.headers()['x-csrf-token'],'csrf')
+     assert.equal(req.postDataJSON().departmentId,'dept1')
+     provisioned[0].department_id='dept1'
+     return send({id:'u1',department_id:'dept1'})
+   }
    if(method==='GET'&&path==='/api/governance/users')return send(provisioned)
    if(method==='POST'&&path==='/api/governance/users'){
      const body=req.postDataJSON()
@@ -177,6 +191,19 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await createUserDialog.getByRole('button',{name:'创建预配置账号'}).click()
   await page.getByText('analyst01').waitFor()
   assert.equal(provisioned[0].enabled,false)
+  // Department membership does not enable login or grant report access.
+  await page.getByRole('button',{name:'＋ 新建部门'}).click()
+  const deptDialog=page.locator('.el-dialog').filter({hasText:'新建部门'})
+  await deptDialog.getByPlaceholder('例如：研发部').fill('研发部')
+  await deptDialog.getByRole('button',{name:'保存部门'}).click()
+  await page.locator('table').first().getByText('研发部').waitFor()
+  const createdUser=page.locator('tbody tr').filter({hasText:'analyst01'})
+  await createdUser.locator('.el-select').first().click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'研发部'}).first().click()
+  await page.waitForFunction(()=>document.body.textContent?.includes('研发部'))
+  assert.equal(provisioned[0].department_id,'dept1')
+  assert.equal(provisioned[0].enabled,false)
+  assert.equal(preconfiguredGrants.length,0)
   await page.getByRole('button',{name:'预配置授权'}).click()
   const accessDialog=page.locator('.el-dialog').filter({hasText:'预配置报表授权'})
   await accessDialog.locator('.el-select').click()
