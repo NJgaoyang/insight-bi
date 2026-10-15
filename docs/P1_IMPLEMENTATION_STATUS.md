@@ -415,6 +415,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - `AnalysisQueryTimeoutTest` 注入 JDBC 超时，不执行耗时 15 秒 SQL，检查 `setQueryTimeout(15)`、`setMaxRows`、Statement/Connection 关闭、许可释放、同源后续真实 H2 查询成功、HTTP 504 脱敏和统计；`OperationsMonitoringTest` 验证管理员查询指标及读者错误响应；`SourceRecoveryGuardTest` 补充 `08xxx` 状态的 SQLTimeoutException 不熔断。相关单测定向工作流 [38690656193](https://github.com/NJgaoyang/insight-bi/actions/runs/38690656193) 和 [38690864257](https://github.com/NJgaoyang/insight-bi/actions/runs/38690864257) 均 **SUCCESS**；前端 TypeScript/Vite [38690726339](https://github.com/NJgaoyang/insight-bi/actions/runs/38690726339) **SUCCESS**。
 - 操作说明和限制见 [P3_QUERY_TIMEOUT_AND_LATENCY.md](P3_QUERY_TIMEOUT_AND_LATENCY.md)。**尚未执行**：真实 StarRocks 慢查询取消或网络分区注入、FE/BE 停机、生产负载压测、真正服务端杀查询能力验证；JDBC 超时是驱动层取消请求，不能承诺所有情况严格不超过 15 秒。没有执行全量回归、远端破坏性测试或生产部署。
 
+## P3-08：一次性 MySQL 的真实查询取消及小数据集容量基线（2026-10-15）
+
+- 继续补齐 P3-07 的驱动级证据，新增 `RealMySqlCancellationBaselineTest` 与独立、按文件改动触发的 `.github/workflows/p3-mysql-timeout-baseline.yml`。测试**只连接一次性 GitHub Runner MySQL 8.4 `127.0.0.1:3306/insight_ci_acceptance`**，带 `BI_ACCEPTANCE_DISPOSABLE_MYSQL=yes` 门禁，绝不使用用户提供的业务 MySQL/StarRocks 实例。
+- 真正调用系统 `DatabaseStore.readAnalysisRows` 对合成 `SLEEP(25)` SELECT 使用原有 `setQueryTimeout(15)`，Connector/J 在 **15,023 ms** 返回超时；随后**同一个 Connection** 可以正常 `SELECT 1` 和系统读行 API，证明该测试条件下取消不会导致 JDBC 连接不可用。
+- 240 条合成城市记录执行 3 次预热、串行 12 次、4 并发 24 次 SQL 参数化分组聚合，金额一致；**串行 P50=0 ms、P95=1 ms；4 并发 P50=2 ms、P95=3 ms**（毫秒计数，0 表示小于 1 ms）。该低负载小表指标**不能当作生产 SLA 或百万行性能结论**。
+- 工作流 [38691832683](https://github.com/NJgaoyang/insight-bi/actions/runs/38691832683) **SUCCESS**，保留 `p3-mysql-cancellation-latency` artifact（JSON 基线 + Surefire 报告，14 天）。独立 CI 临时容器运行后销毁；测试 `finally` 删除临时性能表。详细范围与数字见 [P3_MYSQL_CANCELLATION_BASELINE.md](P3_MYSQL_CANCELLATION_BASELINE.md)。
+- **未执行**：生产 StarRocks/FE 上的慢 SQL/故障切换、人为杀查询、真实业务数据容量压测、生产版本部署及全量回归。本轮未改已有生产查询实现，仅验证 Connector/J 实际取消和性能基线。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
