@@ -322,8 +322,72 @@ class BiApi {
   auditPublication(id,"RESTORE",version);
   return Map.of("revision",revision+1,"restoredVersion",version);
  }
+ @GetMapping("/dashboards/{id}/approval")Map<String,Object> approval(@PathVariable String id){
+  Integer count=db.queryForObject("SELECT COUNT(*) FROM insight_dashboard WHERE id=?",Integer.class,id);
+  if(count==null||count!=1)throw new NoSuchElementException("分析主题不存在");
+  List<Map<String,Object>> approval=db.queryForList(
+    "SELECT state,submitted_revision,reviewed_revision,comment,requested_at,reviewed_at "+
+    "FROM insight_publication_approval WHERE dashboard_id=?",id);
+  if(approval.isEmpty())return Map.of("required",false,"state","DISABLED");
+  Map<String,Object> result=new LinkedHashMap<>(approval.get(0));
+  result.put("required",true);
+  return result;
+ }
+ @PostMapping("/dashboards/{id}/approval/enable")@Transactional Map<String,Object> enableApproval(@PathVariable String id){
+  var items=db.queryForList("SELECT kind FROM insight_dashboard WHERE id=?",id);
+  if(items.isEmpty())throw new NoSuchElementException("分析主题不存在");
+  if(!"analysis".equals(items.get(0).get("kind")))
+    throw new IllegalArgumentException("当前仅支持分析主题发布审批");
+  Integer found=db.queryForObject(
+    "SELECT COUNT(*) FROM insight_publication_approval WHERE dashboard_id=?",Integer.class,id);
+  if(found==null||found==0){
+    db.update("INSERT INTO insight_publication_approval(dashboard_id,state) VALUES(?,'IDLE')",id);
+    auditPublication(id,"ENABLE_APPROVAL",null);
+  }
+  return approval(id);
+ }
+ @PostMapping("/dashboards/{id}/approval/submit")@Transactional Map<String,Object> submitApproval(
+     @PathVariable String id,@RequestBody Map<String,Object> body){
+  if(!body.isEmpty())throw new IllegalArgumentException("提交审批不接受额外参数");
+  Integer revision=db.queryForObject("SELECT revision FROM insight_dashboard WHERE id=?",Integer.class,id);
+  if(revision==null)throw new NoSuchElementException("分析主题不存在");
+  var entries=db.queryForList("SELECT state,submitted_revision FROM insight_publication_approval WHERE dashboard_id=?",id);
+  if(entries.size()!=1)throw new IllegalStateException("请先开启审批模式");
+  String state=String.valueOf(entries.get(0).get("state"));
+  Object pendingRevision=entries.get(0).get("submitted_revision");
+  if("PENDING".equals(state)&&pendingRevision instanceof Number rev&&rev.intValue()==revision)
+    throw new IllegalStateException("当前版本已提交审批");
+  // A new submission invalidates any prior decision.
+  db.update("UPDATE insight_publication_approval SET state='PENDING',submitted_revision=?,reviewed_revision=NULL,"+
+    "comment=NULL,requested_at=CURRENT_TIMESTAMP(6),reviewed_at=NULL WHERE dashboard_id=?",revision,id);
+  auditPublication(id,"SUBMIT_APPROVAL",null);
+  return approval(id);
+ }
+ @PostMapping("/dashboards/{id}/approval/review")@Transactional Map<String,Object> reviewApproval(
+      @PathVariable String id,@RequestBody Map<String,Object> body){
+  if(!body.containsKey("approved")||!(body.get("approved") instanceof Boolean approved)||
+      !Set.of("approved","comment").containsAll(body.keySet()))
+    throw new IllegalArgumentException("审批必须选择通过或驳回");
+  String comment=body.get("comment") instanceof String v?v.trim():"";
+  if(comment.length()>255||(body.containsKey("comment")&&!(body.get("comment") instanceof String)))
+    throw new IllegalArgumentException("审批说明无效");
+  Integer revision=db.queryForObject("SELECT revision FROM insight_dashboard WHERE id=?",Integer.class,id);
+  if(revision==null)throw new NoSuchElementException("分析主题不存在");
+  var rows=db.queryForList("SELECT state,submitted_revision FROM insight_publication_approval WHERE dashboard_id=?",id);
+  if(rows.size()!=1||!"PENDING".equals(rows.get(0).get("state"))||
+     !(rows.get(0).get("submitted_revision") instanceof Number submitted)||
+     submitted.intValue()!=revision)
+    throw new IllegalStateException("没有当前版本的待审批申请");
+  int changed=db.update("UPDATE insight_publication_approval "+
+     "SET state=?,reviewed_revision=?,comment=?,reviewed_at=CURRENT_TIMESTAMP(6) "+
+     "WHERE dashboard_id=? AND state='PENDING' AND submitted_revision=?",
+     approved?"APPROVED":"REJECTED",revision,comment,id,revision);
+  if(changed!=1)throw new IllegalStateException("审批状态已改变，请刷新");
+  auditPublication(id,approved?"APPROVE":"REJECT",null);
+  return approval(id);
+ }
  @PostMapping("/dashboards/{id}/publish")@Transactional Map<String,Object> publish(@PathVariable String id){
-  var list=db.queryForList("SELECT name,mode,content_json FROM insight_dashboard WHERE id=?",id);
+  var list=db.queryForList("SELECT name,mode,content_json,revision FROM insight_dashboard WHERE id=?",id);
   if(list.isEmpty())throw new NoSuchElementException("仪表板不存在");
   var row=list.get(0);
   String kind=db.queryForObject("SELECT kind FROM insight_dashboard WHERE id=?",String.class,id);
@@ -331,6 +395,16 @@ class BiApi {
     Map<String,Object> content=s.map(String.valueOf(row.get("content_json")));
     AnalysisResourceGraph.requireExistingDatasets(AnalysisResourceGraph.of(content),db);
     AnalysisResourceGraph.requirePinnedPipelines(content,pipeline());
+  }
+  Integer gated=db.queryForObject(
+    "SELECT COUNT(*) FROM insight_publication_approval WHERE dashboard_id=?",Integer.class,id);
+  if(gated!=null&&gated>0){
+    int current=((Number)row.get("revision")).intValue();
+    int consumed=db.update("UPDATE insight_publication_approval SET state='CONSUMED' "+
+      "WHERE dashboard_id=? AND state='APPROVED' AND submitted_revision=? AND reviewed_revision=?",
+      id,current,current);
+    if(consumed!=1)
+      throw new IllegalStateException("当前版本未审批通过，或批准已失效，请重新提交");
   }
   Integer next=db.queryForObject("SELECT COALESCE(MAX(version_no),0)+1 FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id);
   db.update("UPDATE insight_dashboard SET published_json=content_json,status='published',updated_at=CURRENT_TIMESTAMP WHERE id=?",id);
@@ -348,7 +422,7 @@ class BiApi {
     throw new NoSuchElementException("仪表板不存在");
   return db.queryForList("SELECT event_type,actor,version_no,created_at FROM insight_publication_audit WHERE dashboard_id=? ORDER BY created_at DESC,id DESC LIMIT 100",id);
  }
- @DeleteMapping("/dashboards/{id}")@Transactional Map<String,Object> remove(@PathVariable String id){db.update("DELETE FROM insight_dashboard_version WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard WHERE id=?",id);return Map.of("ok",true);}
+ @DeleteMapping("/dashboards/{id}")@Transactional Map<String,Object> remove(@PathVariable String id){db.update("DELETE FROM insight_publication_approval WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard_version WHERE dashboard_id=?",id);db.update("DELETE FROM insight_dashboard WHERE id=?",id);return Map.of("ok",true);}
  static void mode(String s){if(!Set.of("grid","free").contains(s))throw new IllegalArgumentException("画布模式无效");}
 }
 @RestControllerAdvice class ApiErrors {
