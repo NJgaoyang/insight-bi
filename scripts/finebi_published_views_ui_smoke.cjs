@@ -100,6 +100,32 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await cityToggle.uncheck()
   assert.equal(await detail.locator('thead th').count(),1)
   await detail.getByRole('textbox',{name:'搜索当前表格结果'}).fill('')
+  // A published snapshot preserves its default hidden columns after reload.
+  // Readers may toggle visibility temporarily, but cannot mutate saved config.
+  analysis.content.widgets[1].analysisV2.tableHiddenColumnIds=['city']
+  await page.reload({waitUntil:'domcontentloaded'})
+  const savedTable=page.locator('.analysis-dashboard-card[data-widget-id="w2"]')
+  await savedTable.locator('tbody tr').first().waitFor()
+  assert.deepEqual(await savedTable.locator('thead th').allInnerTexts(),['收入'])
+  await savedTable.locator('details summary').click()
+  const savedCity=savedTable.locator('details label').filter({hasText:'城市'}).locator('input')
+  assert.equal(await savedCity.isChecked(),false)
+  await savedCity.check()
+  assert.equal(await savedTable.locator('thead th').count(),2)
+  assert.deepEqual(analysis.content.widgets[1].analysisV2.tableHiddenColumnIds,['city'],
+    'published reader should not rewrite the saved column configuration')
+  await page.reload({waitUntil:'domcontentloaded'})
+  const restoredTable=page.locator('.analysis-dashboard-card[data-widget-id="w2"]')
+  await restoredTable.locator('tbody tr').first().waitFor()
+  assert.deepEqual(await restoredTable.locator('thead th').allInnerTexts(),['收入'])
+  const persistedCsvDownload=page.waitForEvent('download')
+  await restoredTable.getByRole('button',{name:/导出当前查询结果CSV/}).click()
+  const persistedCsv=await persistedCsvDownload
+  const persistedStream=await persistedCsv.createReadStream()
+  const persistedChunks=[]
+  for await(const chunk of persistedStream)persistedChunks.push(chunk)
+  assert.equal(Buffer.concat(persistedChunks).toString('utf8').replace(/^\uFEFF/,'').split('\r\n')[0],
+    '"收入"')
   assert.ok(requests.includes('GET /api/dashboards/published-analysis'))
   await page.goto(origin+'/#/view/legacy',{waitUntil:'domcontentloaded'})
   await page.locator('.toolbar-left').waitFor()
