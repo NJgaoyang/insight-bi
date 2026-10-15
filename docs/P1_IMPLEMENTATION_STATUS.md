@@ -430,6 +430,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 8 条工作线程同时起跑、每条 3 次请求，总计 24 次已发布组件查询；通过既有 4 并发/250ms 等待限制，区分真正成功与合法 Busy/429；确认活跃与等待许可归零。输出实测成功/限流/P50/P95 至 `target/p3-reader-concurrency.json`，专项工作流上传 JSON 与 Surefire 报告。
 - 代码已提交，通用改动范围编译检查 [38692527178](https://github.com/NJgaoyang/insight-bi/actions/runs/38692527178) **SUCCESS**；独立 MySQL 60k/8 人专项检查是否通过以**工作流最终状态**为准，不因编译成功或临时状态将实际容量验收报告为通过。详细限制见 [P3_READER_CONCURRENCY_ACCEPTANCE.md](P3_READER_CONCURRENCY_ACCEPTANCE.md)。本次非真实浏览器并发与生产 SLA 测试，没有触碰现有业务环境或执行全量回归。
 
+## P3-10：真实 HTTP 读者会话、CSRF 与权限撤销验收（2026-10-15）
+
+- 补足 P3-09 控制器直接调用的 HTTP 边界：新增 `HttpReaderSessionAcceptanceTest` 并在一次性 `mysql:8.4` 服务容器、H2 内存元数据库和真正随机端口 Spring Boot Tomcat 中执行。8 名不同 VIEWER 使用独立 `HttpClient` CookieManager 真实 POST 登录，各持有不同 CSRF token；随后访问已发布 V2 报表与组件查询接口。数据为临时 MySQL 9000 条北京/上海合成收入，不访问现有业务源。
+- 安全验收：匿名访问 401、读者账号不能访问管理员 API 401、无/错误 CSRF 403、自造 dataset 参数 400、不同用户行级策略分区聚合一致、撤销授权后已登录旧会话立即失权 404、禁用账号后旧 Cookie 查询 401。8 个 HTTP 会话同起点执行共 16 次 widget 请求；**成功 16，限流 0，P50=51 ms，P95=72 ms**（仅小型 CI 负载，非生产性能承诺）。
+- 此真实启动级验收**发现并修复一个实际 Spring 事务代理阻断**：`AnalysisPipelineApi` 被声明 `final`、内部却存在 `@Transactional` 方法，导致 CGLIB 代理无法建立并使 Spring Boot 启动失败；移除 `final` 使完整 Tomcat 上下文正常启动，不改变数据加工行为。
+- [专项 CI #38693468804](https://github.com/NJgaoyang/insight-bi/actions/runs/38693468804) **SUCCESS**，输出 `p3-http-reader-session` JSON + Surefire artifact；相关代码编译检查 [#38693468697](https://github.com/NJgaoyang/insight-bi/actions/runs/38693468697) **SUCCESS**。详见 [P3_HTTP_READER_SESSION_ACCEPTANCE.md](P3_HTTP_READER_SESSION_ACCEPTANCE.md)。
+- **本轮没有**全量回归、生产部署、Nginx/HTTPS 浏览器完整路径验收或现有 MySQL/StarRocks 压测；下一阶段是部署前网络代理、会话 Cookie 安全及基础运行环境验收，不用重复跑已通过的直接调用/HTTP 会话专项测试。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
