@@ -128,6 +128,24 @@ class ReaderApi {
     int limit=config.get("limit") instanceof Number n?n.intValue():100;
     safe.put("limit",Math.min(Math.max(limit,1),200));
     safe.put("datasetId",datasetId);
+    // Attach server-managed restrictions only AFTER constructing the immutable
+    // published widget request. Client JSON cannot remove, replace or append them.
+    List<Map<String,Object>> mandatory=governance.mandatoryRowFilters(
+      (String)session.getAttribute("readerId"),datasetId);
+    if(!mandatory.isEmpty()){
+      Map<?,?> original=safe.get("filters") instanceof Map<?,?> m?m:Map.of();
+      Object rawPre=original.get("pre"),rawPost=original.get("post");
+      if(rawPre!=null&&!(rawPre instanceof List<?>))
+        throw new IllegalArgumentException("已发布明细过滤格式无效");
+      if(rawPost!=null&&!(rawPost instanceof List<?>))
+        throw new IllegalArgumentException("已发布结果过滤格式无效");
+      List<Object> pre=new ArrayList<>();
+      if(rawPre instanceof List<?> existing)pre.addAll(existing);
+      pre.addAll(mandatory);
+      if(pre.size()>20)throw new IllegalArgumentException("已发布过滤条件超过上限");
+      safe.put("filters",Map.of("pre",pre,
+        "post",rawPost==null?List.of():rawPost));
+    }
     return analysis.query(safe);
   }
 
