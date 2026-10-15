@@ -401,6 +401,12 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 最初的隔离执行环境 TCP 连接返回 `Connection refused`，但随后 **2026-10-15 在用户授权开发机 VM-0-13-tencentos** 实测 `81.69.15.136:9030` 可连接，`SELECT VERSION()` 返回 **5.1.0**；通过开发机真正执行 `StarRocksExistingInstanceReadOnlyTest` 的在线 JDBC V2 查询及多城市 SUM 聚合，Maven Surefire 报告 **2 tests / 0 failures / 0 errors / 0 skipped**。执行的 SQL 仅引用 SELECT 字面量虚拟数据集，没有操作生产业务表；开发机本地检出仍为旧提交 `36732c4`，这不是最新版应用部署验证。测试类现支持受保护的本地 MySQL defaults 文件读取密码，避免在命令行或 GitHub 中存放敏感值。离线编译 CI [38687551869](https://github.com/NJgaoyang/insight-bi/actions/runs/38687551869) 也已通过。
 - 使用的是管理员 `root` 账号，**已通过 SELECT 查询仍不证明最小权限**。生产应使用独立只读账号；本轮没有进行 FE/BE 停机故障切换、不操作已有业务表、不执行全量回归或生产部署。
 
+## P3-06：指定 StarRocks OLAP 真实数据集与专用只读账号验收（2026-10-15）
+
+- 开发机 `VM-0-13-tencentos` 成功与用户指定 StarRocks `81.69.15.136:9030` 通信。在保留原有业务表不变的前提下，使用 `scripts/p3-starrocks-isolated-fixture.sh` 创建**随机独立测试 schema**、4 条模拟经营数据的真实 StarRocks OLAP 表及随机强密码的**仅 SELECT** 用户。账号、测试表、测试库仅临时存在，由 EXIT 清理；实测 3 个临时测试 schema 的残留数量为 0，管理员密码文件也已删除。
+- 新增 opt-in `StarRocksScopedAccessTest`，通过真实 `DatabaseStore.open`、`FieldCatalog`、`AnalysisApi.query` 进行 StarRocks OLAP 表参数化 V2 聚合：北京 150、上海 200、广州 300，单城/多城查询全部正确；同时**真实使用只读账号**尝试 INSERT 和 CREATE TABLE，两种操作均遭服务器拒绝，不是只看 JDBC read-only 标志。JUnit **Tests run: 1, Failures: 0, Errors: 0, Skipped: 0**，最终执行成功；初期只因测试断言误将 BigDecimal 不同 scale 判为不同值，已修复数值比较，实际查询结果始终正确。
+- 不包含原有业务表的数据核验、实际生产账号权限验证、FE/BE 关停与故障切换、长查询性能/容量、完整版本生产部署。专用只读测试账号已删除，没有把任何 StarRocks 密码写入 GitHub；详细证据、复验命令及风险界限见 [P3_STARROCKS_SCOPED_OLAP_ACCEPTANCE.md](P3_STARROCKS_SCOPED_OLAP_ACCEPTANCE.md)。本轮只运行相关定向测试，不执行全量回归。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
