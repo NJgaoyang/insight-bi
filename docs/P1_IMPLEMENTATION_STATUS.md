@@ -269,6 +269,14 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - 前轮表格搜索与列可见性 Chromium 验收 [38508564662](https://github.com/NJgaoyang/insight-bi/actions/runs/38508564662) 已通过；本轮新增的持久化配置代码以本轮前端 TypeScript/Vite 定向 CI 最终结论为准，尚未宣称实库或发布版本跨会话持久化浏览器验收通过。
 - 本批仍不实现全量导出、服务端跨页过滤或复杂透视表；StarRocks 数据对账、生产备份回滚与 P2/P3 其他功能未完成。
 
+## P2-01 第九批：高级表格发布快照与未保存状态验收（2026-10-15）
+
+- 修复 `AnalysisV2Chart` 直接写入嵌套组件 props 的问题：列显隐操作改由 `tableColumnsChange` 事件交给 `AnalysisSubject`，由编辑器 `mark()` 正确记录撤销历史、未保存状态与保存指纹；发布页只保留当前会话临时显隐。
+- 保存和发布的分析快照增加 `tableHiddenColumnIds` 数据边界校验：仅允许本组件已绑定的维度/指标 ID，拒绝重复、未知、超过上限及隐藏全部输出列。旧组件未配置该字段时保持兼容。
+- 后端 H2 定向测试验证真实主题保存、发布快照读取和非法配置拒绝：GitHub Actions [38669503341](https://github.com/NJgaoyang/insight-bi/actions/runs/38669503341) **PASS**。
+- Chromium 模拟 REST 的真实浏览器用例验证发布页默认隐藏“城市”、临时显示、刷新后恢复已保存隐藏状态，以及 CSV 导出表头仍只包含可见列：[38669546022](https://github.com/NJgaoyang/insight-bi/actions/runs/38669546022) **SUCCESS**，包含前端构建和原有发布页兼容测试。
+- 尚未验证真实 StarRocks、生产部署、跨用户权限与生产备份恢复。P2-01 仅完成此批列配置保存和发布展示闭环，不代表整个 P2-01、P2-02 或 P3 完成。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
