@@ -88,6 +88,47 @@ async function revokeDepartmentReport(reportId:string){
 }
 
 type RowPolicy={dataset_id:string;field_id:string;allowed_value:string;values?:string[]}
+type DeniedColumn={dataset_id:string;field_id:string}
+const columnOpen=ref(false),columnUser=ref<User|null>(null),columnDataset=ref('')
+const deniedColumns=ref<DeniedColumn[]>([]),availableColumns=ref<PolicyField[]>([])
+const deniedFieldIds=ref<string[]>([])
+async function openDeniedColumns(user:User){
+ columnUser.value=user;columnDataset.value='';availableColumns.value=[]
+ deniedFieldIds.value=[];columnOpen.value=true
+ try{deniedColumns.value=await api<DeniedColumn[]>(
+   '/governance/users/'+encodeURIComponent(user.id)+'/denied-columns')
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'读取受限字段失败')}
+}
+async function chooseColumnDataset(){
+ availableColumns.value=[];deniedFieldIds.value=[]
+ if(!columnDataset.value)return
+ try{
+  availableColumns.value=(await api<PolicyField[]>(
+    '/datasets/'+encodeURIComponent(columnDataset.value)+'/fields'))
+    .filter(field=>!field.calculated)
+  deniedFieldIds.value=deniedColumns.value.filter(v=>v.dataset_id===columnDataset.value)
+    .map(v=>v.field_id)
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'读取字段失败')}
+}
+async function saveDeniedColumns(){
+ if(!columnUser.value||!columnDataset.value)return
+ busy.value=true
+ try{
+  const original=deniedColumns.value.filter(v=>v.dataset_id===columnDataset.value)
+  if(!deniedFieldIds.value.length&&original.length)
+   await ElMessageBox.confirm(
+    '清除后该用户可以重新查看使用这些敏感列的报表。确认清除全部列限制吗？',
+    '清除敏感列限制',{type:'warning'})
+  await put('/governance/users/'+encodeURIComponent(columnUser.value.id)+
+    '/denied-columns/'+encodeURIComponent(columnDataset.value),
+    {fieldIds:[...deniedFieldIds.value]})
+  deniedColumns.value=await api<DeniedColumn[]>(
+    '/governance/users/'+encodeURIComponent(columnUser.value.id)+'/denied-columns')
+  ElMessage.success('列级限制已生效')
+ }catch(e){if(e!=='cancel')ElMessage.error(e instanceof Error?e.message:'保存受限字段失败')}
+ finally{busy.value=false}
+}
+
 type PolicyField={id:string;name:string;logicalType:string;calculated:boolean}
 const rowDialog=ref(false),rowUser=ref<User|null>(null),rowPolicies=ref<RowPolicy[]>([])
 const rowDatasetId=ref(''),rowFieldId=ref(''),rowAllowedValue=ref('')
@@ -275,6 +316,7 @@ onMounted(refresh)
        {{u.enabled?'禁用':'启用'}}
       </button>
       <button @click="openRowPolicies(u)">数据行限制</button>
+      <button @click="openDeniedColumns(u)">敏感列限制</button>
       <button @click="openGrants(u)">授权报表</button>
       <button class="danger-link" @click="deleteUser(u)">删除</button></td>
     </tr>
@@ -342,6 +384,33 @@ onMounted(refresh)
   <template #footer><button @click="credentialOpen=false">取消</button>
    <button class="primary-button" :disabled="busy||credentialPassword.length<12"
     @click="savePassword">保存密码</button></template>
+ </el-dialog>
+ <el-dialog v-model="columnOpen" :title="'敏感列限制 · '+(columnUser?.username||'')" width="560px">
+  <p class="fine-dialog-tip">拒绝策略：凡引用受限字段的已发布分析主题，对该用户在目录、报表和查询接口中均不可见。存在字段限制时，包含计算字段或加工链的相关主题暂不允许访问，防止经派生指标泄露。</p>
+  <div class="modal-fields">
+   <label>数据集</label>
+   <el-select v-model="columnDataset" filterable placeholder="选择数据集"
+    @change="chooseColumnDataset">
+    <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id"/>
+   </el-select>
+   <label>禁止查看的字段（最多20个）</label>
+   <el-select v-model="deniedFieldIds" multiple collapse-tags clearable
+    placeholder="选择受限字段">
+    <el-option v-for="field in availableColumns" :key="field.id"
+     :label="field.name" :value="field.id"/>
+   </el-select>
+   <small>未选择受限字段时，不会额外限制此数据集。清空已有策略会扩大数据可见范围。</small>
+   <button class="primary-button" :disabled="busy||!columnDataset||deniedFieldIds.length>20"
+    @click="saveDeniedColumns">保存敏感列限制</button>
+  </div>
+  <div v-if="!deniedColumns.length" class="fine-dialog-tip">当前用户没有列级限制</div>
+  <table v-else class="bi-table">
+   <thead><tr><th>数据集</th><th>已限制字段 ID</th></tr></thead>
+   <tbody><tr v-for="item in deniedColumns" :key="item.dataset_id+'_'+item.field_id">
+    <td>{{datasets.find(d=>d.id===item.dataset_id)?.name||item.dataset_id}}</td>
+    <td>{{availableColumns.find(f=>f.id===item.field_id)?.name||item.field_id}}</td>
+   </tr></tbody>
+  </table>
  </el-dialog>
  <el-dialog v-model="rowDialog" :title="'数据行限制 · '+(rowUser?.username||'')" width="600px">
   <p class="fine-dialog-tip">可选限制：按数据集原始文本字段匹配一个或多个值（每行一个，最多20个）。未配置限制时，该用户仍可读取已授权报表中该数据集的全部结果。所有规则由服务器在汇总前强制执行。</p>
