@@ -6,6 +6,7 @@ on:
       - feat/finebi-analysis-engine-p0
     paths:
       - backend/src/test/java/com/insightbi/HttpReaderSessionAcceptanceTest.java
+      - backend/src/main/java/com/insightbi/analysis/AnalysisPipelineApi.java
       - .github/workflows/p3-http-reader-acceptance.yml
 
 jobs:
