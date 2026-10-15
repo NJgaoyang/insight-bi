@@ -148,7 +148,7 @@ class GovernanceApi {
 
   @GetMapping("/users")
   List<Map<String,Object>> users(){
-    return db.queryForList("SELECT id,username,display_name,role,enabled,department_id,created_at FROM insight_governance_user ORDER BY created_at,id LIMIT 200");
+    return db.queryForList("SELECT id,username,display_name,role,enabled,department_id,(password_hash IS NOT NULL) AS password_configured,created_at FROM insight_governance_user ORDER BY created_at,id LIMIT 200");
   }
 
   @PostMapping("/users")
