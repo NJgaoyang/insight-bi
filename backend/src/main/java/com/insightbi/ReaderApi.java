@@ -90,14 +90,15 @@ class ReaderApi {
     List<String> ids=new ArrayList<>(granted);
     String placeholders=String.join(",",Collections.nCopies(ids.size(),"?"));
     List<Map<String,Object>> candidates=db.queryForList(
-      "SELECT id,name,kind,status,published_json FROM insight_dashboard "+
+      "SELECT id,name,kind,status,published_json,folder_id FROM insight_dashboard "+
       "WHERE id IN ("+placeholders+") AND kind='analysis' "+
       "AND status='published' AND published_json IS NOT NULL "+
       "ORDER BY name,id LIMIT 1000",ids.toArray());
     List<Map<String,Object>> visible=new ArrayList<>();
     for(Map<String,Object> row:candidates){
       Map<String,Object> content=store.map(String.valueOf(row.get("published_json")));
-      if(!columnGuard.allowed(userId,content))continue;
+      if(!governance.canAccessFolder(userId,(String)row.get("folder_id"))||
+         !columnGuard.allowed(userId,content))continue;
       visible.add(Map.of("id",row.get("id"),"name",row.get("name"),
         "kind",row.get("kind"),"status",row.get("status")));
       if(visible.size()>=200)break;
