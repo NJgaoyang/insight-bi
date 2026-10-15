@@ -17,15 +17,21 @@ public class AnalysisApi {
   private final FieldCatalog catalog;
   private final AnalysisPipelineApi pipeline;
   private final SourceRecoveryGuard recovery;
+  private final AnalysisExecutionMetrics executionMetrics;
   private static final AnalysisQueryLimiter QUERY_LIMITER=new AnalysisQueryLimiter(4,250);
   public static AnalysisQueryLimiter.Snapshot queryAdmissionSnapshot(){return QUERY_LIMITER.snapshot();}
   public AnalysisApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog){
-    this(store,db,catalog,new SourceRecoveryGuard());
+    this(store,db,catalog,new SourceRecoveryGuard(),new AnalysisExecutionMetrics());
+  }
+  public AnalysisApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog,
+                     SourceRecoveryGuard recovery){
+    this(store,db,catalog,recovery,new AnalysisExecutionMetrics());
   }
   @org.springframework.beans.factory.annotation.Autowired
   public AnalysisApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog,
-                     SourceRecoveryGuard recovery){
+                     SourceRecoveryGuard recovery,AnalysisExecutionMetrics executionMetrics){
     this.store=store;this.db=db;this.catalog=catalog;this.recovery=recovery;
+    this.executionMetrics=executionMetrics;
     this.pipeline=new AnalysisPipelineApi(store,catalog,db);
   }
   @GetMapping("/datasets/{id}/fields")
@@ -64,15 +70,21 @@ public class AnalysisApi {
     AnalysisQueryPlanner.Plan plan=resolved.plan();
     long start=System.nanoTime();
     List<Map<String,Object>> rows;
-    try(AnalysisQueryLimiter.Lease slot=QUERY_LIMITER.acquire()){
-      String sourceId=String.valueOf(ds.get("connection_id"));
-      rows=recovery.execute(sourceId,()->{
-        try(Connection connection=store.open(store.connection(sourceId))){
-          ReadOnlyConnectionPolicy.require(connection);
-          return store.readAnalysisRows(connection,plan.sql(),resolved.params(),plan.limit());
-        }
-      });
+    try{
+      try(AnalysisQueryLimiter.Lease slot=QUERY_LIMITER.acquire()){
+        String sourceId=String.valueOf(ds.get("connection_id"));
+        rows=recovery.execute(sourceId,()->{
+          try(Connection connection=store.open(store.connection(sourceId))){
+            ReadOnlyConnectionPolicy.require(connection);
+            return store.readAnalysisRows(connection,plan.sql(),resolved.params(),plan.limit());
+          }
+        });
+      }
+    }catch(Exception e){
+      executionMetrics.record(start,e);
+      throw e;
     }
+    executionMetrics.record(start,null);
     boolean truncated=rows.size()>plan.limit();
     // Do not expose the sentinel record used only to detect overflow.
     if(truncated)rows=new ArrayList<>(rows.subList(0,plan.limit()));
