@@ -27,3 +27,33 @@ export function removeUnusedLayout(view:DashboardView){
  if(!view.layout)return
  view.layout=Object.fromEntries(Object.entries(view.layout).filter(([id])=>selected.has(id)))
 }
+
+/**
+ * Reorder only one dashboard's list of references to shared components.
+ * Component configuration and other dashboard views never move or mutate.
+ * Reject stale drag sources and invalid destinations without side effects.
+ */
+export function reorderViewWidget(view:DashboardView,sourceId:string,targetId:string,side:'before'|'after'='before'):boolean{
+ if(sourceId===targetId||!view.widgetIds.includes(sourceId)||!view.widgetIds.includes(targetId))return false
+ const current=[...view.widgetIds]
+ const source=current.indexOf(sourceId)
+ current.splice(source,1)
+ const destination=current.indexOf(targetId)+(side==='after'?1:0)
+ current.splice(destination,0,sourceId)
+ if(current.every((id,index)=>id===view.widgetIds[index]))return false
+ view.widgetIds=current
+ return true
+}
+
+/** Duplicate view layout only; both views continue to reference one shared widget model. */
+export function duplicateDashboardView(view:DashboardView,newId:string,newName:string):DashboardView{
+ if(!newId||newId===view.id||!newName.trim())throw new Error('无效的仪表板副本')
+ const valid=new Set(view.widgetIds)
+ return {
+  id:newId,name:newName.trim(),widgetIds:[...view.widgetIds],
+  layout:view.layout?Object.fromEntries(Object.entries(view.layout)
+   .filter(([id])=>valid.has(id)).map(([id,config])=>[id,{...config}])):undefined,
+  jumps:view.jumps?Object.fromEntries(Object.entries(view.jumps)
+   .filter(([id,target])=>valid.has(id)&&target!==view.id)):undefined
+ }
+}
