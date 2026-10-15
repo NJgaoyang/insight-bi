@@ -21,6 +21,8 @@ for path in "${paths[@]}"; do
    backend=true
    case "$path" in
     backend/src/test/java/*Test.java) name="${path##*/}";add_test "${name%.java}";;
+    */MetadataBackupService.java|*/MetadataBackupApi.java|*/MetadataRestoreCli.java)
+      add_test MetadataBackupRecoveryTest;;
     */ReaderApi.java|*/ReaderPassword.java) add_test ReaderApiTest;add_test GovernanceApiTest;;
     */DatabaseStore.java|*/BiApi.java)
       add_test ReaderApiTest;add_test GovernanceApiTest;add_test PublicationAuditTest
