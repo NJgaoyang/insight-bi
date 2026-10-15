@@ -176,7 +176,7 @@ class RealJdbcAcceptanceTest {
     assertEquals("closed",guard.snapshot("ci-healthy-source").state());
     assertTrue(guard.execute("ci-healthy-source",()->{
       try(Connection connection=DriverManager.getConnection(
-        schemaUrl(SOURCE_SCHEMA),env("BI_ACCEPTANCE_MYSQL_USERNAME"),
+        schemaUrl("insight_ci_acceptance"),env("BI_ACCEPTANCE_MYSQL_USERNAME"),
         env("BI_ACCEPTANCE_MYSQL_PASSWORD"));
           Statement statement=connection.createStatement();
           ResultSet result=statement.executeQuery("SELECT 1")){
