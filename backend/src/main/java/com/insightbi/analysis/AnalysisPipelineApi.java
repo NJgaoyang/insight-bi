@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api")
-public final class AnalysisPipelineApi {
+public class AnalysisPipelineApi {
   private final DatabaseStore store;
   private final FieldCatalog catalog;
   private final JdbcTemplate db;
