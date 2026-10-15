@@ -246,4 +246,32 @@ class AnalysisResourceGraphTest {
         "name","视图跳转","mode","grid","revision",2,"content",invalid)));
     }
   }
+
+  @Test void tableHiddenColumnsPersistToPublishedVersionAndRejectInvalidIds(){
+    String id=String.valueOf(api.create(Map.of("name","明细列配置","kind","analysis")).get("id"));
+    var w=new LinkedHashMap<String,Object>(widget("table1",first));
+    w.put("type","table");
+    var config=new LinkedHashMap<String,Object>((Map<String,Object>)w.get("analysisV2"));
+    config.put("tableHiddenColumnIds",List.of("stable-field"));
+    w.put("analysisV2",config);
+    var draft=content(w);
+    api.update(id,Map.of("name","明细列配置","mode","grid","revision",1,"content",draft));
+    api.publish(id);
+    var published=(Map<?,?>)api.get(id,true).get("content");
+    var savedWidget=(Map<?,?>)((List<?>)published.get("widgets")).get(0);
+    var savedBindings=(Map<?,?>)savedWidget.get("analysisV2");
+    assertEquals(List.of("stable-field"),savedBindings.get("tableHiddenColumnIds"));
+
+    for(List<String> invalid:List.of(
+      List.of("unknown"),List.of("stable-field","stable-field"),
+      List.of("stable-field","m1"))){
+      config.put("tableHiddenColumnIds",invalid);
+      assertThrows(IllegalArgumentException.class,()->api.update(id,
+        Map.of("name","明细列配置","mode","grid","revision",2,"content",draft)));
+    }
+    assertEquals(2,api.get(id,false).get("revision"));
+    assertEquals(List.of("stable-field"),
+      ((Map<?,?>)((Map<?,?>)((List<?>)((Map<?,?>)api.get(id,true).get("content"))
+        .get("widgets")).get(0)).get("analysisV2")).get("tableHiddenColumnIds"));
+  }
 }
