@@ -23,8 +23,11 @@ import jakarta.servlet.http.*;
 
 @Configuration class SecurityConfig implements WebMvcConfigurer {
  private final JdbcTemplate db;
- SecurityConfig(JdbcTemplate db){this.db=db;}
+ private final OperationsMetrics metrics;
+ SecurityConfig(JdbcTemplate db,OperationsMetrics metrics){this.db=db;this.metrics=metrics;}
  @Override public void addInterceptors(InterceptorRegistry registry){
+  // Register metrics first so denied requests are counted without logging identity.
+  registry.addInterceptor(metrics);
   registry.addInterceptor(new ReaderAccessInterceptor(db));
  }
 }
@@ -35,7 +38,8 @@ final class ReaderAccessInterceptor implements HandlerInterceptor {
  @Override public boolean preHandle(HttpServletRequest q,HttpServletResponse a,Object h)throws Exception{
   String path=q.getRequestURI(),method=q.getMethod();
   if(!path.startsWith("/api/")||path.equals("/api/health")||
-     path.equals("/api/login")||path.equals("/api/reader/login"))return true;
+     path.equals("/api/login")||path.equals("/api/reader/login")||
+     path.equals("/api/ready"))return true;
   HttpSession session=q.getSession(false);
   if(path.startsWith("/api/reader/")){
    if(session==null||!(session.getAttribute("readerId") instanceof String id)){
@@ -445,6 +449,10 @@ class BiApi {
  static void mode(String s){if(!Set.of("grid","free").contains(s))throw new IllegalArgumentException("画布模式无效");}
 }
 @RestControllerAdvice class ApiErrors {
+ @ExceptionHandler(com.insightbi.analysis.AnalysisQueryLimiter.BusyException.class)
+ ResponseEntity<Map<String,Object>> busy(com.insightbi.analysis.AnalysisQueryLimiter.BusyException x){
+  return ResponseEntity.status(429).body(Map.of("error","分析查询繁忙，请稍后重试"));
+ }
  @ExceptionHandler(Exception.class)ResponseEntity<Map<String,Object>> error(Exception x){
   int status=x instanceof NoSuchElementException?404:x instanceof IllegalStateException?409:x instanceof SQLException?502:400;
   String msg=x instanceof SQLException?"数据库查询失败，请检查连接和SQL":x.getMessage();
