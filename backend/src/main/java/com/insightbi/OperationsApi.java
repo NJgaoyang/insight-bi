@@ -1,6 +1,7 @@
 package com.insightbi;
 
 import com.insightbi.analysis.AnalysisApi;
+import com.insightbi.analysis.AnalysisExecutionMetrics;
 import com.insightbi.analysis.SourceRecoveryGuard;
 import com.insightbi.analysis.ReadOnlyConnectionPolicy;
 import com.zaxxer.hikari.HikariDataSource;
@@ -32,13 +33,20 @@ class OperationsApi {
   private final OperationsMetrics metrics;
   private final DatabaseStore store;
   private final SourceRecoveryGuard recovery;
+  private final AnalysisExecutionMetrics queryMetrics;
   OperationsApi(JdbcTemplate db,OperationsMetrics metrics){
     this.db=db;this.metrics=metrics;this.store=null;this.recovery=null;
+    this.queryMetrics=new AnalysisExecutionMetrics();
+  }
+  OperationsApi(JdbcTemplate db,OperationsMetrics metrics,DatabaseStore store,
+                SourceRecoveryGuard recovery){
+    this(db,metrics,store,recovery,new AnalysisExecutionMetrics());
   }
   @org.springframework.beans.factory.annotation.Autowired
   OperationsApi(JdbcTemplate db,OperationsMetrics metrics,DatabaseStore store,
-                SourceRecoveryGuard recovery){
+                SourceRecoveryGuard recovery,AnalysisExecutionMetrics queryMetrics){
     this.db=db;this.metrics=metrics;this.store=store;this.recovery=recovery;
+    this.queryMetrics=queryMetrics;
   }
 
   @GetMapping("/ready")
@@ -62,6 +70,7 @@ class OperationsApi {
     result.put("analysis",Map.of("concurrencyLimit",state.capacity(),
       "activeQueries",state.active(),"waitingQueries",state.waiting(),
       "rejectedQueries",state.rejected()));
+    result.put("queryExecution",queryMetrics.snapshot());
     Map<String,Object> pool=poolSnapshot();
     if(!pool.isEmpty())result.put("connectionPool",pool);
     return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
