@@ -42,10 +42,12 @@ final class ReaderAccessInterceptor implements HandlerInterceptor {
     a.sendError(401);return false;
    }
    List<Map<String,Object>> users=db.queryForList(
-     "SELECT role,enabled,password_hash FROM insight_governance_user WHERE id=?",id);
+     "SELECT role,enabled,password_hash,auth_version FROM insight_governance_user WHERE id=?",id);
    if(users.size()!=1||!Boolean.TRUE.equals(users.get(0).get("enabled"))||
       !Set.of("VIEWER","EDITOR").contains(String.valueOf(users.get(0).get("role")))||
-      !Objects.equals(users.get(0).get("password_hash"),session.getAttribute("readerCredential"))){
+      !Objects.equals(users.get(0).get("password_hash"),session.getAttribute("readerCredential"))||
+      !(users.get(0).get("auth_version") instanceof Number revision)||
+      !Objects.equals(revision.intValue(),session.getAttribute("readerAuthVersion"))){
     a.sendError(401);return false;
    }
   }else{
@@ -54,7 +56,8 @@ final class ReaderAccessInterceptor implements HandlerInterceptor {
    }
   }
   if(!Set.of("GET","HEAD","OPTIONS").contains(method)&&
-     !Objects.equals(q.getHeader("X-CSRF-Token"),session.getAttribute("csrf"))){
+     (session.getAttribute("csrf")==null||
+       !Objects.equals(q.getHeader("X-CSRF-Token"),session.getAttribute("csrf")))){
     a.sendError(403);return false;
   }
   return true;
