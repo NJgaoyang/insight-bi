@@ -62,4 +62,78 @@ class PublicationAuditTest {
     assertEquals(1,db.queryForObject(
       "SELECT COUNT(*) FROM insight_publication_audit WHERE dashboard_id=?",Integer.class,id));
   }
+
+  @Test void optInApprovalRejectsUnreviewedOrStaleRevisionsAndPreventsReplay(){
+    String id=String.valueOf(api.create(Map.of("name","审核报表","kind","analysis","mode","grid")).get("id"));
+    assertEquals(false,api.approval(id).get("required"));
+    assertEquals(true,api.enableApproval(id).get("required"));
+    api.enableApproval(id);
+    assertThrows(IllegalStateException.class,()->api.publish(id),
+      "opted-in analysis cannot bypass review");
+    assertThrows(IllegalStateException.class,()->api.reviewApproval(id,Map.of("approved",true)));
+    assertEquals("PENDING",api.submitApproval(id,Map.of()).get("state"));
+    assertThrows(IllegalStateException.class,()->api.submitApproval(id,Map.of()));
+    assertEquals("REJECTED",api.reviewApproval(id,
+      Map.of("approved",false,"comment","指标需要核验")).get("state"));
+    assertThrows(IllegalStateException.class,()->api.publish(id));
+    api.submitApproval(id,Map.of());
+    assertEquals("APPROVED",api.reviewApproval(id,
+      Map.of("approved",true,"comment","通过")).get("state"));
+    // Any save after approval changes the server-side revision: approval expires.
+    var current=api.get(id,false);
+    api.update(id,Map.of("name","审核报表 V2","mode","grid","revision",1,
+      "content",current.get("content")));
+    assertThrows(IllegalStateException.class,()->api.publish(id),
+      "approved revision 1 must not authorize revision 2");
+    assertThrows(IllegalStateException.class,()->
+      api.reviewApproval(id,Map.of("approved",true)),
+      "prior approved request must not be reviewed twice");
+    api.submitApproval(id,Map.of());
+    api.reviewApproval(id,Map.of("approved",true));
+    assertEquals(1,api.publish(id).get("version"));
+    assertEquals("CONSUMED",api.approval(id).get("state"));
+    assertThrows(IllegalStateException.class,()->api.publish(id),
+      "approved revision must be single-use");
+    api.unpublish(id);
+    assertThrows(IllegalStateException.class,()->api.publish(id));
+    api.submitApproval(id,Map.of());
+    api.reviewApproval(id,Map.of("approved",true));
+    assertEquals(2,api.publish(id).get("version"));
+    assertEquals(2,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_dashboard_version WHERE dashboard_id=?",
+      Integer.class,id));
+    assertEquals(2,api.publicationAudit(id).stream()
+      .filter(e->"PUBLISH".equals(e.get("event_type"))).count());
+    assertEquals(1,api.publicationAudit(id).stream()
+      .filter(e->"ENABLE_APPROVAL".equals(e.get("event_type"))).count());
+    assertEquals(1,api.publicationAudit(id).stream()
+      .filter(e->"REJECT".equals(e.get("event_type"))).count());
+    assertEquals(3,api.publicationAudit(id).stream()
+      .filter(e->"APPROVE".equals(e.get("event_type"))).count());
+  }
+
+  @Test void invalidApprovalPayloadAndRejectedOrChangedSubmissionNeverPublish(){
+    String id=String.valueOf(api.create(Map.of("name","预算审核","kind","analysis","mode","grid")).get("id"));
+    api.enableApproval(id);
+    assertThrows(IllegalArgumentException.class,()->
+      api.submitApproval(id,Map.of("approved",true)));
+    api.submitApproval(id,Map.of());
+    assertThrows(IllegalArgumentException.class,()->
+      api.reviewApproval(id,Map.of("approved",true,"role","ADMIN")));
+    assertThrows(IllegalArgumentException.class,()->
+      api.reviewApproval(id,Map.of("approved","true")));
+    var current=api.get(id,false);
+    api.update(id,Map.of("name","预算 V2","mode","grid","revision",1,
+      "content",current.get("content")));
+    assertThrows(IllegalStateException.class,()->
+      api.reviewApproval(id,Map.of("approved",true)));
+    assertThrows(IllegalStateException.class,()->api.publish(id));
+    assertEquals(0,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id));
+    api.submitApproval(id,Map.of());
+    api.reviewApproval(id,Map.of("approved",false));
+    assertThrows(IllegalStateException.class,()->api.publish(id));
+    assertEquals(0,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_dashboard_version WHERE dashboard_id=?",Integer.class,id));
+  }
 }
