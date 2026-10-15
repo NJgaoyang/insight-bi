@@ -11,6 +11,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const errors=[],requests=[]
   const provisioned=[],preconfiguredGrants=[]
   const departments=[]
+  const departmentGrants=[]
   const rowPolicies=[]
   let sessionMode='admin'
   page.on('pageerror',error=>errors.push(error.message))
@@ -73,6 +74,15 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
      assert.equal(req.postDataJSON().departmentId,'dept1')
      provisioned[0].department_id='dept1'
      return send({id:'u1',department_id:'dept1'})
+   }
+   if(method==='GET'&&path==='/api/governance/departments/dept1/grants')
+    return send(departmentGrants)
+   if(method==='POST'&&path==='/api/governance/departments/dept1/grants'){
+    assert.equal(req.headers()['x-csrf-token'],'csrf')
+    assert.deepEqual(req.postDataJSON(),{dashboardId:'published-analysis'})
+    departmentGrants.push({dashboard_id:'published-analysis',permission:'READ_PUBLISHED'})
+    return send({departmentId:'dept1',dashboardId:'published-analysis',
+      permission:'READ_PUBLISHED',alreadyGranted:false})
    }
    if(method==='GET'&&path==='/api/governance/users')return send(provisioned)
    if(method==='POST'&&path==='/api/governance/users'){
@@ -249,6 +259,19 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await deptDialog.getByPlaceholder('例如：研发部').fill('研发部')
   await deptDialog.getByRole('button',{name:'保存部门'}).click()
   await page.locator('table').first().getByText('研发部').waitFor()
+  // Department read grants must be configured independently of direct user grants.
+  const orgRow=page.locator('section.resource-table').first().locator('tbody tr')
+    .filter({hasText:'研发部'})
+  await orgRow.getByRole('button',{name:'报表授权'}).click()
+  const departmentGrantDialog=page.locator('.el-dialog').filter({hasText:'部门报表授权'})
+  await departmentGrantDialog.locator('.el-select').click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'经营分析'}).first().click()
+  await departmentGrantDialog.getByRole('button',{name:'添加授权'}).click()
+  await departmentGrantDialog.getByText('本部门及下级部门 · 只读').waitFor()
+  assert.equal(departmentGrants.length,1)
+  assert.equal(preconfiguredGrants.length,0)
+  await page.keyboard.press('Escape')
+
   const createdUser=page.locator('tbody tr').filter({hasText:'analyst01'})
   await createdUser.locator('.el-select').first().click()
   await page.locator('.el-select-dropdown__item:visible').filter({hasText:'研发部'}).first().click()
