@@ -17,6 +17,7 @@ public class AnalysisApi {
   private final FieldCatalog catalog;
   private final AnalysisPipelineApi pipeline;
   private static final AnalysisQueryLimiter QUERY_LIMITER=new AnalysisQueryLimiter(4,250);
+  public static AnalysisQueryLimiter.Snapshot queryAdmissionSnapshot(){return QUERY_LIMITER.snapshot();}
   public AnalysisApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog){
     this.store=store;this.db=db;this.catalog=catalog;
     this.pipeline=new AnalysisPipelineApi(store,catalog,db);
