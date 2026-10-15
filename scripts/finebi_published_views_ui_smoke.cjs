@@ -11,6 +11,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   const errors=[],requests=[]
   const provisioned=[],preconfiguredGrants=[]
   const departments=[]
+  const rowPolicies=[]
   let sessionMode='admin'
   page.on('pageerror',error=>errors.push(error.message))
   const widget=id=>({id,title:'指标'+id,type:'bar',datasetId:id==='w1'?'ds1':'',
@@ -93,6 +94,17 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
      provisioned[0].enabled=true
      return send({id:'u1',enabled:true})
    }
+   if(method==='GET'&&path==='/api/governance/users/u1/row-policies')return send(rowPolicies)
+   if(method==='GET'&&path==='/api/datasets/ds1/fields')
+    return send([{id:'city-field',name:'城市',logicalType:'STRING',calculated:false},
+      {id:'revenue-field',name:'收入',logicalType:'DECIMAL',calculated:false}])
+   if(method==='PUT'&&path==='/api/governance/users/u1/row-policies/ds1'){
+     assert.equal(req.headers()['x-csrf-token'],'csrf')
+     assert.deepEqual(req.postDataJSON(),{fieldId:'city-field',allowedValue:'北京'})
+     rowPolicies.splice(0,rowPolicies.length,
+       {dataset_id:'ds1',field_id:'city-field',allowed_value:'北京'})
+     return send({datasetId:'ds1',fieldId:'city-field',allowedValue:'北京'})
+   }
    if(method==='GET'&&path==='/api/governance/users/u1/grants')return send(preconfiguredGrants)
    if(method==='POST'&&path==='/api/governance/users/u1/grants'){
      assert.equal(req.postDataJSON().dashboardId,'published-analysis')
@@ -108,7 +120,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
     return send([{event_type:'PUBLISH',actor:'admin',version_no:2,
       created_at:'2026-10-15T09:00:00'}, {event_type:'UNPUBLISH',actor:'admin',
       version_no:null,created_at:'2026-10-15T09:30:00'}])
-   if(path==='/api/datasets')return send([])
+   if(path==='/api/datasets')return send([{id:'ds1',name:'经营数据集',
+     connection_id:'',sql_body:'',fields:[]}])
    if(path==='/api/analysis/v2/query'&&method==='POST')return send({
     columns:[{id:'city',name:'d1',kind:'dimension',label:'城市'},
      {id:'total',name:'total',kind:'measure',label:'收入'}],
@@ -243,6 +256,18 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(provisioned[0].department_id,'dept1')
   assert.equal(provisioned[0].enabled,false)
   assert.equal(preconfiguredGrants.length,0)
+  // Scoped row policy set by the admin, never sent as a viewer override.
+  await createdUser.getByRole('button',{name:'数据行限制'}).click()
+  const rowDialog=page.locator('.el-dialog').filter({hasText:'数据行限制 · analyst01'})
+  await rowDialog.locator('.el-select').first().click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'经营数据集'}).first().click()
+  await rowDialog.locator('.el-select').nth(1).click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'城市'}).first().click()
+  await rowDialog.getByPlaceholder('例如：北京').fill('北京')
+  await rowDialog.getByRole('button',{name:'保存行级限制'}).click()
+  await rowDialog.getByText('北京').waitFor()
+  assert.equal(rowPolicies[0].allowed_value,'北京')
+  await page.keyboard.press('Escape')
   await page.getByRole('button',{name:'授权报表'}).click()
   const accessDialog=page.locator('.el-dialog').filter({hasText:'预配置报表授权'})
   await accessDialog.locator('.el-select').click()
