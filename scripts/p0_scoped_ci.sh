@@ -21,13 +21,14 @@ for path in "${paths[@]}"; do
    backend=true
    case "$path" in
     backend/src/test/java/*Test.java) name="${path##*/}";add_test "${name%.java}";;
+    */ReaderApi.java|*/ReaderPassword.java) add_test ReaderApiTest;add_test GovernanceApiTest;;
     */DatabaseStore.java|*/BiApi.java)
-      add_test GovernanceApiTest;add_test PublicationAuditTest
+      add_test ReaderApiTest;add_test GovernanceApiTest;add_test PublicationAuditTest
       add_test FieldVisibilityTest;add_test DatasetAliasUpdateIntegrationTest
       add_test BiQueryInTest;add_test AnalysisResourceGraphTest
       add_test AnalysisPipelineApiTest;add_test AnalysisPipelineDependencyGuardTest
       add_test AnalysisPipelineSnapshotBindingTest;;
-    */GovernanceApi.java) add_test GovernanceApiTest;;
+    */GovernanceApi.java) add_test GovernanceApiTest;add_test ReaderApiTest;;
     */AnalysisResourceGraph.java)
       add_test AnalysisResourceGraphTest;add_test AnalysisPipelineSnapshotBindingTest;;
     */AnalysisPipelineCompiler.java|*/AnalysisPipelineApi.java)
