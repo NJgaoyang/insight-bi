@@ -394,6 +394,13 @@ P1-02 仍需考虑多源字段自动映射、JOIN 键唯一性验证/数据量�
 - StarRocks 新增**可选、只读** JDBC `SELECT 1` 专项测试，只在操作员显式提供 `BI_ACCEPTANCE_STARROCKS_JDBC_URL`、独立只读用户名与密码时执行。当前 CI 未提供 StarRocks 连接，因此这一项是**跳过，未验收**，不能将 MySQL CI 通过解释成 StarRocks 通过。
 - 详细验收范围、运行命令、风险限制及下一步见 [P3_REAL_JDBC_ACCEPTANCE.md](P3_REAL_JDBC_ACCEPTANCE.md)。待补：StarRocks 实际 V2 SQL/FE 故障恢复、数据库最小权限实测、真实部署环境 MySQL/H2 迁移、性能与生产切换演练。本批不做全量回归或上线部署。
 
+## P3-05：用户指定 StarRocks FE 的只读 V2 专项验收（2026-10-15）
+
+- 本次按用户提供的 `81.69.15.136:9030` 目标新增 `StarRocksExistingInstanceReadOnlyTest`，使用 StarRocks 的 SELECT 字面量虚拟源而非业务表，覆盖 `SELECT 1`、V2 单城市/多城市 `IN` 参数化聚合（北京 150、北京+上海 350、上海+广州 500）、JDBC 只读连接状态；元数据保存在临时 H2 中，没有向目标实例创建、删除、更新任何表。
+- 提供 `scripts/p3-starrocks-existing-readonly.sh`：仅在能访问 FE 的授权 Linux 环境执行，密码使用无回显输入或运行时环境变量，**没有把用户提供的密码写入 GitHub**。脚本先检查 `81.69.15.136:9030` TCP 可用性，失败则退出；操作见 [P3_STARROCKS_EXISTING_INSTANCE_READONLY.md](P3_STARROCKS_EXISTING_INSTANCE_READONLY.md)。
+- 当前执行环境对目标端口的 TCP 连接返回 `Connection refused`，同时无法正常外连其他公共目的地，尚不能断言 StarRocks FE 本身故障。**该真实 FE 上的 JDBC V2 验收未执行、不得称为通过**；独立 SQL 编译测试 [38687551869](https://github.com/NJgaoyang/insight-bi/actions/runs/38687551869) **SUCCESS**，真实 FE 测试在未设置显式环境开关时跳过。
+- 使用的是管理员 `root` 账号，**即使 SELECT 成功也不证明最小权限**。生产应使用独立只读账号；本轮没有进行 FE/BE 停机故障切换、不操作已有业务表、不执行全量回归或生产部署。
+
 ## 本轮仅测试受影响模块
 
 - 开发机隔离路径：`/opt/insight-bi-p0-preview`。
