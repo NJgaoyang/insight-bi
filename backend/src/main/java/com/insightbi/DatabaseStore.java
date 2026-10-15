@@ -41,6 +41,10 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_governance_department (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   if(!columnExists("insight_governance_user","department_id"))
     jdbc.execute("ALTER TABLE insight_governance_user ADD COLUMN department_id VARCHAR(36)");
+  // Optional, per-user PBKDF2 credential for the isolated reader login.
+  if(!columnExists("insight_governance_user","password_hash"))
+    jdbc.execute("ALTER TABLE insight_governance_user ADD COLUMN password_hash VARCHAR(256)");
+
 
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   boolean hasFolder=columnExists("insight_dashboard","folder_id");
