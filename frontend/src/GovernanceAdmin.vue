@@ -3,7 +3,7 @@ import {computed,onMounted,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,remove} from './api'
 
-const props=defineProps<{dashboards:{id:string;name:string;status:string}[]}>()
+const props=defineProps<{dashboards:{id:string;name:string;status:string}[];datasets:{id:string;name:string}[]}>()
 type User={id:string;username:string;display_name:string;role:'VIEWER'|'EDITOR';enabled:boolean;department_id?:string|null;password_configured?:boolean}
 type Department={id:string;name:string;parent_id:string|null}
 type Grant={dashboard_id:string;permission:string}
@@ -50,6 +50,50 @@ async function toggleActivation(user:User){
 const newUser=ref({username:'',displayName:'',role:'VIEWER' as 'VIEWER'|'EDITOR'})
 const selected=ref<User|null>(null),grants=ref<Grant[]>([]),newReport=ref('')
 const published=()=>props.dashboards.filter(d=>d.status==='published')
+type RowPolicy={dataset_id:string;field_id:string;allowed_value:string}
+type PolicyField={id:string;name:string;logicalType:string;calculated:boolean}
+const rowDialog=ref(false),rowUser=ref<User|null>(null),rowPolicies=ref<RowPolicy[]>([])
+const rowDatasetId=ref(''),rowFieldId=ref(''),rowAllowedValue=ref('')
+const rowFields=ref<PolicyField[]>([])
+const applicableFields=computed(()=>rowFields.value.filter(f=>f.logicalType==='STRING'&&!f.calculated))
+async function loadRowFields(){
+ rowFieldId.value='';rowFields.value=[]
+ if(!rowDatasetId.value)return
+ try{rowFields.value=await api<PolicyField[]>('/datasets/'+encodeURIComponent(rowDatasetId.value)+'/fields')}
+ catch(e){ElMessage.error(e instanceof Error?e.message:'加载数据集字段失败')}
+}
+async function openRowPolicies(user:User){
+ rowUser.value=user;rowDatasetId.value='';rowFieldId.value='';rowAllowedValue.value=''
+ rowFields.value=[];rowDialog.value=true
+ await refreshRowPolicies()
+}
+async function refreshRowPolicies(){
+ if(!rowUser.value)return
+ try{rowPolicies.value=await api<RowPolicy[]>(
+  '/governance/users/'+encodeURIComponent(rowUser.value.id)+'/row-policies')}
+ catch(e){ElMessage.error(e instanceof Error?e.message:'读取行级规则失败')}
+}
+async function saveRowPolicy(){
+ if(!rowUser.value||!rowDatasetId.value||!rowFieldId.value||!rowAllowedValue.value.trim())return
+ busy.value=true
+ try{
+  await put('/governance/users/'+encodeURIComponent(rowUser.value.id)+
+   '/row-policies/'+encodeURIComponent(rowDatasetId.value),
+   {fieldId:rowFieldId.value,allowedValue:rowAllowedValue.value.trim()})
+  await refreshRowPolicies();ElMessage.success('行限制已生效')
+ }catch(e){ElMessage.error(e instanceof Error?e.message:'行级规则保存失败')}
+ finally{busy.value=false}
+}
+async function removeRowPolicy(datasetId:string){
+ if(!rowUser.value)return
+ try{
+  await ElMessageBox.confirm('删除此规则后，对该数据集恢复报表原有的完整行访问权限。','移除行限制',{type:'warning'})
+  await remove('/governance/users/'+encodeURIComponent(rowUser.value.id)+
+   '/row-policies/'+encodeURIComponent(datasetId))
+  await refreshRowPolicies()
+ }catch(e){if(e!=='cancel')ElMessage.error(e instanceof Error?e.message:'移除行限制失败')}
+}
+
 async function refresh(){
  try{
   const [people,org]=await Promise.all([api<User[]>('/governance/users'),
@@ -188,6 +232,7 @@ onMounted(refresh)
       <button :disabled="busy||(!u.enabled&&!u.password_configured)" @click="toggleActivation(u)">
        {{u.enabled?'禁用':'启用'}}
       </button>
+      <button @click="openRowPolicies(u)">数据行限制</button>
       <button @click="openGrants(u)">授权报表</button>
       <button class="danger-link" @click="deleteUser(u)">删除</button></td>
     </tr>
@@ -235,6 +280,32 @@ onMounted(refresh)
   <template #footer><button @click="credentialOpen=false">取消</button>
    <button class="primary-button" :disabled="busy||credentialPassword.length<12"
     @click="savePassword">保存密码</button></template>
+ </el-dialog>
+ <el-dialog v-model="rowDialog" :title="'数据行限制 · '+(rowUser?.username||'')" width="600px">
+  <p class="fine-dialog-tip">可选限制：按数据集原始文本字段精确匹配一个值。例如城市＝北京。未配置限制时，该用户仍可读取已授权报表中该数据集的全部结果。所有规则由服务器在汇总前强制执行。</p>
+  <div class="modal-fields">
+   <label>数据集</label>
+   <el-select v-model="rowDatasetId" filterable placeholder="选择数据集" @change="loadRowFields">
+    <el-option v-for="d in datasets" :key="d.id" :label="d.name" :value="d.id"/>
+   </el-select>
+   <label>限制字段（原始文本字段）</label>
+   <el-select v-model="rowFieldId" filterable placeholder="选择字段">
+    <el-option v-for="field in applicableFields" :key="field.id" :label="field.name" :value="field.id"/>
+   </el-select>
+   <label>允许的字段值</label>
+   <el-input v-model="rowAllowedValue" maxlength="255" placeholder="例如：北京"/>
+   <button class="primary-button" :disabled="busy||!rowDatasetId||!rowFieldId||!rowAllowedValue.trim()"
+    @click="saveRowPolicy">保存行级限制</button>
+  </div>
+  <div v-if="!rowPolicies.length" class="fine-dialog-tip">暂未配置行级限制，已授权的报表按原查询范围展示。</div>
+  <table v-else class="bi-table">
+   <thead><tr><th>数据集</th><th>允许值</th><th>操作</th></tr></thead>
+   <tbody><tr v-for="rule in rowPolicies" :key="rule.dataset_id">
+    <td>{{datasets.find(d=>d.id===rule.dataset_id)?.name||rule.dataset_id}}</td>
+    <td>{{rule.allowed_value}}</td>
+    <td><button class="danger-link" @click="removeRowPolicy(rule.dataset_id)">删除限制</button></td>
+   </tr></tbody>
+  </table>
  </el-dialog>
  <el-dialog v-model="grantsOpen" :title="'预配置报表授权 · '+(selected?.username||'')" width="540px">
   <p class="fine-dialog-tip">仅允许预配置已发布报表的读取权限；此设置不会立即开放普通用户访问。</p>
