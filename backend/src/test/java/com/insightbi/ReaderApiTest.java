@@ -62,6 +62,75 @@ class ReaderApiTest {
     return interceptor.preHandle(req,new MockHttpServletResponse(),new Object());
   }
 
+  @Test void exactCityRuleIsInjectedBeforeAggregationAndNeverComesFromClient()throws Exception{
+    String userId=user();
+    governance.setPassword(userId,Map.of("password","complex-password-of-reader-1"));
+    governance.setActivation(userId,Map.of("enabled",true));
+    db.execute("CREATE TABLE sales(city VARCHAR(80),revenue DECIMAL(12,2))");
+    db.update("INSERT INTO sales(city,revenue) VALUES(?,?)","北京",100);
+    db.update("INSERT INTO sales(city,revenue) VALUES(?,?)","上海",200);
+    db.update("INSERT INTO sales(city,revenue) VALUES(?,?)","北京",50);
+    String dataset="ds-city";
+    db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json) VALUES(?,?,?,?,?)",
+      dataset,"经营城市","unused","SELECT city,revenue FROM sales",
+      store.json(List.of(Map.of("name","city","type","VARCHAR"),
+                         Map.of("name","revenue","type","DECIMAL"))));
+    var fields=new FieldCatalog(store,db).fields(dataset);
+    String city=fields.stream().filter(x->"city".equals(x.sourceColumn())).findFirst().orElseThrow().id();
+    String revenue=fields.stream().filter(x->"revenue".equals(x.sourceColumn())).findFirst().orElseThrow().id();
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setRowPolicy(userId,dataset,
+        Map.of("fieldId",revenue,"allowedValue","200")));
+    assertThrows(IllegalArgumentException.class,()->
+      governance.setRowPolicy(userId,dataset,
+        Map.of("fieldId",city,"allowedValue","北京","sql","OR 1=1")));
+    governance.setRowPolicy(userId,dataset,Map.of("fieldId",city,"allowedValue","北京"));
+    assertEquals(1,governance.rowPolicies(userId).size());
+    String dashboard=(String)admin.create(
+      Map.of("name","城市报表","mode","grid","kind","analysis")).get("id");
+    var bindings=Map.of("dimensions",List.of(Map.of("fieldId",city)),
+      "measures",List.of(Map.of("id","m1","fieldId",revenue,"aggregate","SUM")),
+      "filters",Map.of("pre",List.of(),"post",List.of()),"sort",List.of(),"limit",100);
+    var widget=Map.of("id","w1","title","收入","datasetId",dataset,"type","bar","analysisV2",bindings);
+    db.update("UPDATE insight_dashboard SET status='published',published_json=? WHERE id=?",
+      store.json(Map.of("mode","grid","theme","light","widgets",List.of(widget))),dashboard);
+    governance.grantRead(userId,Map.of("dashboardId",dashboard));
+    HttpSession session=login("analyst01","complex-password-of-reader-1").getSession(false);
+    assertThrows(IllegalArgumentException.class,()->
+      reader.query(dashboard,"w1",Map.of("filters",Map.of("pre",List.of())),session));
+    reader.query(dashboard,"w1",Map.of(),session);
+    var filters=(Map<?,?>)analysis.received.get("filters");
+    assertEquals(List.of(Map.of("fieldId",city,"op","eq","value","北京")),filters.get("pre"));
+    var plan=new com.insightbi.analysis.AnalysisQueryPlanner(fields)
+      .compile("SELECT city,revenue FROM sales",analysis.received);
+    assertTrue(plan.sql().contains(" WHERE "));
+    assertEquals("北京",plan.params().get(0));
+    try(var conn=db.getDataSource().getConnection();
+        var statement=conn.prepareStatement(plan.sql())){
+      for(int i=0;i<plan.params().size();i++)statement.setObject(i+1,plan.params().get(i));
+      try(var rows=statement.executeQuery()){
+        assertTrue(rows.next());
+        assertEquals("北京",rows.getString("d1"));
+        assertEquals(0,new java.math.BigDecimal("150").compareTo(rows.getBigDecimal("m1")));
+        assertFalse(rows.next());
+      }
+    }
+    // A malicious value remains a bind parameter; it can never become SQL.
+    governance.setRowPolicy(userId,dataset,
+      Map.of("fieldId",city,"allowedValue","北京' OR 1=1"));
+    reader.query(dashboard,"w1",Map.of(),session);
+    var malicious=new com.insightbi.analysis.AnalysisQueryPlanner(fields)
+      .compile("SELECT city,revenue FROM sales",analysis.received);
+    assertFalse(malicious.sql().contains("OR 1=1"));
+    assertEquals("北京' OR 1=1",malicious.params().get(0));
+    governance.deleteRowPolicy(userId,dataset);
+    assertTrue(governance.mandatoryRowFilters(userId,dataset).isEmpty());
+    governance.setRowPolicy(userId,dataset,Map.of("fieldId",city,"allowedValue","北京"));
+    governance.deleteUser(userId);
+    assertEquals(0,db.queryForObject(
+      "SELECT COUNT(*) FROM insight_reader_row_policy WHERE user_id=?",Integer.class,userId));
+  }
+
   @Test void passwordLoginIsExplicitAndCannotBecomeAdmin()throws Exception{
     String id=user();
     assertThrows(IllegalArgumentException.class,()->login("analyst01","not-the-password"));
