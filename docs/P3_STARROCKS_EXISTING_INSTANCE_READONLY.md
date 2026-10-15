@@ -4,7 +4,7 @@
 
 本次用户指定的 StarRocks FE 地址为 `81.69.15.136:9030`，协议为 MySQL Wire Protocol。**连接密码只来自运行时环境或无回显终端输入，绝不进入代码、GitHub 工作流、测试日志或本文件**。
 
-在当前执行环境实际尝试 TCP 连接 `81.69.15.136:9030` 得到 `Connection refused`；同一运行容器对外网其他端口也出现连接拒绝或 DNS 无法解析，说明当前环境自身可能限制外连，不能据此断言远端 StarRocks 停机。**真实 FE SELECT 验收尚未完成**。
+早先隔离执行环境尝试连接 `81.69.15.136:9030` 时返回 `Connection refused`，但这一结果不是 StarRocks 故障结论。**2026-10-15，已在用户授权的开发机 VM-0-13-tencentos 实际连通并成功查询该 FE**，登录后的 `SELECT VERSION()` 返回 `5.1.0`。开发机本地分支仍位于旧提交 `36732c4`，为避免影响其工作树，本次仅临时加入与 GitHub 同步的 V2 验收测试和只读连接辅助类后进行定向测试；**尚不代表最新分支整体验收或生产部署**。
 
 ## 本轮提供的安全验收
 
@@ -47,8 +47,12 @@ mysql -h 127.0.0.1 -P 9030 -u root -p -e 'SELECT 1'
 | --- | --- |
 | V2 虚拟城市数据集的只读 SQL 规划、IN 参数化 | CI 通过 |
 | 将地址、密码保存到仓库 | 未执行（禁止） |
-| 当前运行环境 TCP 直连 `81.69.15.136:9030` | Connection refused |
-| 目标 FE V2 聚合 JDBC 执行 | 未执行（网络不可达） |
-| 服务端账号最小权限、FE 故障切换及业务库数据核验 | 未执行 |
+| 早先隔离环境 TCP 直连 `81.69.15.136:9030` | Connection refused（该环境不具备外连能力） |
+| **开发机 TCP 连通及 mysql CLI SELECT 1** | **通过；FE 版本 5.1.0** |
+| **开发机实际 FE V2 聚合 JDBC 执行** | **通过：2 个测试、0 失败、0 错误、0 跳过** |
+| 实际 V2 虚拟数据分组汇总 | **通过：北京 150、北京+上海 350、上海+广州 500** |
+| 服务端账号最小权限、FE 故障切换及业务库数据核验 | 未执行（当前仅使用 root 完成只读 SELECT） |
 
-不能将离线 SQL 编译成功或 MySQL 8.4 CI 通过报告为真实 StarRocks 验收通过。
+本次开发机验收结果来自 `/opt/insight-bi/backend/target/surefire-reports/com.insightbi.StarRocksExistingInstanceReadOnlyTest.txt`，记录 `Tests run: 2, Failures: 0, Errors: 0, Skipped: 0`。实际执行命令通过本地 root-only 临时 MySQL defaults 文件提供密码，过程中没有将数据库密码写入仓库、命令行或报告；测试后应删除该临时文件。
+
+**注意**：真实 FE 的只读 V2 虚拟数据查询已通过，但这不等于 StarRocks 业务数据集验证、账户最小权限审计、FE/BE 故障演练或最新分支的部署验收通过。
