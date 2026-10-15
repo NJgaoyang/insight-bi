@@ -58,6 +58,8 @@ public class DatabaseStore {
 
 
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, parent_id VARCHAR(36), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+  // Restrictive folder ACL: per-folder allow list; never grants dashboard access by itself.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_folder_acl (folder_id VARCHAR(36) NOT NULL, principal_type VARCHAR(12) NOT NULL, principal_id VARCHAR(36) NOT NULL, permission VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(folder_id,principal_type,principal_id,permission))");
   boolean hasFolder=columnExists("insight_dashboard","folder_id");
    if(!hasFolder)jdbc.execute("ALTER TABLE insight_dashboard ADD COLUMN folder_id VARCHAR(36)");
   boolean hasKind=columnExists("insight_dashboard","kind");
