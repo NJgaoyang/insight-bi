@@ -428,7 +428,7 @@ function handleDrop(e:DragEvent,target:'dimension'|'metric'){
 }
 function switchKind(kind:string){
  if(!chosen.value)return
- if(chosen.value.analysisV2&&!['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(kind)){
+ if(chosen.value.analysisV2&&!['bar','hbar','line','area','pie','donut','combo','metric','table','pivot'].includes(kind)){
   ElMessage.warning('该图表类型尚未接入 V2 分析计算');return
  }
  if(chosen.value.analysisV2&&['pie','donut','metric'].includes(kind)&&chosen.value.analysisV2.measures.length>1){
@@ -773,9 +773,28 @@ onMounted(load)
       <template v-if="propTab==='data' && chosen.analysisV2">
        <label>图表类型</label>
        <el-select :model-value="chosen.type" @update:model-value="v=>switchKind(String(v))">
-        <el-option v-for="t in types.filter(t=>['bar','hbar','line','area','pie','donut','combo','metric','table'].includes(t.type))"
+        <el-option v-for="t in types.filter(t=>['bar','hbar','line','area','pie','donut','combo','metric','table','pivot'].includes(t.type))"
          :key="t.type" :label="t.name" :value="t.type"/>
        </el-select>
+       <template v-if="chosen.type==='pivot'">
+        <div class="analysis-pivot-help">按字段槽顺序使用第 1 个维度作为行、第 2 个维度作为列。可拖动维度槽或点击交换；多个指标按列展示。仅对可加且未截断的数据展示合计。</div>
+        <button type="button" class="analysis-pivot-swap"
+         :disabled="chosen.analysisV2.dimensions.length!==2"
+         @click="moveV2Binding('dimension',0,1)">交换行列维度</button>
+        <label>行分组排序</label>
+        <el-select :model-value="chosen.analysisV2.pivot?.rowOrder||'asc'"
+         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:v as 'asc'|'desc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:chosen.analysisV2.pivot?.showTotals!==false};mark()}}">
+         <el-option label="升序" value="asc"/><el-option label="降序" value="desc"/>
+        </el-select>
+        <label>列分组排序</label>
+        <el-select :model-value="chosen.analysisV2.pivot?.columnOrder||'asc'"
+         @update:model-value="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:v as 'asc'|'desc',showTotals:chosen.analysisV2.pivot?.showTotals!==false};mark()}}">
+         <el-option label="升序" value="asc"/><el-option label="降序" value="desc"/>
+        </el-select>
+        <label>可加指标合计</label>
+        <el-switch :model-value="chosen.analysisV2.pivot?.showTotals!==false"
+         @change="v=>{if(chosen?.analysisV2){chosen.analysisV2.pivot={rowOrder:chosen.analysisV2.pivot?.rowOrder||'asc',columnOrder:chosen.analysisV2.pivot?.columnOrder||'asc',showTotals:Boolean(v)};mark()}}"/>
+       </template>
        <template v-if="chosen.type==='table'">
         <label>明细表默认隐藏列</label>
         <el-select multiple collapse-tags clearable placeholder="全部显示"

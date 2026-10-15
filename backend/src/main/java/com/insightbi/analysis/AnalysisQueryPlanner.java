@@ -64,7 +64,10 @@ public final class AnalysisQueryPlanner {
       if(distinct&&(!agg.equals("COUNT")||fieldId.equals("*")))
         throw new IllegalArgumentException("当前仅 COUNT(字段) 支持去重计数");
       String expression,type;
-      if(fieldId.equals("*")&&agg.equals("COUNT")){expression="COUNT(*)";type="INTEGER";}
+      // Only additive grouped metrics can be totaled from a complete V2 result.
+      // AVG, DISTINCT, MIN/MAX, and aggregate formulas require a separate SQL rollup.
+      boolean additive=false;
+      if(fieldId.equals("*")&&agg.equals("COUNT")){expression="COUNT(*)";type="INTEGER";additive=true;}
       else{
         FieldCatalog.Field f=field(fieldId);
         if(f.calculated()&&f.phase().equals("AGGREGATE")){
@@ -76,12 +79,14 @@ public final class AnalysisQueryPlanner {
             throw new IllegalArgumentException("SUM/AVG 指标必须是数值字段");
           expression=agg+"("+(distinct?"DISTINCT ":"")+ref(f)+")";
           type=agg.equals("COUNT")?"INTEGER":(agg.equals("MIN")||agg.equals("MAX"))?f.logicalType():"DECIMAL";
+          additive=(agg.equals("SUM")||agg.equals("COUNT")&&!distinct);
         }
       }
       select.add(expression+" AS "+FormulaCompiler.quote(id));
       String label=string(m.get("alias"),id);
       if(label.length()>150)throw new IllegalArgumentException("指标标题过长");
-      columns.add(Map.of("id",id,"name",id,"label",label,"type",type,"kind","measure"));
+      columns.add(Map.of("id",id,"name",id,"label",label,"type",type,"kind","measure",
+        "additive",additive));
       metrics.put(id,new Metric(expression,id,type));sortable.put(id,id);
     }
     if(select.size()>8)throw new IllegalArgumentException("字段槽过多");

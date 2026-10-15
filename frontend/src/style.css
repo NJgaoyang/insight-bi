@@ -170,6 +170,24 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .v2-table-wrap table{width:100%;border-collapse:collapse;font-size:12px}
 .v2-table-wrap th,.v2-table-wrap td{border-bottom:1px solid #e8ebef;padding:8px 12px;text-align:left;white-space:nowrap}
 .v2-table-wrap th{background:#f7f9fb;color:#65748b;position:sticky;top:0}
+.v2-pivot-wrap{max-width:100%;overflow:auto}
+.v2-pivot-wrap table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
+.v2-pivot-wrap thead th{position:sticky;top:0;background:#eef3fa;z-index:2;text-align:center}
+.v2-pivot-wrap thead tr:nth-child(2) th{top:36px;background:#f5f7fb}
+.v2-pivot-wrap tbody th,.v2-pivot-wrap tfoot th{background:#f7f9fc;color:#344966;font-weight:600}
+.v2-pivot-wrap td{text-align:right;font-variant-numeric:tabular-nums}
+.v2-pivot-wrap .v2-pivot-corner{min-width:120px;left:0;z-index:3}
+.v2-pivot-wrap .v2-pivot-total{background:#f7f9fc;font-weight:600}
+.v2-pivot-wrap tfoot th{position:sticky;bottom:0;z-index:1;text-align:right}
+.v2-pivot-warning{padding:6px 10px;font-size:12px;color:#a66d20;background:#fff7ea}
+.v2-pivot-caption{padding:6px 10px;color:#79879d;font-size:11px;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.v2-pivot-pager{white-space:nowrap}
+.v2-pivot-pager button{font-size:11px;border:1px solid #dce3ec;background:#fff;border-radius:4px;padding:3px 7px;cursor:pointer}
+.v2-pivot-pager button:disabled{opacity:.4;cursor:default}
+.analysis-pivot-help{font-size:12px;line-height:1.5;color:#728099;padding:8px 0}
+.analysis-pivot-swap{align-self:flex-start;padding:5px 8px;border:1px solid #dce3ec;border-radius:4px;background:#fff;cursor:pointer}
+.analysis-pivot-swap:disabled{opacity:.45;cursor:not-allowed}
+
 
 /* P0 V2 per-measure settings. Compact and visually separate from global chart options. */
 .v2-measure-setting{border:1px solid #e8edf5;border-radius:6px;padding:10px;margin:6px 0 12px;display:flex;flex-direction:column;gap:8px;background:#fff}

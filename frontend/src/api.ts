@@ -32,9 +32,11 @@ export interface AnalysisV2Bindings {
   share?:{ref:string;id?:string}
   running?:{ref:string;id?:string;direction?:'asc'|'desc'}
   periodCompare?:{ref:string;mode:'mom'|'yoy';id?:string}
+  /** V2 cross-table display only; first dimension is row, second column. */
+  pivot?:{rowOrder:'asc'|'desc';columnOrder:'asc'|'desc';showTotals:boolean}
   tableHiddenColumnIds?:string[]
   sort:{ref:string;direction:'asc'|'desc'}[]
   limit:number
 }
 export type AnalysisWidgetV2 = Widget & {analysisV2?:AnalysisV2Bindings}
-export interface QueryV2Result {rows:Record<string,unknown>[];columns:{id:string;name:string;label:string;type:string;kind:string}[];executionMs:number;truncated:boolean;warnings:string[]}
+export interface QueryV2Result {rows:Record<string,unknown>[];columns:{id:string;name:string;label:string;type:string;kind:string;additive?:boolean}[];executionMs:number;truncated:boolean;warnings:string[]}

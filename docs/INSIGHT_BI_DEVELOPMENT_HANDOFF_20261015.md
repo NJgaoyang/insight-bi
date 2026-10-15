@@ -185,3 +185,12 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ---
 
 **接手结论**：代码基线不是空项目，下一步应直接从 **`ANALYSIS-PHASE2-01`：V2 分组/交叉表实用闭环** 开始开发，而不是重新做 P0 数据源、再建第三套工作台或反复跑 P3 可靠性测试。**测试修改区域 → 保存/发布兼容 → GitHub 提交 → 更新本文**，一批一交付。
+
+
+## 11. 接手后的执行补充：ANALYSIS-PHASE2-01 第一批（2026-10-15）
+
+在隔离工作目录 `/opt/insight-bi-phase2` 基于分支 `feat/finebi-analysis-engine-p0` 的 `da2344054` 开始，已实现 **V2 交叉表基础闭环**：两个稳定 fieldId 维度、1–5 指标的分组聚合展示、NULL 与同名列处理、行列排序、最多 100×24 分组安全限制、每页 20 个行组、完整结果的可加指标行列合计与总计；截断、AVG、DISTINCT 等非可加指标不显示虚假合计。保持现有 V2 SQL Planner、查询/权限/快照 API 和旧 V1 报表不变。
+
+新增或调整：`AnalysisQueryPlanner.java` 的 `additive` 查询列元数据、`AnalysisV2Chart.vue`、`AnalysisSubject.vue`、`pivotTable.ts`、`api.ts`、样式和专项 H2/Node/Chromium 测试。定向检查：H2 Java 14/14 PASS、Node 4/4 PASS、TypeScript/Vite 构建 PASS、隔离 Chromium mock REST 保存/重进/两视图/发布/分页/截断 PASS。**没有进行全量回归、生产数据操作或 18110 部署**。
+
+详细验收与限制见 [ANALYSIS_PHASE2_01_PIVOT_BATCH1.md](ANALYSIS_PHASE2_01_PIVOT_BATCH1.md)；下一批建议继续服务端 SQL ROLLUP 安全小计、多层行列维度和高精度数字传输，不要误判第一批等于高级交叉表功能全量完成。CI 的远端执行结果另行核验，不以本地测试替代 CI 结论。

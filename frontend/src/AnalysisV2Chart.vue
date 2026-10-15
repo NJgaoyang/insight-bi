@@ -2,6 +2,7 @@
 import {computed,nextTick,onBeforeUnmount,ref,watch} from 'vue'
 import * as echarts from 'echarts'
 import {analysisCsv} from './analysis/exportCsv'
+import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,type PivotAxis} from './analysis/pivotTable'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
 const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null;viewerReportId?:string}>()
@@ -12,7 +13,7 @@ const result=ref<QueryV2Result|null>(null)
 const bindings=computed(()=>props.widget.analysisV2)
 let chart:echarts.ECharts|null=null,observer:ResizeObserver|null=null,generation=0
 let activeRequest:AbortController|null=null
-const supported=['bar','hbar','line','area','pie','donut','combo','metric','table']
+const supported=['bar','hbar','line','area','pie','donut','combo','metric','table','pivot']
 const dimNames=computed(()=>result.value?.columns.filter(c=>c.kind==='dimension')??[])
 const measureNames=computed(()=>result.value?.columns.filter(c=>c.kind==='measure')??[])
 const hiddenColumnIds=ref<string[]>([...(bindings.value?.tableHiddenColumnIds??[])])
@@ -31,6 +32,21 @@ function toggleColumn(id:string){
  if(!props.readonly)emit('tableColumnsChange',[...next])
 }
 
+const pivotModel=computed(()=>result.value&&bindings.value?buildPivot(result.value,bindings.value):null)
+const pivotShowTotals=computed(()=>bindings.value?.pivot?.showTotals!==false)
+const pivotPage=ref(1)
+const pivotPageSize=20
+const pivotPageCount=computed(()=>Math.max(1,Math.ceil((pivotModel.value?.rows.length??0)/pivotPageSize)))
+const visiblePivotRows=computed(()=>pivotModel.value?.rows.slice(
+ (pivotPage.value-1)*pivotPageSize,pivotPage.value*pivotPageSize)??[])
+
+function selectPivotRow(axis:PivotAxis){
+ const field=bindings.value?.dimensions[0]
+ if(!field)return
+ if(typeof axis.value==='string'||typeof axis.value==='number')
+  emit('selectDimension',{fieldId:field.fieldId,value:axis.value})
+ if(props.navigable)emit('navigate')
+}
 const metricValue=computed(()=>measureNames.value.length&&rows.value.length?rows.value[0][measureNames.value[0].name]:null)
 const format=(v:unknown)=>v===undefined||v===null?'—':typeof v==='number'?new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(v):String(v)
 const numeric=(v:unknown):number|null=>{if(v===null||v===undefined||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
@@ -69,6 +85,9 @@ async function load(){
  if(!props.widget.datasetId||!config||!config.measures.length){
   result.value=null;rows.value=[];error.value='请选择数据集并拖入至少一个指标';loading.value=false;dispose();return
  }
+ if(props.widget.type==='pivot'&&config.dimensions.length!==2){
+  result.value=null;rows.value=[];error.value='交叉表需要恰好两个维度（行、列）及至少一个指标';loading.value=false;dispose();return
+ }
  if(!supported.includes(props.widget.type)){
   result.value=null;rows.value=[];error.value='当前 V2 图表类型尚未支持，请选择柱图、折线图、饼图、指标卡或明细表';dispose();return
  }
@@ -82,7 +101,7 @@ async function load(){
    filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilter?[props.linkedFilter]:[])],post:config.filters?.post||[]}}
   const response=await api<QueryV2Result>(path,{method:'POST',body:JSON.stringify(request),signal:controller.signal})
   if(gen!==generation)return
-  result.value=response;rows.value=response.rows
+  result.value=response;rows.value=response.rows;pivotPage.value=1
   await nextTick();render()
  }catch(e:unknown){
   if(gen===generation){error.value=e instanceof Error?e.message:'查询失败';rows.value=[];result.value=null;dispose()}
@@ -96,7 +115,7 @@ function selectRow(index:number){
 }
 function render(){
  const t=props.widget.type
- if(!element.value||!rows.value.length||['table','metric'].includes(t)){dispose();return}
+ if(!element.value||!rows.value.length||['table','pivot','metric'].includes(t)){dispose();return}
  const dims=dimNames.value,metrics=measureNames.value
  if(!metrics.length||(!dims.length&&t!=='metric')){dispose();return}
  if(!chart)chart=echarts.init(element.value,undefined,{renderer:'canvas'})
@@ -145,10 +164,11 @@ const queryKey=computed(()=>{
    usePipeline:b.usePipeline??false,pipelineRevision:b.pipelineRevision,
    dimensions:b.dimensions,
    measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,distinct:m.distinct,alias:m.alias})),
-   filters:b.filters,linkedFilter:props.linkedFilter,rank:b.rank,share:b.share,running:b.running,periodCompare:b.periodCompare,sort:b.sort,limit:b.limit
+   isPivot:props.widget.type==='pivot',filters:b.filters,linkedFilter:props.linkedFilter,rank:b.rank,share:b.share,running:b.running,periodCompare:b.periodCompare,sort:b.sort,limit:b.limit
  }:null])
 })
 watch(queryKey,load,{immediate:true})
+watch(()=>JSON.stringify(bindings.value?.pivot),()=>{pivotPage.value=1})
 watch(()=>JSON.stringify([props.widget.type,props.widget.style,bindings.value?.measures.map(m=>({
  color:m.color,axis:m.axis,seriesType:m.seriesType,decimals:m.decimals,showLabel:m.showLabel
 }))]),()=>nextTick(render))
@@ -184,9 +204,63 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
     :role="navigable?'button':undefined" :tabindex="navigable?0:undefined"
     @click="selectRow(index);navigable&&emit('navigate')" @keydown.enter="selectRow(index);navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
-  <div v-show="!loading&&!error&&rows.length>0&&!['metric','table'].includes(widget.type)" ref="element" class="v2-echart-canvas"></div>
+  <div v-else-if="widget.type==='pivot'" class="v2-table-wrap v2-pivot-wrap">
+   <div v-if="pivotModel?.error" class="v2-chart-notice v2-chart-error">{{pivotModel.error}}</div>
+   <template v-else-if="pivotModel">
+    <div v-if="pivotModel.warning" class="v2-pivot-warning" role="status">{{pivotModel.warning}}</div>
+    <table aria-label="V2 交叉表">
+     <thead>
+      <tr><th :rowspan="2" class="v2-pivot-corner">
+       {{result?.columns.find(c=>c.kind==='dimension'&&c.id===bindings?.dimensions[0]?.fieldId)?.label||'行'}}
+       /
+       {{result?.columns.find(c=>c.kind==='dimension'&&c.id===bindings?.dimensions[1]?.fieldId)?.label||'列'}}
+      </th><th v-for="column in pivotModel.columns" :key="column.key" :colspan="pivotModel.measures.length">{{column.label}}</th>
+       <th v-if="pivotShowTotals" :colspan="pivotModel.measures.length">行合计</th>
+      </tr>
+      <tr><template v-for="column in pivotModel.columns" :key="column.key">
+       <th v-for="metric in pivotModel.measures" :key="metric.id">{{metric.label}}</th>
+      </template><template v-if="pivotShowTotals">
+       <th v-for="metric in pivotModel.measures" :key="metric.id">{{metric.label}}</th>
+      </template></tr>
+     </thead>
+     <tbody><tr v-for="axis in visiblePivotRows" :key="axis.key">
+      <th scope="row" :tabindex="navigable?0:undefined" @click="selectPivotRow(axis)"
+       @keydown.enter="selectPivotRow(axis)">{{axis.label}}</th>
+      <template v-for="column in pivotModel.columns" :key="column.key">
+       <td v-for="metric in pivotModel.measures" :key="metric.id">{{formatMeasure(pivotCell(pivotModel,axis.key,column.key,metric.id),metric.id)}}</td>
+      </template>
+      <template v-if="pivotShowTotals">
+       <td v-for="metric in pivotModel.measures" :key="metric.id" class="v2-pivot-total">
+        {{pivotModel.additive.has(metric.id)?formatMeasure(pivotRowTotal(pivotModel,axis.key,metric.id),metric.id):'—'}}
+       </td>
+      </template>
+     </tr></tbody>
+     <tfoot v-if="pivotShowTotals"><tr><th>列合计</th>
+      <template v-for="column in pivotModel.columns" :key="column.key">
+       <th v-for="metric in pivotModel.measures" :key="metric.id">
+        {{pivotModel.additive.has(metric.id)?formatMeasure(pivotColumnTotal(pivotModel,column.key,metric.id),metric.id):'—'}}
+       </th>
+      </template>
+      <th v-for="metric in pivotModel.measures" :key="metric.id">
+       {{pivotModel.additive.has(metric.id)?formatMeasure(pivotGrandTotal(pivotModel,metric.id),metric.id):'—'}}
+      </th>
+     </tr></tfoot>
+    </table>
+    <div class="v2-pivot-caption">
+     <span>{{pivotModel.rows.length}} 行组 × {{pivotModel.columns.length}} 列组 × {{pivotModel.measures.length}} 指标
+      <span v-if="pivotShowTotals"> · 合计仅适用于未截断的 SUM / 非去重 COUNT；其他为 —</span>
+     </span>
+     <span v-if="pivotPageCount>1" class="v2-pivot-pager">
+      <button type="button" :disabled="pivotPage<=1" @click="pivotPage--">上一页</button>
+      {{pivotPage}} / {{pivotPageCount}}
+      <button type="button" :disabled="pivotPage>=pivotPageCount" @click="pivotPage++">下一页</button>
+     </span>
+    </div>
+   </template>
+  </div>
+  <div v-show="!loading&&!error&&rows.length>0&&!['metric','table','pivot'].includes(widget.type)" ref="element" class="v2-echart-canvas"></div>
   <div v-if="result&&!loading&&!error&&rows.length" class="v2-query-meta">
-   <button type="button" aria-label="导出当前查询结果CSV" @click="downloadCsv">导出 CSV（当前 {{rows.length}} 行）</button>
+   <button type="button" aria-label="导出当前查询结果CSV" @click="downloadCsv">{{widget.type==='pivot'?'导出分组查询 CSV':'导出 CSV'}}（当前 {{rows.length}} 行）</button>
   </div>
   <div v-if="result&&!loading" class="v2-query-meta">
     {{rows.length}} 行 · {{result.executionMs}} ms <span v-if="result.truncated">· 已达到查询行数上限</span>
