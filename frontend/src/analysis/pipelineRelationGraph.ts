@@ -1,4 +1,27 @@
-import {formulaFieldReferences} from './pipelineDependencies'
+// Lightweight read-only reference collector. Full formula validity remains
+// the responsibility of FormulaCompiler and the processing dependency checker.
+function relationFieldReferences(expression:string):string[]{
+ const ids:string[]=[]
+ for(let i=0;i<expression.length;){
+  if(expression[i]==="'"){
+   i++
+   while(i<expression.length){
+    if(expression[i]==="'"){
+     if(expression[i+1]==="'"){i+=2;continue}
+     i++;break
+    }
+    i++
+   }
+   continue
+  }
+  if(expression[i]==='['){
+   const end=expression.indexOf(']',i+1)
+   if(end<0)break
+   ids.push(expression.slice(i+1,end));i=end+1
+  }else i++
+ }
+ return [...new Set(ids)]
+}
 
 export type RelationField={id:string;label:string;type:string}
 export type RelationDataset={id:string;name:string}
@@ -46,7 +69,7 @@ export function pipelineRelationGraph(
   const referenced=[
    step.fieldId,step.sourceFieldId,...(step.dimensions||[]),
    ...(step.measures||[]).map(m=>m.fieldId),
-   ...formulaFieldReferences(step.expression||'')
+   ...relationFieldReferences(step.expression||'')
   ]
   return referenced.some(field=>field&&produced.has(field))
  }).length
