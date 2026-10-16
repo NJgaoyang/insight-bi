@@ -253,3 +253,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 21. ANALYSIS-VIEW-FILTER-02：受控双条件 AND 筛选（2026-10-16）
 
 在原视图 filter 主字段与跨数据集显式映射的基础上，新增可选 filter2 同一数据集的不同维度，运行时值互不干扰，并在 Widget 同时绑定相应维度时作为第二个 AND 条件叠加。读者 API 保持旧的空请求和单值协议，按发布快照核验后才可使用 `filterValue2`（也支持只有第二条件的视图查询），禁止任意 SQL/字段和超范围输入；行级强制过滤仍附加。详见 [ANALYSIS_VIEW_FILTER_02.md](ANALYSIS_VIEW_FILTER_02.md)。本批不提供任意多条件/OR 或第二字段跨数据集映射，开发机仍离线，未部署线上 18110。
+
+
+## 22. PIPELINE-RELATION-GRAPH-BATCH1 · 现有加工链关系可视化（2026-10-16）
+
+沿用现有一次同连接 JOIN/UNION 的步骤配置，增加只读关系概览：左右数据集、关联键及类型、输出字段、依赖这些字段的下游步骤计数、行数放大风险提示。关系图不是新的 SQL 编译器，编辑、保存及权限继续由原数据加工逻辑/服务端控制。详见 [PIPELINE_RELATION_GRAPH_BATCH1.md](PIPELINE_RELATION_GRAPH_BATCH1.md)，并纳入 pipeline-editor scoped Node、Chromium 和 TypeScript 定向测试。尚未实现任意多表关系语义模型或跨连接 JOIN；开发机离线，未部署线上 18110。

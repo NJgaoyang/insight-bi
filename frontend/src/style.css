@@ -320,3 +320,33 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .analysis-filter-cross-mapping{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:240px}
 .analysis-filter-cross-mapping>label{color:#54667d;font-size:12px}
 .analysis-view-filter .analysis-filter-cross-mapping .el-select{width:225px}
+
+
+/* One source of truth: the existing pipeline config, never a second relationship schema. */
+.pipeline-relation-graph{margin:12px 0;border:1px solid #dbe5ef;border-radius:6px;background:#fbfcfe}
+.pipeline-relation-head{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:9px 12px;
+ border-bottom:1px solid #e6ebf1}
+.pipeline-relation-head>strong{font-size:13px;color:#263955}
+.pipeline-relation-head>span{font-size:11px;color:#748399}
+.pipeline-relation-head>button{margin-left:auto;padding:4px 10px;cursor:pointer;
+ border:1px solid #d8e1ed;background:#fff;border-radius:4px;color:#425c7e}
+.pipeline-relation-body{padding:12px}
+.pipeline-relation-nodes{display:grid;grid-template-columns:minmax(0,1fr) 86px minmax(0,1fr);align-items:center;gap:10px}
+.pipeline-relation-node{display:flex;flex-direction:column;gap:4px;background:#fff;border:1px solid #dce5ee;
+ border-radius:5px;padding:10px 12px;min-width:0}
+.pipeline-relation-node small{color:#76859a;font-size:11px}
+.pipeline-relation-node strong{font-size:13px;color:#263955;overflow-wrap:anywhere}
+.pipeline-relation-arrow{display:flex;flex-direction:column;text-align:center;gap:0;color:#6480a3;font-size:23px}
+.pipeline-relation-arrow span:first-child{font-size:11px}
+.pipeline-relation-details{margin-top:12px}
+.pipeline-relation-details>strong{font-size:12px}
+.pipeline-relation-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pipeline-relation-link{display:flex;align-items:center;gap:6px;border:1px solid #dfebee;border-radius:4px;
+ padding:4px 8px;background:#fff;color:#3f536e;font-size:12px}
+.pipeline-relation-link small{font-size:10px;color:#6b8777}
+.pipeline-relation-invalid{border-color:#e9b9aa;background:#fff8f5}
+.pipeline-relation-invalid small{color:#aa5744}
+.pipeline-relation-note{font-size:12px;color:#64748b;margin:8px 0 0}
+.pipeline-relation-warning{font-size:12px;color:#9f6320;margin:8px 0 0}
+@media(max-width:760px){.pipeline-relation-nodes{grid-template-columns:1fr;gap:5px}
+.pipeline-relation-arrow{flex-direction:row;justify-content:center;align-items:center;gap:8px}}

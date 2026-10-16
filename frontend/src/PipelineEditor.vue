@@ -5,6 +5,7 @@ import {api,post,put,type FieldV2} from './api'
 import {copyEditablePipelineStep,prefixForPipelinePreview} from './analysis/pipelineEditing'
 import {joinPreflight} from './analysis/joinPreflight'
 import {checkPipelineDependencies} from './analysis/pipelineDependencies'
+import {pipelineRelationGraph} from './analysis/pipelineRelationGraph'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -40,6 +41,16 @@ const rightFields=(id:string):Column[]=>(joinedFields.value[id]||[])
 const baseColumns=():Column[]=>baseFields.value.filter(f=>!f.calculated)
  .map(f=>({id:f.id,name:f.sourceColumn||f.id,label:f.name,type:f.logicalType,numeric:f.numeric}))
 const steps=ref<Step[]>([])
+const relationExpanded=ref(true)
+const relationGraph=computed(()=>pipelineRelationGraph(
+ {id:props.id,name:datasetName.value},availableDatasets.value,
+ baseColumns().map(f=>({id:f.id,label:f.label,type:f.type})),
+ Object.fromEntries(Object.entries(joinedFields.value).map(([id,fields])=>[
+  id,fields.filter(f=>!f.calculated).map(f=>({
+   id:f.id,label:f.name,type:f.logicalType
+  }))
+ ])),steps.value
+))
 const queryLimit=ref(30)
 const sqlPreview=ref('')
 const joinProfile=ref<{duplicateGroups:number;extraRightRows:number;hasDuplicateKeys:boolean}|null>(null)
@@ -459,6 +470,40 @@ onMounted(load)
       <button :disabled="isGroupLimit" @click="addGroup">＋ 分组汇总</button>
      </div>
     </div>
+    <aside v-if="relationGraph" class="pipeline-relation-graph" aria-label="当前数据加工关系概览">
+     <header class="pipeline-relation-head">
+      <strong>数据模型关系</strong>
+      <span>根据当前 JOIN / UNION 步骤配置生成 · 只读预览</span>
+      <button type="button" :aria-expanded="relationExpanded" @click="relationExpanded=!relationExpanded">
+       {{relationExpanded?'收起关系':'展开关系'}}
+      </button>
+     </header>
+     <div v-if="relationExpanded" class="pipeline-relation-body">
+      <div class="pipeline-relation-nodes">
+       <div class="pipeline-relation-node"><small>主数据集</small><strong>{{relationGraph.source.name}}</strong></div>
+       <div class="pipeline-relation-arrow" aria-hidden="true">
+        <span>{{relationGraph.mode}}</span><span>→</span>
+       </div>
+       <div class="pipeline-relation-node"><small>关联 / 合并数据集</small><strong>{{relationGraph.target.name}}</strong></div>
+      </div>
+      <div class="pipeline-relation-details">
+       <strong>{{relationGraph.title}}</strong>
+       <div v-if="relationGraph.links.length" class="pipeline-relation-links">
+        <div v-for="(link,index) in relationGraph.links" :key="index" class="pipeline-relation-link"
+         :class="{'pipeline-relation-invalid':!link.compatible}">
+         <span>{{link.from}}</span><span aria-hidden="true">↔</span><span>{{link.to}}</span>
+         <small>{{link.compatible?'字段类型一致':'字段缺失或类型不一致'}}</small>
+        </div>
+       </div>
+       <p v-else class="pipeline-relation-note">尚未设置逐字段对应；最终字段映射由服务端编译验证。</p>
+       <p v-if="relationGraph.outputs.length" class="pipeline-relation-note">
+        {{relationGraph.outputs.length}} 个右表输出字段；
+        {{relationGraph.downstreamSteps}} 个后续步骤直接引用这些字段
+       </p>
+       <p v-if="relationGraph.warning" class="pipeline-relation-warning" role="status">{{relationGraph.warning}}</p>
+      </div>
+     </div>
+    </aside>
     <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
     <section v-for="(step,index) in steps" :key="step.id" class="pipeline-step">
      <header class="pipeline-step-header">
