@@ -45,6 +45,15 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   })
   await page.goto(origin+'/#/datasets',{waitUntil:'domcontentloaded'})
   await page.getByRole('button',{name:'模型关系'}).click()
+  await page.waitForTimeout(1100)
+  if(!await page.locator('.semantic-draft').count()){
+    console.log('MODEL UI DEBUG',JSON.stringify({
+     url:page.url(),errors,dialogs:await page.getByRole('dialog').allTextContents(),
+     visible:(await page.locator('body').innerText()).slice(-1500),
+     modelCount:await page.locator('.model-relations').count()
+    }))
+    throw new Error('The semantic draft panel did not mount')
+  }
   await page.locator('.semantic-draft').waitFor()
   await page.getByRole('button',{name:'新建关系'}).click()
   const dialog=page.getByRole('dialog',{name:'新建语义关系草稿'})
