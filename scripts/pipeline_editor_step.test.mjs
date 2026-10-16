@@ -38,3 +38,12 @@ test('prefix preview works with 3+ steps and rejects invalid position without mu
  assert.equal(steps[0].value,'v')
  for(const index of [-1,4,1.5,NaN])assert.throws(()=>prefixForPipelinePreview(steps,index))
 })
+
+test('Vue-style reactive proxies remain serializable without structuredClone DataCloneError',()=>{
+ const row=new Proxy({id:'s1',type:'formula',fieldId:'field1',name:'利润',expression:'[revenue]-[cost]'}, {})
+ const steps=new Proxy([row],{})
+ const copy=copyEditablePipelineStep(row,'s2','field2')
+ assert.equal(copy?.fieldId,'field2')
+ const preview=prefixForPipelinePreview(steps,0)
+ assert.deepEqual(preview,[{id:'s1',type:'formula',fieldId:'field1',name:'利润',expression:'[revenue]-[cost]'}])
+})

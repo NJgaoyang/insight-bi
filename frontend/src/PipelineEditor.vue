@@ -334,7 +334,7 @@ async function compile(){
 async function preview(upTo?:number){
  if(busy.value)return
  let input:Step[]
- try{input=upTo===undefined?structuredClone(steps.value):prefixForPipelinePreview(steps.value,upTo)}
+ try{input=upTo===undefined?JSON.parse(JSON.stringify(steps.value)) as Step[]:prefixForPipelinePreview(steps.value,upTo)}
  catch{ElMessage.warning('无效的预览位置');return}
  const sequence=++previewVersion
  busy.value=true
