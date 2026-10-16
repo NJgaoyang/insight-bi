@@ -1,0 +1,89 @@
+package com.insightbi.analysis;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.insightbi.DatabaseStore;
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+/** Draft-only semantic relationship authoring. Never executes business SQL. */
+class SemanticRelationApiTest {
+ private static FieldCatalog.Field field(String id,String type){
+  return new FieldCatalog.Field(id,id,id,type,"DIMENSION",false,false,"ROW",null);
+ }
+ private static List<Map<String,Object>> pairs(String left,String right){
+  return List.of(Map.of("leftFieldId",left,"rightFieldId",right));
+ }
+ private record Fixture(DatabaseStore store,JdbcTemplate db,SemanticRelationApi api){}
+ private static Fixture fixture(){
+  var db=new JdbcTemplate(new DriverManagerDataSource(
+   "jdbc:h2:mem:semantic_"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa",""));
+  var store=new DatabaseStore(db,new ObjectMapper(),
+   Base64.getEncoder().encodeToString(new byte[32]));
+  store.schema();
+  for(var item:List.of(new String[]{"left","conn"},new String[]{"right","conn"},
+                       new String[]{"foreign","other"}))
+   db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json) VALUES(?,?,?,?,?)",
+     item[0],item[0],item[1],"SELECT 1", "[]");
+  var catalog=mock(FieldCatalog.class);
+  when(catalog.fields("left")).thenReturn(List.of(field("city","STRING"),field("period","DATE")));
+  when(catalog.fields("right")).thenReturn(List.of(field("region","STRING"),field("wrong","DECIMAL")));
+  when(catalog.fields("foreign")).thenReturn(List.of(field("city","STRING")));
+  return new Fixture(store,db,new SemanticRelationApi(store,db,catalog));
+ }
+ @Test void createUpdateListDeleteWithCasAndNoExternalSql(){
+  var f=fixture();
+  var input=Map.<String,Object>of("name","城市映射","sourceDatasetId","left",
+   "targetDatasetId","right","pairs",pairs("city","region"));
+  var created=f.api().create(input);
+  assertEquals(1,created.revision());assertEquals("DRAFT",created.status());
+  assertEquals(1,f.api().list().size());
+  assertEquals("city",f.api().list().get(0).pairs().get(0).leftFieldId());
+  assertThrows(IllegalStateException.class,()->f.api().create(input));
+  var updated=f.api().update(created.id(),Map.of("revision",1,"name","地区对应",
+   "pairs",pairs("city","region")));
+  assertEquals(2,updated.revision());
+  assertThrows(IllegalStateException.class,()->f.api().update(created.id(),Map.of(
+   "revision",1,"name","旧版本","pairs",pairs("city","region"))));
+  assertThrows(IllegalStateException.class,()->f.api().delete(created.id(),1));
+  assertEquals(true,f.api().delete(created.id(),2).get("ok"));
+  assertTrue(f.api().list().isEmpty());
+ }
+ @Test void rejectsCrossConnectionSelfJoinUnknownOrMismatchedKeys(){
+  var f=fixture();
+  assertThrows(IllegalArgumentException.class,()->f.api().create(Map.of(
+   "name","跨库","sourceDatasetId","left","targetDatasetId","foreign",
+   "pairs",pairs("city","city"))));
+  assertThrows(IllegalArgumentException.class,()->f.api().create(Map.of(
+   "name","自关联","sourceDatasetId","left","targetDatasetId","left",
+   "pairs",pairs("city","city"))));
+  assertThrows(IllegalArgumentException.class,()->f.api().create(Map.of(
+   "name","无效类型","sourceDatasetId","left","targetDatasetId","right",
+   "pairs",pairs("city","wrong"))));
+  assertThrows(IllegalArgumentException.class,()->f.api().create(Map.of(
+   "name","非法字段","sourceDatasetId","left","targetDatasetId","right",
+   "pairs",pairs("sql;DROP","region"))));
+  assertThrows(IllegalArgumentException.class,()->f.api().create(Map.of(
+   "name","重复字段","sourceDatasetId","left","targetDatasetId","right",
+   "pairs",List.of(pairs("city","region").get(0),pairs("city","region").get(0)))));
+  assertEquals(0,f.db().queryForObject(
+   "SELECT COUNT(*) FROM insight_semantic_relation",Integer.class));
+ }
+ @Test void staleOrRemovedPhysicalFieldsShowInvalidWithoutExecutingDataQuery(){
+  var f=fixture();
+  var saved=f.api().create(Map.of("name","初始","sourceDatasetId","left",
+   "targetDatasetId","right","pairs",pairs("city","region")));
+  f.db().update("DELETE FROM insight_dataset WHERE id=?","right");
+  var listed=f.api().list();
+  assertEquals(1,listed.size());
+  assertEquals(saved.id(),listed.get(0).id());
+  assertEquals("INVALID",listed.get(0).status());
+  assertThrows(RuntimeException.class,()->f.api().update(saved.id(),Map.of(
+   "revision",1,"name","不能保存","pairs",pairs("city","region"))));
+  assertEquals(1,f.db().queryForObject("SELECT revision FROM insight_semantic_relation WHERE id=?",
+   Integer.class,saved.id()));
+ }
+}

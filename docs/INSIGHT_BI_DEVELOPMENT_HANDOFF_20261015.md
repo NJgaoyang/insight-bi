@@ -288,3 +288,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 28. PIPELINE-PUBLISHED-IMPACT-GUARD-01：加工保存前确认已发布绑定风险（2026-10-16）
 
 在既有 `GET/PUT /datasets/{id}/pipeline` 之外新增只读 `GET /datasets/{id}/pipeline/change-impact?revision=N`；只对已发布快照中直接绑定当前加工修订的 V2 组件要求显式风险确认。服务端保存时再次计算受影响报表快照及修订版本指纹，拒绝绕过弹窗、伪造确认、确认后发布内容变更，保持旧 API 版本 CAS、SQL 安全编译与 JOIN 风险确认；无受影响发布组件时原行为不变。测试和已知风险见 [PIPELINE_PUBLISHED_IMPACT_GUARD_01.md](PIPELINE_PUBLISHED_IMPACT_GUARD_01.md)。不自动部署 18130/18110，不宣称完整语义模型审批已实现。
+
+
+## 29. P1-SEMANTIC-RELATION-DRAFT-01：受控语义关系草稿元数据（2026-10-16）
+
+公共数据的模型关系中新增独立“语义关系草稿”编辑区域，支持同连接主/目标数据集、最多三组非隐藏物理稳定字段映射和新增/编辑/删除；数据库增加独立增量元数据表，使用 CAS 修订号和数据集对唯一性，保存时服务器严格检验连接、字段类型与数量，失效关系不可更新。草稿不进入现有 SQL 执行、读者权限或报表发布。详见 [P1_SEMANTIC_RELATION_DRAFT_01.md](P1_SEMANTIC_RELATION_DRAFT_01.md)。本批未实现可执行多表语义模型或跨连接 JOIN，18310 无新部署（当前预览仍 18130）。

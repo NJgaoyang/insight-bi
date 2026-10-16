@@ -76,6 +76,8 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_calculated_field (id VARCHAR(36) PRIMARY KEY, dataset_id VARCHAR(36) NOT NULL, name VARCHAR(100) NOT NULL, expression VARCHAR(1500) NOT NULL, phase VARCHAR(20) NOT NULL, output_type VARCHAR(20) NOT NULL, revision INT NOT NULL DEFAULT 1, UNIQUE(dataset_id,name))");
   // P1-02: an isolated, reversible metadata table. Never modifies dataset SQL.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_pipeline (dataset_id VARCHAR(36) PRIMARY KEY, config_json LONGTEXT NOT NULL, source_sql_hash VARCHAR(64) NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+  // Draft-only semantic relationships. Not consumed by query SQL or published reports.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_semantic_relation (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, source_dataset_id VARCHAR(36) NOT NULL, target_dataset_id VARCHAR(36) NOT NULL, pairs_json LONGTEXT NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(source_dataset_id,target_dataset_id))");
 
 
 

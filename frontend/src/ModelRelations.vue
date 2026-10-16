@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,onMounted} from 'vue'
 import {api} from './api'
+import SemanticRelationDrafts from './SemanticRelationDrafts.vue'
 type Pair={leftId:string;leftName:string;rightId:string;rightName:string;compatible:boolean}
 type Relation={
  datasetId:string;datasetName:string;targetDatasetId:string;targetDatasetName:string;
@@ -34,6 +35,7 @@ onMounted(load)
 </script>
 <template>
  <section class="model-relations">
+  <SemanticRelationDrafts/>
   <div class="model-relations-toolbar">
    <p>从已保存的 JOIN / UNION 加工步骤生成，只读展示，不会执行源数据库 SQL。</p>
    <button type="button" @click="load" :disabled="loading">{{loading?'加载中…':'刷新关系'}}</button>

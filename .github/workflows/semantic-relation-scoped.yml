@@ -1,0 +1,65 @@
+name: P1 Semantic Relationship Drafts Scoped
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/finebi-analysis-engine-p0
+    paths:
+      - backend/src/main/java/com/insightbi/DatabaseStore.java
+      - backend/src/main/java/com/insightbi/analysis/SemanticRelationApi.java
+      - backend/src/test/java/com/insightbi/analysis/SemanticRelationApiTest.java
+      - frontend/src/SemanticRelationDrafts.vue
+      - frontend/src/ModelRelations.vue
+      - frontend/src/style.css
+      - scripts/semantic_relation_drafts_browser_smoke.cjs
+      - docs/P1_SEMANTIC_RELATION_DRAFT_01.md
+      - .github/workflows/semantic-relation-scoped.yml
+jobs:
+  relationship-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Bounded metadata draft CRUD and H2 compatibility
+        working-directory: backend
+        run: mvn -q -B -Dtest=SemanticRelationApiTest,ModelRelationsApiTest test
+  relationship-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck and Vite build
+        working-directory: frontend
+        run: npm run build
+      - name: Install isolated Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.58.2
+          npx --yes playwright@1.58.2 install --with-deps chromium
+      - name: Start isolated page
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 18225 > /tmp/semantic-preview.log 2>&1 &
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:18225/ >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/semantic-preview.log
+          exit 1
+      - name: Chromium metadata draft create edit delete
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18225
+        run: node scripts/semantic_relation_drafts_browser_smoke.cjs
