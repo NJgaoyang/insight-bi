@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed,onMounted,ref,watch} from 'vue'
+import {computed,onMounted,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,remove} from './api'
 
@@ -33,12 +33,16 @@ async function loadFields(id:string){
  try{fields.value={...fields.value,[id]:await api<Field[]>('/datasets/'+encodeURIComponent(id)+'/fields')}}
  catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'字段目录读取失败')}
 }
-watch(source,async id=>{await loadFields(id)})
-watch(target,async id=>{await loadFields(id)})
-function chooseSource(value:string){
+async function chooseSource(value:string){
+ // Resolve physical field metadata before updating the selected source so an
+ // in-flight field refresh cannot close the adjacent target dropdown.
+ await loadFields(value)
  source.value=value;target.value='';pairs.value=[{leftFieldId:'',rightFieldId:''}]
 }
-function chooseTarget(value:string){target.value=value;pairs.value=[{leftFieldId:'',rightFieldId:''}]}
+async function chooseTarget(value:string){
+ await loadFields(value)
+ target.value=value;pairs.value=[{leftFieldId:'',rightFieldId:''}]
+}
 function clear(){
  editingId.value='';revision.value=0;source.value='';target.value='';name.value=''
  pairs.value=[{leftFieldId:'',rightFieldId:''}]
