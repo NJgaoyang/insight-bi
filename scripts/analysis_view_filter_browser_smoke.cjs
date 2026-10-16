@@ -79,8 +79,10 @@ const widget=(id,datasetId,fieldId)=>({
   assert.ok(queries.some(q=>q.datasetId==='ds1'&&q.filters?.pre?.some(f=>f.fieldId==='city'&&f.value==='北京')))
   assert.ok(queries.every(q=>q.datasetId!=='ds2'||!q.filters?.pre?.some(f=>f.value==='北京')))
   // Same-name or matching chart alone never creates a cross-source link.
-  await page.locator('.analysis-filter-cross-mapping .el-select').click()
-  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'region'}).click()
+  const mappingSelect=page.locator('.analysis-filter-cross-mapping:visible .el-select')
+  await mappingSelect.waitFor()
+  await mappingSelect.locator('.el-select__wrapper').click()
+  await page.getByRole('option',{name:'region',exact:true}).click()
   await page.locator('input[aria-label="视图筛选值"]').fill('上海')
   const mappedRequest=page.waitForResponse(r=>r.url().includes('/api/analysis/v2/query')&&
    (r.request().postData()||'').includes('"fieldId":"region"')&&

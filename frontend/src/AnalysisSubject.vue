@@ -55,9 +55,9 @@ async function changeViewFilter(key:string){
  if(!view)return
  setViewFilter(view,viewFilterOptions.value.find(x=>x.key===key)||null)
  filterDraft.value='';filterApplied.value=''
+ mark()
  try{await ensureFilterFieldDirectory()}
  catch(e:unknown){ElMessage.warning(e instanceof Error?e.message:'字段目录读取失败，无法配置跨数据集映射')}
- mark()
 }
 function applyViewFilter(){
  filterApplied.value=filterDraft.value.trim().slice(0,120)
@@ -831,6 +831,7 @@ onMounted(load)
       </el-select>
       <template v-if="activeView.filter&&isValidViewFilter(activeView,components)">
        <div v-for="component in dashboardWidgets.filter(w=>w.analysisV2&&w.datasetId!==activeView?.filter?.datasetId)"
+        v-show="!!filterFieldDirectory[activeView.filter.datasetId]&&!!filterFieldDirectory[component.datasetId]"
         :key="component.id" class="analysis-filter-cross-mapping">
         <label>{{component.title}}：跨数据集维度映射</label>
         <el-select :model-value="activeView.filter.mappings?.find(m=>m.widgetId===component.id)?.fieldId||''"
