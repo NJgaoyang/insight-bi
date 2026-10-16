@@ -200,6 +200,7 @@ class AnalysisPipelineJoinTest {
     when(catalog.fields("main_ds")).thenReturn(LEFT);
     when(catalog.fields("archive_ds")).thenReturn(RIGHT);
     try(var conn=sample()){
+      String databaseUrl=conn.getMetaData().getURL();
       var readonly=spy(conn);
       doReturn(true).when(readonly).isReadOnly();
       when(store.open(connection)).thenReturn(readonly);
@@ -214,15 +215,21 @@ class AnalysisPipelineJoinTest {
       assertEquals(3L,profile.get("maxRightMultiplicity"));
       assertEquals("RIGHT_SOURCE",profile.get("scope"));
       assertEquals(false,profile.get("exactJoinRowCount"));
-      // Empty sources must yield zeros rather than NULL totals.
-      try(var stmt=conn.createStatement()){stmt.execute("DELETE FROM archive");}
-      profile=api.joinKeyProfile("main_ds",Map.of("step",oneKey));
-      assertEquals(0L,profile.get("keyGroups"));
-      assertEquals(0L,profile.get("rightRows"));
-      assertEquals(0L,profile.get("duplicateGroups"));
-      assertEquals(0L,profile.get("extraRightRows"));
-      assertEquals(0L,profile.get("maxRightMultiplicity"));
-      assertEquals(false,profile.get("hasDuplicateKeys"));
+      // The diagnostic owns and closes its read-only JDBC lease. Use a fresh
+      // handle to the same H2 in-memory database for the empty-source case.
+      try(var empty=DriverManager.getConnection(databaseUrl,"sa","")){
+        try(var stmt=empty.createStatement()){stmt.execute("DELETE FROM archive");}
+        var secondReadonly=spy(empty);
+        doReturn(true).when(secondReadonly).isReadOnly();
+        when(store.open(connection)).thenReturn(secondReadonly);
+        profile=api.joinKeyProfile("main_ds",Map.of("step",oneKey));
+        assertEquals(0L,profile.get("keyGroups"));
+        assertEquals(0L,profile.get("rightRows"));
+        assertEquals(0L,profile.get("duplicateGroups"));
+        assertEquals(0L,profile.get("extraRightRows"));
+        assertEquals(0L,profile.get("maxRightMultiplicity"));
+        assertEquals(false,profile.get("hasDuplicateKeys"));
+      }
     }
   }
 }
