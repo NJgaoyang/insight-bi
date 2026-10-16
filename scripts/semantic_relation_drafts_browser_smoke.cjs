@@ -71,7 +71,10 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     const option=list.locator('[role="option"]').filter({hasText:label}).first()
     await option.waitFor({state:'visible',timeout:10000})
     await option.click()
-    assert.match(await select.innerText(),new RegExp(label))
+    // Element Plus emits update:modelValue on a later Vue tick; the source
+    // selector additionally waits for field catalog loading before committing.
+    await select.locator('.el-select__selected-item').filter({hasText:label})
+      .waitFor({state:'visible',timeout:10000})
   }
   await selectOption(selects.nth(0),'订单')
   await selectOption(selects.nth(1),'城市')
