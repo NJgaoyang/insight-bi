@@ -7,7 +7,7 @@ import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
 import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,reorderViewWidgetByKey,resizeViewWidgetByKey,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
-import {viewFilterCandidates,isValidViewFilter,filterForViewWidget,setViewFilter} from './analysis/viewFilter'
+import {viewFilterCandidates,isValidViewFilter,filterForViewWidget,setViewFilter,mappingCandidates,updateViewFilterMapping} from './analysis/viewFilter'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -20,13 +20,43 @@ const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId
 const dashboardWidgets=computed(()=>orderedViewWidgets(activeView.value,components.value))
 const viewFilterOptions=computed(()=>viewFilterCandidates(activeView.value,components.value))
 const filterDraft=ref(''),filterApplied=ref('')
+const filterFieldDirectory=ref<Record<string,FieldV2[]>>({})
+async function ensureFilterFieldDirectory(){
+ const view=activeView.value
+ if(!view?.filter)return
+ const ids=new Set<string>([view.filter.datasetId])
+ for(const w of dashboardWidgets.value)if(w.analysisV2&&w.datasetId)ids.add(w.datasetId)
+ await Promise.all([...ids].filter(id=>!filterFieldDirectory.value[id]).map(async id=>{
+  const fields=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')
+  filterFieldDirectory.value[id]=fields
+ }))
+}
+function crossMappingChoices(widget:AnalysisWidgetV2){
+ return mappingCandidates(activeView.value,widget,components.value,datasets.value,filterFieldDirectory.value)
+}
+function setCrossMapping(widgetId:string,fieldId:string){
+ if(!activeView.value)return
+ updateViewFilterMapping(activeView.value,widgetId,fieldId)
+ mark()
+}
+function validFieldMappings(view:DashboardView){
+ if(!view.filter?.mappings?.length)return true
+ if(!isValidViewFilter(view,components.value))return false
+ return view.filter.mappings.every(mapping=>{
+  const widget=components.value.find(w=>w.id===mapping.widgetId)
+  return !!widget&&mappingCandidates(view,widget,components.value,datasets.value,
+    filterFieldDirectory.value).some(x=>x.fieldId===mapping.fieldId)
+ })
+}
 const activeFilterKey=computed(()=>activeView.value?.filter
  ?JSON.stringify([activeView.value.filter.datasetId,activeView.value.filter.fieldId]):'')
-function changeViewFilter(key:string){
+async function changeViewFilter(key:string){
  const view=activeView.value
  if(!view)return
  setViewFilter(view,viewFilterOptions.value.find(x=>x.key===key)||null)
  filterDraft.value='';filterApplied.value=''
+ try{await ensureFilterFieldDirectory()}
+ catch(e:unknown){ElMessage.warning(e instanceof Error?e.message:'字段目录读取失败，无法配置跨数据集映射')}
  mark()
 }
 function applyViewFilter(){
@@ -35,7 +65,18 @@ function applyViewFilter(){
 function resetViewFilter(){filterDraft.value='';filterApplied.value=''}
 function pruneInvalidFilters(){
  for(const view of dashboardViews.value)
-  if(!isValidViewFilter(view,components.value))delete view.filter
+  if(!isValidViewFilter(view,components.value)){
+   if(view.filter?.mappings?.length){
+    view.filter.mappings=view.filter.mappings.filter(m=>{
+     const target=components.value.find(w=>w.id===m.widgetId)
+     return !!target&&view.widgetIds.includes(target.id)&&
+      target.datasetId!==view.filter?.datasetId&&
+      target.analysisV2?.dimensions.some(d=>d.fieldId===m.fieldId)
+    })
+    if(!view.filter.mappings.length)delete view.filter.mappings
+   }
+   if(!isValidViewFilter(view,components.value))delete view.filter
+  }
 }
 const selectedId=ref('')
 const name=ref('')
@@ -382,11 +423,12 @@ async function load(){
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
   dirty.value=false;resetViewFilter();resetHistory()
+  await ensureFilterFieldDirectory().catch(()=>{})
   await refreshApproval()
  }catch(e:any){ElMessage.error(e.message||'加载分析主题失败')}
  finally{busy.value=false}
@@ -551,7 +593,7 @@ function setDashboardWidgets(ids:string[]){
  const existing=new Set(components.value.map(w=>w.id))
  view.widgetIds=[...new Set(ids.filter(id=>existing.has(id)))]
  removeUnusedLayout(view)
- pruneInvalidFilters();mark()
+ pruneInvalidFilters();void ensureFilterFieldDirectory().catch(()=>{});mark()
 }
 function moveDashboardWidget(widgetId:string,offset:number){
  const view=activeView.value
@@ -578,6 +620,16 @@ async function save():Promise<boolean>{
  if(!report.value)return false
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
  if(dashboardViews.value.some(v=>!isValidViewFilter(v,components.value))){ElMessage.warning('存在失效的仪表板筛选字段，请先调整');return false}
+ try{
+  for(const v of dashboardViews.value){
+   if(v.filter?.mappings?.length){
+    const ids=[v.filter.datasetId,...v.widgetIds.map(id=>components.value.find(w=>w.id===id)?.datasetId||'')]
+    await Promise.all([...new Set(ids.filter(Boolean))].filter(id=>!filterFieldDirectory.value[id])
+     .map(async id=>{filterFieldDirectory.value[id]=await api<FieldV2[]>('/datasets/'+encodeURIComponent(id)+'/fields')}))
+   }
+   if(!validFieldMappings(v)){ElMessage.warning('跨数据集映射存在失效字段或不兼容连接，请先修复');return false}
+  }
+ }catch(e:unknown){ElMessage.warning(e instanceof Error?e.message:'无法校验跨数据集字段');return false}
  busy.value=true
  try{
   const savedContent=fingerprint()
@@ -602,7 +654,7 @@ async function publish(){
  }catch(e:any){ElMessage.error(e.message||'发布失败，请检查审批版本')}
 }
 watch(selectedId,()=>{propTab.value='data'})
-watch(selectedViewId,resetViewFilter)
+watch(selectedViewId,()=>{resetViewFilter();void ensureFilterFieldDirectory().catch(()=>{})})
 onMounted(load)
 </script>
 <template>
@@ -778,6 +830,18 @@ onMounted(load)
         :value="choice.key" :label="choice.label"/>
       </el-select>
       <template v-if="activeView.filter&&isValidViewFilter(activeView,components)">
+       <div v-for="component in dashboardWidgets.filter(w=>w.analysisV2&&w.datasetId!==activeView?.filter?.datasetId)"
+        :key="component.id" class="analysis-filter-cross-mapping">
+        <label>{{component.title}}：跨数据集维度映射</label>
+        <el-select :model-value="activeView.filter.mappings?.find(m=>m.widgetId===component.id)?.fieldId||''"
+         size="small" filterable :aria-label="'设置'+component.title+'的联动字段'"
+         placeholder="不联动（需同一连接与类型）"
+         @update:model-value="v=>setCrossMapping(component.id,String(v))">
+         <el-option label="不联动" value=""/>
+         <el-option v-for="option in crossMappingChoices(component)" :key="option.fieldId"
+          :label="option.label" :value="option.fieldId"/>
+        </el-select>
+       </div>
        <el-input v-model="filterDraft" size="small" clearable maxlength="120"
         aria-label="视图筛选值" placeholder="输入值后点击应用" @keyup.enter="applyViewFilter"/>
        <button type="button" @click="applyViewFilter">应用</button>

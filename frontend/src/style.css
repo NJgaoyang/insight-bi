@@ -315,3 +315,8 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .analysis-filter-value{font-size:12px;color:#526a89}
 .analysis-filter-warning{font-size:12px;color:#ab711e}
 .analysis-view-filter-published{border:1px solid #e7edf5;border-radius:6px;margin-bottom:10px}
+
+/* Explicit cross-dataset filter mapping, visible only for pinned view targets. */
+.analysis-filter-cross-mapping{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:240px}
+.analysis-filter-cross-mapping>label{color:#54667d;font-size:12px}
+.analysis-view-filter .analysis-filter-cross-mapping .el-select{width:225px}

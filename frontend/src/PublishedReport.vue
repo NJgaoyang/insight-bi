@@ -62,7 +62,7 @@ async function load(){
   widgets.value=Array.isArray(saved.content?.widgets)?saved.content.widgets:[]
   const stored=(saved.content as typeof saved.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:widgets.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   if(!props.viewerMode)datasets.value=await api<Dataset[]>('/datasets')

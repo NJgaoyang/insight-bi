@@ -15,8 +15,8 @@ const widget=(id,datasetId,fieldId)=>({
   const errors=[],queries=[],readerQueries=[],saves=[]
   let revision=1,session='admin',published=null
   let content={mode:'grid',theme:'light',
-   widgets:[widget('w1','ds1','city'),widget('w2','ds1','city'),widget('w3','ds2','city')],
-   dashboards:[{id:'overview',name:'经营总览',widgetIds:['w1','w2']},
+   widgets:[widget('w1','ds1','city'),widget('w2','ds1','city'),widget('w3','ds2','region')],
+   dashboards:[{id:'overview',name:'经营总览',widgetIds:['w1','w2','w3']},
     {id:'finance',name:'财务',widgetIds:['w3']}]}
   page.on('pageerror',e=>errors.push(e.message))
   const send=(route,result,status=200)=>route.fulfill({status,
@@ -55,12 +55,12 @@ const widget=(id,datasetId,fieldId)=>({
     queries.push(req.postDataJSON());return send(route,result())
    }
    if(path==='/api/datasets'&&method==='GET')return send(route,[
-    {id:'ds1',name:'收入数据',fields:[]},{id:'ds2',name:'费用数据',fields:[]}])
+    {id:'ds1',name:'收入数据',connection_id:'source',fields:[]},{id:'ds2',name:'费用数据',connection_id:'source',fields:[]}])
    if(path==='/api/datasets/ds1/fields')return send(route,[
     {id:'city',name:'城市',sourceColumn:'city',logicalType:'STRING',numeric:false,calculated:false},
     {id:'revenue',name:'收入',sourceColumn:'revenue',logicalType:'DECIMAL',numeric:true,calculated:false}])
    if(path==='/api/datasets/ds2/fields')return send(route,[
-    {id:'city',name:'城市',sourceColumn:'city',logicalType:'STRING',numeric:false,calculated:false},
+    {id:'region',name:'区域',sourceColumn:'region',logicalType:'STRING',numeric:false,calculated:false},
     {id:'revenue',name:'收入',sourceColumn:'revenue',logicalType:'DECIMAL',numeric:true,calculated:false}])
    return send(route,{error:'Unexpected '+method+' '+path},404)
   })
@@ -78,11 +78,24 @@ const widget=(id,datasetId,fieldId)=>({
   await filterRequest
   assert.ok(queries.some(q=>q.datasetId==='ds1'&&q.filters?.pre?.some(f=>f.fieldId==='city'&&f.value==='北京')))
   assert.ok(queries.every(q=>q.datasetId!=='ds2'||!q.filters?.pre?.some(f=>f.value==='北京')))
+  // Same-name or matching chart alone never creates a cross-source link.
+  await page.locator('.analysis-filter-cross-mapping .el-select').click()
+  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'region'}).click()
+  await page.locator('input[aria-label="视图筛选值"]').fill('上海')
+  const mappedRequest=page.waitForResponse(r=>r.url().includes('/api/analysis/v2/query')&&
+   (r.request().postData()||'').includes('"fieldId":"region"')&&
+   (r.request().postData()||'').includes('"value":"上海"'))
+  await page.locator('.analysis-view-filter button').filter({hasText:'应用'}).click()
+  await mappedRequest
+  assert.ok(queries.some(q=>q.datasetId==='ds2'&&q.filters?.pre?.some(f=>f.fieldId==='region'&&f.value==='上海')))
+  await page.locator('input[aria-label="视图筛选值"]').fill('北京')
+  await page.locator('.analysis-view-filter button').filter({hasText:'应用'}).click()
   await page.locator('.analysis-primary').click()
   await page.waitForFunction(()=>document.querySelector('.analysis-save-indicator')?.textContent?.includes('已保存'))
   assert.equal(saves.length,1)
   assert.deepEqual(saves[0].content.dashboards[0].filter,
-    {datasetId:'ds1',fieldId:'city',label:'组件 w1 · city'})
+    {datasetId:'ds1',fieldId:'city',label:'组件 w1 · city',
+     mappings:[{widgetId:'w3',fieldId:'region'}]})
   assert.equal(saves[0].content.dashboards[1].filter,undefined)
   assert.ok(!JSON.stringify(saves[0].content.dashboards).includes('"北京"'),
    'applied runtime filter value must not enter the published snapshot')
@@ -115,6 +128,9 @@ const widget=(id,datasetId,fieldId)=>({
   await authorizedRequest
   assert.ok(readerQueries.some(q=>q.widgetId==='w1'&&q.body.viewId==='overview'&&
     q.body.filterValue==='北京'&&Object.keys(q.body).length===2))
+  assert.ok(readerQueries.some(q=>q.widgetId==='w3'&&q.body.viewId==='overview'&&
+    q.body.filterValue==='北京'&&Object.keys(q.body).length===2),
+    'mapped foreign widget must send only published viewId + value')
   assert.deepEqual(errors,[])
   console.log('PASS view filter: same-source, isolated runtime, save/reopen/publish, read-only pinned reader value')
  }finally{await browser.close()}

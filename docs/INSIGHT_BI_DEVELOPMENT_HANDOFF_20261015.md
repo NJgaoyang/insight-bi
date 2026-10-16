@@ -243,3 +243,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 19. ANALYSIS-VIEW-FILTER-01：统一分析主题视图筛选（2026-10-16）
 
 在现有仪表板画布保存模型中新增一个可配置的视图级 stable fieldId 筛选组件；只有同一数据集且 Widget 的维度槽明确绑定该字段时，应用的运行时值才能参与查询。筛选值不存档；Admin 作者预览及发布读者均使用原安全 V2 Query Planner，读者 API 仅接收 `viewId/filterValue`，服务器验证它们与已发布视图/组件/字段配置一致，再叠加行级 ACL，不允许传入 dataset/SQL/filters。详见 [ANALYSIS_VIEW_FILTER_01.md](ANALYSIS_VIEW_FILTER_01.md)；不代表跨数据集字段映射或多条件筛选已完成。开发机仍离线，只有 GitHub 专项 CI 能验证本批，生产 18110 未部署。
+
+
+## 20. P1-CROSS-DATASET-MAPPING-01：同连接跨数据集显式映射（2026-10-16）
+
+统一仪表板视图的筛选器现可逐个目标 Widget 配置另一数据集的显式 stable fieldId 映射，仅允许同一连接且服务端字段类型完全相同的物理维度，不再仅限同一数据集。前端保存映射但不保存运行时值；读者仅传 `viewId/filterValue`，服务端结合已发布配置重新校验目标 Widget/来源 Widget 的维度、连接、物理字段类型并叠加强制行权限。无映射、类型不匹配、跨连接均拒绝；旧同源筛选继续兼容。新增 H2、Node 与 Chromium 定向验收，详见 [P1_CROSS_DATASET_MAPPING_01.md](P1_CROSS_DATASET_MAPPING_01.md)。不代表实现跨数据集 SQL JOIN、完整语义模型或多字段钻取；开发机离线、未部署线上 18110。

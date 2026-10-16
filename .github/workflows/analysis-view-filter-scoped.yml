@@ -13,6 +13,8 @@ on:
       - frontend/src/style.css
       - backend/src/main/java/com/insightbi/ReaderApi.java
       - backend/src/test/java/com/insightbi/ReaderViewFilterTest.java
+      - backend/src/test/java/com/insightbi/ReaderCrossDatasetFilterTest.java
+      - docs/P1_CROSS_DATASET_MAPPING_01.md
       - scripts/analysis_view_filter.test.mjs
       - scripts/analysis_view_filter_browser_smoke.cjs
       - docs/ANALYSIS_VIEW_FILTER_01.md
@@ -31,7 +33,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Published reader ACL, untrusted filter rejection and bound JDBC values
         working-directory: backend
-        run: mvn -q -B -Dtest=ReaderViewFilterTest,ReaderApiTest test
+        run: mvn -q -B -Dtest=ReaderViewFilterTest,ReaderCrossDatasetFilterTest,ReaderApiTest test
   view-filter-frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 16

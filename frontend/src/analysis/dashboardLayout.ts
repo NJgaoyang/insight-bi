@@ -56,7 +56,7 @@ export function duplicateDashboardView(view:DashboardView,newId:string,newName:s
    .filter(([id])=>valid.has(id)).map(([id,config])=>[id,{...config}])):undefined,
   jumps:view.jumps?Object.fromEntries(Object.entries(view.jumps)
    .filter(([id,target])=>valid.has(id)&&target!==view.id)):undefined,
-  filter:view.filter?{...view.filter}:undefined
+  filter:view.filter?{...view.filter,mappings:view.filter.mappings?.map(mapping=>({...mapping}))}:undefined
  }
 }
 

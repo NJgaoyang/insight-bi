@@ -176,13 +176,67 @@ class ReaderApi {
       if(matchingView==null||
          !(matchingView.get("widgetIds") instanceof List<?> ids)||!ids.contains(widgetId)||
          !(matchingView.get("filter") instanceof Map<?,?> allowedFilter)||
-         !datasetId.equals(allowedFilter.get("datasetId"))||
-         !(allowedFilter.get("fieldId") instanceof String fieldId)||
-         !(config.get("dimensions") instanceof List<?> dimensions)||
-         dimensions.stream().noneMatch(dim->
-           dim instanceof Map<?,?> d&&fieldId.equals(d.get("fieldId"))))
+         !(allowedFilter.get("datasetId") instanceof String sourceDataset)||
+         !(allowedFilter.get("fieldId") instanceof String sourceFieldId))
         throw new IllegalArgumentException("筛选字段不属于已发布视图的当前组件");
-      publishedViewFilter=Map.of("fieldId",(String)allowedFilter.get("fieldId"),
+      String targetFieldId=sourceFieldId;
+      if(!datasetId.equals(sourceDataset)){
+        // Cross-dataset mapping must be explicit and unique per target Widget.
+        // A matching name alone is never evidence of type, connection or ACL.
+        if(!(allowedFilter.get("mappings") instanceof List<?> mappings)||
+           mappings.isEmpty()||mappings.size()>20)
+          throw new IllegalArgumentException("目标组件没有合法的跨数据集字段映射");
+        String matchedId=null;
+        for(Object rawMapping:mappings){
+          if(!(rawMapping instanceof Map<?,?> m)||
+             !(m.get("widgetId") instanceof String targetId)||
+             !(m.get("fieldId") instanceof String fieldId))
+            throw new IllegalArgumentException("已发布字段映射无效");
+          if(widgetId.equals(targetId)){
+            if(matchedId!=null)throw new IllegalArgumentException("目标组件存在重复字段映射");
+            matchedId=fieldId;
+          }
+        }
+        if(matchedId==null)throw new IllegalArgumentException("目标组件未配置显式字段映射");
+        targetFieldId=matchedId;
+        var sourceMetadata=store.dataset(sourceDataset);
+        var targetMetadata=store.dataset(datasetId);
+        Object sourceConnection=sourceMetadata.get("connection_id");
+        if(!(sourceConnection instanceof String connection)||connection.isBlank()||
+           !connection.equals(targetMetadata.get("connection_id")))
+          throw new IllegalArgumentException("只能映射同一数据连接的字段");
+        var fieldCatalog=new com.insightbi.analysis.FieldCatalog(store,db);
+        final String sourceStable=sourceFieldId,targetStable=targetFieldId;
+        var sourceField=fieldCatalog.fields(sourceDataset).stream()
+          .filter(f->f.id().equals(sourceStable)&&!f.calculated()).findFirst()
+          .orElseThrow(()->new IllegalArgumentException("映射源字段已失效"));
+        var targetField=fieldCatalog.fields(datasetId).stream()
+          .filter(f->f.id().equals(targetStable)&&!f.calculated()).findFirst()
+          .orElseThrow(()->new IllegalArgumentException("映射目标字段已失效"));
+        if("UNKNOWN".equals(sourceField.logicalType())||
+           !sourceField.logicalType().equals(targetField.logicalType()))
+          throw new IllegalArgumentException("关联字段类型不兼容");
+        // The published source field must also be a dimension of a visible
+        // source widget; a forged filter cannot refer to an invisible column.
+        boolean sourceBound=false;
+        for(Object candidate:widgets(content)){
+          if(candidate instanceof Map<?,?> originWidget&&ids.contains(originWidget.get("id"))&&
+             sourceDataset.equals(originWidget.get("datasetId"))&&
+             originWidget.get("analysisV2") instanceof Map<?,?> bound&&
+             bound.get("dimensions") instanceof List<?> sourceDims&&
+             sourceDims.stream().anyMatch(dim->dim instanceof Map<?,?> d&&
+               sourceStable.equals(d.get("fieldId")))){
+            sourceBound=true;break;
+          }
+        }
+        if(!sourceBound)throw new IllegalArgumentException("筛选源字段不在当前视图中");
+      }
+      final String validatedTarget=targetFieldId;
+      if(!(config.get("dimensions") instanceof List<?> dimensions)||
+         dimensions.stream().noneMatch(dim->
+           dim instanceof Map<?,?> d&&validatedTarget.equals(d.get("fieldId"))))
+        throw new IllegalArgumentException("筛选映射未绑定目标组件的维度");
+      publishedViewFilter=Map.of("fieldId",validatedTarget,
         "op","eq","value",(String)userParameters.get("filterValue"));
     }
     // Attach server-managed restrictions only AFTER constructing the immutable
