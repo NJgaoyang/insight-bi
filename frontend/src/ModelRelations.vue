@@ -10,6 +10,20 @@ type Relation={
 const emit=defineEmits<{(event:'open-pipeline',id:string):void}>()
 const relations=ref<Relation[]>([])
 const loading=ref(false),error=ref('')
+type ImpactItem={dashboardId:string;dashboardName:string;stage:'DRAFT'|'PUBLISHED';
+ widgetCount:number;matchingRevision:number;outdatedRevision:number}
+type Impact={datasetId:string;pipelineRevision:number;consumers:ImpactItem[]}
+const impact=ref<Impact|null>(null),impactDataset=ref(''),impactLoading=ref(false),impactError=ref('')
+async function openImpact(datasetId:string){
+ if(impactDataset.value===datasetId){impactDataset.value='';impact.value=null;return}
+ impactDataset.value=datasetId;impact.value=null;impactError.value='';impactLoading.value=true
+ try{
+  const value=await api<Impact>('/model/relations/'+encodeURIComponent(datasetId)+'/impact')
+  if(impactDataset.value===datasetId)impact.value=value
+ }catch(e:unknown){
+  if(impactDataset.value===datasetId)impactError.value=e instanceof Error?e.message:'模型引用获取失败'
+ }finally{if(impactDataset.value===datasetId)impactLoading.value=false}
+}
 async function load(){
  loading.value=true;error.value=''
  try{relations.value=await api<Relation[]>('/model/relations')}
@@ -47,8 +61,25 @@ onMounted(load)
     <p v-if="relation.reason" role="status">{{relation.reason}}</p>
     <footer>
      <span v-if="relation.mode==='JOIN'">右表投影：{{relation.outputFields}} 字段</span>
-     <button type="button" @click="emit('open-pipeline',relation.datasetId)">查看加工步骤</button>
+     <span>
+      <button type="button" @click="openImpact(relation.datasetId)">影响分析</button>
+      <button type="button" @click="emit('open-pipeline',relation.datasetId)">查看加工步骤</button>
+     </span>
     </footer>
+    <section v-if="impactDataset===relation.datasetId" class="model-relations-impact" aria-label="加工模型影响分析">
+     <p v-if="impactLoading">正在检查已有分析主题的加工版本…</p>
+     <p v-else-if="impactError" role="alert">{{impactError}}</p>
+     <template v-else-if="impact">
+      <p>当前加工版本：{{impact.pipelineRevision||'尚未保存'}}。仅统计已显式绑定加工结果的 V2 组件。</p>
+      <p v-if="!impact.consumers.length">尚无分析主题显式引用此加工结果。</p>
+      <table v-else><thead><tr><th>分析主题</th><th>版本</th><th>绑定组件</th><th>版本匹配</th><th>需更新</th></tr></thead>
+       <tbody><tr v-for="row in impact.consumers" :key="row.dashboardId+'-'+row.stage">
+        <td>{{row.dashboardName}}</td><td>{{row.stage==='DRAFT'?'草稿':'已发布'}}</td>
+        <td>{{row.widgetCount}}</td><td>{{row.matchingRevision}}</td>
+        <td :class="{'model-impact-stale':row.outdatedRevision>0}">{{row.outdatedRevision}}</td>
+       </tr></tbody></table>
+     </template>
+    </section>
    </article>
   </div>
   <p class="model-relations-note">仅展示保存的关系配置；不代表数据库外键、跨连接关系或完整多表语义模型。</p>

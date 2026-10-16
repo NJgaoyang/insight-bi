@@ -391,3 +391,11 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .model-relations-entry>p{margin:6px 0;color:#9a6b3c}
 .model-relations-entry footer{display:flex;align-items:center;justify-content:space-between;color:#8593a6;font-size:12px}
 .model-relations-note{font-size:11px;color:#92a0b0;margin-top:12px}
+
+.model-relations-impact{margin-top:10px;border-top:1px solid #e4e9f0;padding-top:12px;color:#536984}
+.model-relations-impact p{font-size:12px;margin:0 0 10px}
+.model-relations-impact table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}
+.model-relations-impact th,.model-relations-impact td{border-bottom:1px solid #edf1f5;padding:8px}
+.model-relations-impact th{background:#f8fafc;font-weight:600;color:#657589}
+.model-impact-stale{color:#b56830;font-weight:600}
+.model-relations-entry footer button+button{margin-left:7px}

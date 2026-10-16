@@ -278,3 +278,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 26. P1-MODEL-RELATIONS-CATALOG-01：已保存数据关系目录（2026-10-16）
 
 公共数据新增「模型关系」入口，读取 `insight_dataset_pipeline` 中已保存的 JOIN/UNION 关系，展示关联数据集、字段、版本及 ACTIVE/STALE/INVALID 状态，能够返回现有加工编辑器。复用服务器既有安全 Planner/字段目录，不生成 SQL、不访问真实业务数据源、不创建新元表。见 [P1_MODEL_RELATIONS_CATALOG_01.md](P1_MODEL_RELATIONS_CATALOG_01.md)。本批只是可视化关系目录，不能标记任意多表语义关系编辑已完成；现有 18130 预览服务和 18110 线上服务均未覆盖。
+
+
+## 27. P1-MODEL-RELATIONS-IMPACT-02：模型版本依赖影响（2026-10-16）
+
+关系目录新增「影响分析」只读查看已保存加工结果在哪些分析主题草稿与发布快照中被 V2 组件显式绑定，并对比 `pipelineRevision` 与当前加工版本，显示匹配与过期组件数量。服务端仅查现有元数据表，不读取源业务表，不包含任意跨报表字段传递血缘，详见 [P1_MODEL_RELATIONS_IMPACT_02.md](P1_MODEL_RELATIONS_IMPACT_02.md)。定向 Java、Vue、Chromium 测试覆盖，不覆盖/重启正在运行的 18130 预览环境。

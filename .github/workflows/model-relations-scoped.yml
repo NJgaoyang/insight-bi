@@ -7,6 +7,8 @@ on:
     paths:
       - backend/src/main/java/com/insightbi/analysis/ModelRelationsApi.java
       - backend/src/test/java/com/insightbi/analysis/ModelRelationsApiTest.java
+      - backend/src/test/java/com/insightbi/analysis/ModelRelationImpactTest.java
+      - docs/P1_MODEL_RELATIONS_IMPACT_02.md
       - frontend/src/ModelRelations.vue
       - frontend/src/App.vue
       - frontend/src/style.css
@@ -27,7 +29,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Test model relation source, stale and unsafe configurations
         working-directory: backend
-        run: mvn -q -B -Dtest=ModelRelationsApiTest,AnalysisPipelineJoinTest test
+        run: mvn -q -B -Dtest=ModelRelationsApiTest,ModelRelationImpactTest,AnalysisPipelineJoinTest test
   model-frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 16

@@ -100,6 +100,58 @@ public class ModelRelationsApi {
     }
     return result;
   }
+  public record DashboardImpact(String dashboardId,String dashboardName,String stage,
+                                int widgetCount,int matchingRevision,int outdatedRevision){}
+  public record Impact(String datasetId,int pipelineRevision,
+                       List<DashboardImpact> consumers) {}
+  /**
+   * Report only pinned V2 pipeline use in draft and published snapshots.
+   * No chart data, SQL, secret, unpinned V1 widget or source connection is read.
+   */
+  @GetMapping("/model/relations/{id}/impact")
+  public Impact impact(@org.springframework.web.bind.annotation.PathVariable String id){
+    store.dataset(id); // existence & access handled by the existing admin API gate
+    var pipelineRows=jdbc.queryForList(
+      "SELECT revision FROM insight_dataset_pipeline WHERE dataset_id=?",id);
+    int revision=pipelineRows.isEmpty()?0:
+      ((Number)pipelineRows.get(0).get("revision")).intValue();
+    var dashboards=jdbc.queryForList(
+      "SELECT id,name,content_json,published_json FROM insight_dashboard ORDER BY name LIMIT 201");
+    if(dashboards.size()>200)throw new IllegalStateException("仪表板数量超过模型影响分析安全限制");
+    List<DashboardImpact> consumers=new ArrayList<>();
+    for(var dashboard:dashboards){
+      String dashboardId=String.valueOf(dashboard.get("id"));
+      String dashboardName=String.valueOf(dashboard.get("name"));
+      appendImpact(consumers,id,revision,dashboardId,dashboardName,"DRAFT",
+        dashboard.get("content_json"));
+      appendImpact(consumers,id,revision,dashboardId,dashboardName,"PUBLISHED",
+        dashboard.get("published_json"));
+    }
+    return new Impact(id,revision,List.copyOf(consumers));
+  }
+  private void appendImpact(List<DashboardImpact> result,String datasetId,int revision,
+                            String dashboardId,String name,String stage,Object serialized){
+    if(!(serialized instanceof String json)||json.isBlank()||json.length()>300_000)return;
+    try{
+      var parsed=store.map(json);
+      if(!(parsed.get("widgets") instanceof List<?> widgets)||widgets.size()>150)return;
+      int total=0,matching=0,outdated=0;
+      for(var item:widgets){
+        if(!(item instanceof Map<?,?> widget)||!datasetId.equals(widget.get("datasetId"))||
+           !(widget.get("analysisV2") instanceof Map<?,?> analysis)||
+           !Boolean.TRUE.equals(analysis.get("usePipeline")))continue;
+        total++;
+        Object pinned=analysis.get("pipelineRevision");
+        if(revision>0&&pinned instanceof Number number&&
+           number.intValue()==revision)matching++;
+        else outdated++;
+      }
+      if(total>0)result.add(new DashboardImpact(dashboardId,name,stage,total,matching,outdated));
+    }catch(RuntimeException invalid){
+      // Historic/unparseable drafts are not executable model bindings.
+    }
+  }
+
   private Map<String,FieldCatalog.Field> fields(String datasetId){
     Map<String,FieldCatalog.Field> result=new LinkedHashMap<>();
     try{
