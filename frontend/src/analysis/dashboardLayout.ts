@@ -89,7 +89,7 @@ export function resizeViewWidgetByKey(view:DashboardView,id:string,key:string):b
  }else return false
  if(columns===old.columns&&height===old.height)return false
  // Legacy cards rendered at 380px; never persist that unsupported height.
- const safeHeight:320|480|640=height===380?480:height
+ const safeHeight:320|480|640=height===320?320:height===640?640:480
  view.layout={...view.layout,[id]:{columns,height:safeHeight}}
  return true
 }
