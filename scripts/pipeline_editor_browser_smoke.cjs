@@ -71,7 +71,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
   await page.reload({waitUntil:'domcontentloaded'})
   await cards.first().waitFor()
   assert.equal(await cards.count(),4)
-  assert.equal(await page.getByRole('button',{name:'撤销加工编辑'}).isDisabled(),true)
+  assert.equal(await page.locator('button[title="撤销加工编辑"]').isDisabled(),true)
   assert.deepEqual(errors,[])
   console.log('PASS pipeline editing: prefix preview, safe formula clone, undo redo, save/reload')
  }finally{await browser.close()}
