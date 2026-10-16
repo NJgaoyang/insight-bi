@@ -10,9 +10,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
   let revision=2
   let steps=[
    {id:'formula-original',type:'formula',fieldId:'profit-field',name:'利润',expression:'[revenue]-[cost]'},
-   {id:'filter-original',type:'filter',fieldId:'city',op:'eq',value:'北京'},
+   {id:'filter-original',type:'filter',fieldId:'profit-field',op:'gte',value:'10'},
    {id:'group-original',type:'group',dimensions:['city'],measures:[{
-    id:'total-revenue',fieldId:'revenue',aggregate:'SUM',name:'收入'}]}
+    id:'total-revenue',fieldId:'profit-field',aggregate:'SUM',name:'收入'}]}
   ]
   const send=(route,value,status=200)=>route.fulfill({
    status,contentType:'application/json',body:JSON.stringify(value)})
@@ -72,6 +72,18 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
   await cards.first().waitFor()
   assert.equal(await cards.count(),4)
   assert.equal(await page.locator('button[title="撤销加工编辑"]').isDisabled(),true)
+  // Removing an upstream formula must flag downstream stable field references.
+  await cards.first().getByRole('button',{name:'删除'}).click()
+  await page.locator('.pipeline-dependency-summary').waitFor()
+  assert.ok(await page.locator('.pipeline-dependency-issue').count()>=2)
+  assert.match(await page.locator('.pipeline-dependency-issue').first().innerText(),/profit-field/)
+  assert.equal(await page.locator('.pipeline-save').isDisabled(),true)
+  assert.equal(await page.getByRole('button',{name:'数据预览'}).isDisabled(),true)
+  assert.equal(await cards.first().getByRole('button',{name:'预览到此步'}).isDisabled(),false,
+   'a prefix before the invalid downstream step may still be previewed')
+  await page.locator('button[title="撤销加工编辑"]').click()
+  assert.equal(await cards.count(),4)
+  assert.equal(await page.locator('.pipeline-dependency-issue').count(),0)
   assert.deepEqual(errors,[])
   console.log('PASS pipeline editing: prefix preview, safe formula clone, undo redo, save/reload')
  }finally{await browser.close()}

@@ -4,6 +4,7 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,type FieldV2} from './api'
 import {copyEditablePipelineStep,prefixForPipelinePreview} from './analysis/pipelineEditing'
 import {joinPreflight} from './analysis/joinPreflight'
+import {checkPipelineDependencies} from './analysis/pipelineDependencies'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -97,6 +98,16 @@ const selectable=(index:number):Column[]=>{
  return fields
 }
 const isGroupLimit=computed(()=>steps.value.filter(s=>s.type==='group').length>=2)
+const dependencyBase=()=>baseFields.value.filter(f=>!f.calculated||f.phase==='ROW')
+ .map(f=>({id:f.id,type:f.logicalType,numeric:f.numeric}))
+const dependencyReport=computed(()=>checkPipelineDependencies(dependencyBase(),steps.value))
+function dependencyIssuesAt(index:number):string[]{
+ return dependencyReport.value.issues.filter(issue=>issue.index===index).map(issue=>issue.message)
+}
+function previewBlocked(index?:number):boolean{
+ const size=index===undefined?steps.value.length:index+1
+ return checkPipelineDependencies(dependencyBase(),steps.value.slice(0,size)).issues.length>0
+}
 function joinIssues(step:JoinStep):string[]{
  return joinPreflight(step,baseColumns(),rightFields(step.sourceDatasetId),
   unionCandidates.value.map(d=>d.id))
@@ -356,6 +367,9 @@ async function checkJoinKeys(step:JoinStep){
  finally{profiling.value=false}
 }
 async function compile(){
+ if(dependencyReport.value.issues.length){
+  ElMessage.warning('步骤依赖无效，请先修复标记的问题');return
+ }
  busy.value=true
  try{
   const result=await post<{sqlPreview:string;columns:Column[]}>(
@@ -367,6 +381,7 @@ async function compile(){
 }
 async function preview(upTo?:number){
  if(busy.value)return
+ if(previewBlocked(upTo)){ElMessage.warning('预览范围内存在失效字段，请先修复');return}
  let input:Step[]
  try{input=upTo===undefined?JSON.parse(JSON.stringify(steps.value)) as Step[]:prefixForPipelinePreview(steps.value,upTo)}
  catch{ElMessage.warning('无效的预览位置');return}
@@ -384,6 +399,9 @@ async function preview(upTo?:number){
  }finally{busy.value=false}
 }
 async function save(){
+ if(dependencyReport.value.issues.length||joinValidationProblems.value.length){
+  ElMessage.warning('加工链存在无效配置，请先修复');return
+ }
  busy.value=true
  try{
   const result=await put<{revision:number;stale:boolean}>(
@@ -414,16 +432,19 @@ onMounted(load)
    <span v-if="dirty" class="pipeline-unsaved">未保存</span>
    <span v-if="stale" class="pipeline-warning">数据集 SQL 已变化，请重新校验保存</span>
    <div class="pipeline-actions">
-    <button :disabled="busy||loading" @click="compile">SQL 预览</button>
-    <button :disabled="busy||loading" @click="preview()">数据预览</button>
+    <button :disabled="busy||loading||dependencyReport.issues.length>0" @click="compile">SQL 预览</button>
+    <button :disabled="busy||loading||dependencyReport.issues.length>0" @click="preview()">数据预览</button>
     <button title="撤销加工编辑" :disabled="busy||loading||!undoHistory.length" @click="undoSteps">撤销</button>
     <button title="重做加工编辑" :disabled="busy||loading||!redoHistory.length" @click="redoSteps">重做</button>
-    <button class="pipeline-save" :disabled="busy||loading||!dirty||joinValidationProblems.length>0" @click="save">保存步骤</button>
+    <button class="pipeline-save" :disabled="busy||loading||!dirty||joinValidationProblems.length>0||dependencyReport.issues.length>0" @click="save">保存步骤</button>
    </div>
   </header>
   <div v-if="loading" class="pipeline-empty">正在读取加工配置…</div>
   <div v-else class="pipeline-content">
    <div class="pipeline-steps">
+    <div v-if="dependencyReport.issues.length" class="pipeline-warning pipeline-dependency-summary" role="status">
+     {{dependencyReport.issues.length}} 处字段依赖错误：下方已标明受影响的步骤，修复或撤销后才能保存。
+    </div>
     <div class="pipeline-toolbar">
      <strong>加工步骤</strong><small>按顺序执行 · 最多 12 步</small>
      <div>
@@ -445,9 +466,12 @@ onMounted(load)
       <button title="步骤前移" :disabled="index===0||(index===1&&['union','join'].includes(steps[0]?.type||''))" @click="move(index,-1)">↑</button>
       <button title="步骤后移" :disabled="index===steps.length-1||step.type==='union'||step.type==='join'" @click="move(index,1)">↓</button>
       <button title="复制步骤" :disabled="busy||steps.length>=12||!['formula','case','filter'].includes(step.type)" @click="duplicateStep(index)">复制</button>
-      <button title="预览至此步骤" :disabled="busy" @click="previewStep(index)">预览到此步</button>
+      <button title="预览至此步骤" :disabled="busy||previewBlocked(index)" @click="previewStep(index)">预览到此步</button>
       <button title="删除步骤" @click="removeStep(index)">删除</button>
      </header>
+     <div v-if="dependencyIssuesAt(index).length" class="pipeline-warning pipeline-dependency-issue" role="alert">
+      <span v-for="(issue,i) in dependencyIssuesAt(index)" :key="i">{{issue}}</span>
+     </div>
      <div v-if="step.type==='union'" class="pipeline-fields">
       <label>需要追加的数据集</label>
       <el-select :model-value="step.sourceDatasetId" filterable

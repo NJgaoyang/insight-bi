@@ -233,3 +233,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 17. 数据加工编辑增强第三批：JOIN 配置前置校验（2026-10-16）
 
 增强数据关联配置的即时风险提示：同连接数据集、等值键存在和类型匹配、重复键、稳定输出字段 ID 和名称约束。关联键或 JOIN 方式变化会撤销之前的 `acknowledgeFanout`，明确要求用户重新确认；未通过则 UI 禁止保存，后端现有 JOIN 校验仍作为最终权威。纯前端迭代、不新建 API/表、不涉及线上部署。见 [PIPELINE_EDITOR_PHASE2_BATCH3_JOIN.md](PIPELINE_EDITOR_PHASE2_BATCH3_JOIN.md)。
+
+
+## 18. 数据加工编辑增强第四批：步骤依赖影响检查（2026-10-16）
+
+新增顺序式 stable fieldId 依赖检查，在编辑器中标注中间步骤被删/移动后哪些下游步骤字段失效。支持公式/CAST/条件/过滤/JOIN 输出/分组汇总的已知字段引用与 GROUP 字段收缩检查；拒绝保存失效草稿，完整预览被阻断但此前有效前缀仍可预览，撤销可恢复。仍由后端作为 SQL、权限及版本的最终裁决，不改旧资源或线上服务。专项验收见 [PIPELINE_EDITOR_PHASE2_BATCH4_DEPENDENCIES.md](PIPELINE_EDITOR_PHASE2_BATCH4_DEPENDENCIES.md)，只依 GitHub Actions 的定向检查，不宣称离线开发机的生产验收。
