@@ -268,3 +268,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 24. PIPELINE-RELATION-IMPACT-BATCH2：关系字段影响链（2026-10-16）
 
 在 JOIN 关系可视化基础上，按 stable fieldId 提示右表输出字段在后续过滤、公式、条件转换、分组汇总中的直接及派生引用，GROUP 后的不可见原始字段不错误传播。面板只读，不修改 SQL 编译规则及权限，详见 [PIPELINE_RELATION_IMPACT_BATCH2.md](PIPELINE_RELATION_IMPACT_BATCH2.md)。增加 Node / 浏览器定向检查；未部署线上。
+
+
+## 25. PIPELINE-JOIN-CARDINALITY-BATCH3：右表关联基数风险诊断（2026-10-16）
+
+保留原关联键检查接口，新增右表行数、关联键组数、最大单键记录数，保留重复键组/额外行统计与 `exactJoinRowCount=false`。编辑器诊断绑定 JOIN 源/方式/稳定字段对，修改配置或异步过期返回不能展示旧诊断；仍要求显式确认行数放大风险，并明确该诊断不是 JOIN 最终行数。专项 H2、Node、TypeScript、Chromium 验收详见 [PIPELINE_JOIN_CARDINALITY_BATCH3.md](PIPELINE_JOIN_CARDINALITY_BATCH3.md)。未部署 18110，未连真实 StarRocks。

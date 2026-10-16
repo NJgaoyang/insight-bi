@@ -207,9 +207,14 @@ public class AnalysisPipelineApi {
       if(field==null)throw new IllegalArgumentException("关联键不存在");
       keys.add("bis."+FormulaCompiler.quote(field.sourceColumn()));
     }
-    String sql="SELECT COUNT(*) AS duplicate_groups, COALESCE(SUM(c-1),0) AS extra_right_rows "+
+    // One bounded, read-only grouped scan. These counts describe the entire
+    // right-hand source, NOT the final JOIN row count or left-hand matches.
+    String sql="SELECT COUNT(*) AS key_groups, COALESCE(SUM(c),0) AS right_rows, "+
+      "COALESCE(SUM(CASE WHEN c>1 THEN 1 ELSE 0 END),0) AS duplicate_groups, "+
+      "COALESCE(SUM(CASE WHEN c>1 THEN c-1 ELSE 0 END),0) AS extra_right_rows, "+
+      "COALESCE(MAX(c),0) AS max_right_multiplicity "+
       "FROM (SELECT COUNT(*) AS c FROM ("+ReadOnlySqlGuard.validate(source.sourceSql())+
-      ") bis GROUP BY "+String.join(", ",keys)+" HAVING COUNT(*) > 1) groups_bi";
+      ") bis GROUP BY "+String.join(", ",keys)+") groups_bi";
     long start=System.nanoTime();
     try(AnalysisQueryLimiter.Lease lease=LIMITER.acquire();
         Connection connection=store.open(store.connection(String.valueOf(primary.get("connection_id"))))){
@@ -219,9 +224,11 @@ public class AnalysisPipelineApi {
         stmt.setMaxRows(1);
         try(var rs=stmt.executeQuery()){
           if(!rs.next())throw new IllegalStateException("关联键检查未返回结果");
-          long groups=rs.getLong(1),extra=rs.getLong(2);
-          return Map.of("duplicateGroups",groups,"extraRightRows",extra,
-            "hasDuplicateKeys",groups>0,"executionMs",(System.nanoTime()-start)/1_000_000,
+          long keyGroups=rs.getLong(1),rightRows=rs.getLong(2);
+          long duplicates=rs.getLong(3),extra=rs.getLong(4),maxMultiplicity=rs.getLong(5);
+          return Map.of("duplicateGroups",duplicates,"extraRightRows",extra,
+            "keyGroups",keyGroups,"rightRows",rightRows,"maxRightMultiplicity",maxMultiplicity,
+            "hasDuplicateKeys",duplicates>0,"executionMs",(System.nanoTime()-start)/1_000_000,
             "scope","RIGHT_SOURCE","exactJoinRowCount",false);
         }
       }

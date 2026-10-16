@@ -359,3 +359,7 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .pipeline-relation-impact-step{border:1px solid #d5e1f2;border-radius:4px;background:#f1f5fc;padding:3px 6px;font-size:11px;color:#47607f}
 .pipeline-relation-impact-empty{font-size:11px;color:#8290a3}
 .pipeline-relation-impact>p{font-size:11px;color:#74859c;margin:8px 0 0}
+
+/* Right-side JOIN cardinality: bounded, read-only diagnostic, not an exact result estimate. */
+.pipeline-join-cardinality{margin:4px 0 8px;padding:9px 11px;border:1px solid #d8e4f0;
+ border-radius:5px;background:#f7faff;color:#445b75;font-size:12px;line-height:1.65}

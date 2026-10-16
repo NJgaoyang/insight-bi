@@ -37,6 +37,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
     saves.push(body);steps=structuredClone(body.steps);revision++
     return send({datasetId:'ds1',revision,stale:false})
    }
+   if(path==='/api/datasets/ds1/pipeline/join-key-profile'&&method==='POST'){
+    const input=req.postDataJSON()
+    assert.equal(input.step.type,'join')
+    return send({keyGroups:3,rightRows:4,maxRightMultiplicity:2,
+     duplicateGroups:1,extraRightRows:1,hasDuplicateKeys:true,
+     executionMs:4,scope:'RIGHT_SOURCE',exactJoinRowCount:false})
+   }
    if(path==='/api/datasets/ds1/pipeline/compile'&&method==='POST'){
     compiles.push(req.postDataJSON())
     return send({sqlPreview:'SELECT * FROM sales LEFT JOIN archive ON sales.city=archive.city LIMIT ?',
@@ -58,6 +65,12 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.match(await relation.innerText(),/右表字段影响链/)
   assert.match(await relation.innerText(),/未发现直接或派生字段引用/)
   assert.match(await relation.innerText(),/行数放大/)
+  await step.locator('button').filter({hasText:'检查右表关联键重复'}).click()
+  const risk=step.locator('.pipeline-join-cardinality')
+  await risk.waitFor()
+  assert.match(await risk.innerText(),/右表 4 行/)
+  assert.match(await risk.innerText(),/最大单键 2 行/)
+  assert.match(await risk.innerText(),/不能推算最终 JOIN 行数/)
   await relation.getByRole('button',{name:'收起关系'}).click()
   assert.equal(await relation.locator('.pipeline-relation-nodes').count(),0)
   await relation.getByRole('button',{name:'展开关系'}).click()
@@ -66,12 +79,16 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.ok((await step.innerText()).includes('历史销售'))
   assert.equal(await step.locator('.el-checkbox').count(),1)
   await step.locator('button').filter({hasText:'添加关联条件'}).click()
+  assert.equal(await risk.count(),0,'changing JOIN keys invalidates the prior profile')
   assert.equal(await step.locator('button[title="删除关联条件"]').count(),2)
   assert.equal(await relation.locator('.pipeline-relation-link').count(),2)
   await step.locator('button').filter({hasText:'添加输出字段'}).click()
   assert.equal(await step.locator('button[title="删除右表输出字段"]').count(),2)
   assert.equal(await relation.locator('.pipeline-relation-impact-row').count(),2)
+  await step.locator('button').filter({hasText:'检查右表关联键重复'}).click()
+  await risk.waitFor()
   await step.locator('.el-checkbox').click()
+  assert.equal(await risk.count(),1,'risk acknowledgment does not change JOIN key cardinality')
   assert.equal(await page.locator('.pipeline-save').isDisabled(),false,
    'acknowledging a valid JOIN unlocks save')
   await step.locator('button').filter({hasText:'添加关联条件'}).click()

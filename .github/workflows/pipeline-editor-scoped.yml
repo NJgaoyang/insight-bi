@@ -14,6 +14,11 @@ on:
       - scripts/pipeline_dependencies.test.mjs
       - docs/PIPELINE_EDITOR_PHASE2_BATCH4_DEPENDENCIES.md
       - frontend/src/analysis/joinPreflight.ts
+      - frontend/src/analysis/joinCardinality.ts
+      - scripts/pipeline_join_cardinality.test.mjs
+      - docs/PIPELINE_JOIN_CARDINALITY_BATCH3.md
+      - backend/src/main/java/com/insightbi/analysis/AnalysisPipelineApi.java
+      - backend/src/test/java/com/insightbi/analysis/AnalysisPipelineJoinTest.java
       - scripts/pipeline_join_preflight.test.mjs
       - scripts/finebi_pipeline_join_ui_smoke.cjs
       - docs/PIPELINE_EDITOR_PHASE2_BATCH3_JOIN.md
@@ -38,7 +43,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Test safe copies, preview and JOIN preflight
-        run: node --experimental-strip-types --test scripts/pipeline_editor_step.test.mjs scripts/pipeline_join_preflight.test.mjs scripts/pipeline_dependencies.test.mjs scripts/pipeline_relation_graph.test.mjs
+        run: node --experimental-strip-types --test scripts/pipeline_editor_step.test.mjs scripts/pipeline_join_preflight.test.mjs scripts/pipeline_dependencies.test.mjs scripts/pipeline_join_cardinality.test.mjs scripts/pipeline_relation_graph.test.mjs
       - name: Install pinned frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
@@ -84,4 +89,4 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Real H2 type conversion and existing pipeline compiler checks
         working-directory: backend
-        run: mvn -B -q -Dtest=AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test
+        run: mvn -B -q -Dtest=AnalysisPipelineJoinTest,AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test

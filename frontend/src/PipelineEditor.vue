@@ -6,6 +6,7 @@ import {copyEditablePipelineStep,prefixForPipelinePreview} from './analysis/pipe
 import {joinPreflight} from './analysis/joinPreflight'
 import {checkPipelineDependencies} from './analysis/pipelineDependencies'
 import {pipelineRelationGraph} from './analysis/pipelineRelationGraph'
+import {joinKeySignature,currentRightKeyProfile,cardinalitySummary,type RightKeyProfile,type ProfileSnapshot} from './analysis/joinCardinality'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -53,8 +54,13 @@ const relationGraph=computed(()=>pipelineRelationGraph(
 ))
 const queryLimit=ref(30)
 const sqlPreview=ref('')
-const joinProfile=ref<{duplicateGroups:number;extraRightRows:number;hasDuplicateKeys:boolean}|null>(null)
+const joinProfile=ref<ProfileSnapshot|null>(null)
 const profiling=ref(false)
+let profileRequestGeneration=0
+const shownJoinProfile=computed(()=>{
+ const join=steps.value.find((s):s is JoinStep=>s.type==='join')
+ return join?currentRightKeyProfile(joinProfile.value,props.id,join):null
+})
 const previewRows=ref<Record<string,unknown>[]>([])
 const previewColumns=ref<Column[]>([])
 const truncated=ref(false)
@@ -63,6 +69,8 @@ const undoHistory=ref<string[]>([]),redoHistory=ref<string[]>([])
 const previewScope=ref('')
 function clearPreview(){
  previewVersion++
+ profileRequestGeneration++
+ profiling.value=false
  joinProfile.value=null
  sqlPreview.value='';previewRows.value=[];previewColumns.value=[]
  truncated.value=false;previewScope.value=''
@@ -370,12 +378,33 @@ async function load(){
  finally{loading.value=false}
 }
 async function checkJoinKeys(step:JoinStep){
- profiling.value=true;joinProfile.value=null
+ // Snapshot before the async call: a late result for an older key must never
+ // show after an edit, undo, another check or switching to a new JOIN.
+ const key=joinKeySignature(props.id,step)
+ const generation=++profileRequestGeneration
+ profiling.value=true
+ joinProfile.value=null
  try{
-  joinProfile.value=await post<{duplicateGroups:number;extraRightRows:number;hasDuplicateKeys:boolean}>(
-   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/join-key-profile',{step})
- }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关联键检查失败')}
- finally{profiling.value=false}
+  const result=await post<RightKeyProfile>(
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/join-key-profile',
+   {step:JSON.parse(JSON.stringify(step))})
+  if(generation!==profileRequestGeneration||
+     !steps.value.some(s=>s.type==='join'&&joinKeySignature(props.id,s)===key))return
+  const snapshot:ProfileSnapshot={key,result}
+  if(!currentRightKeyProfile(snapshot,props.id,step)){
+   ElMessage.warning('右表基数诊断返回数据无效，请重新检查')
+   return
+  }
+  joinProfile.value=snapshot
+ }catch(e:unknown){
+  if(generation===profileRequestGeneration)
+   ElMessage.error(e instanceof Error?e.message:'关联键检查失败')
+ }finally{if(generation===profileRequestGeneration)profiling.value=false}
+}
+function acknowledgeJoinRisk(){
+ const profile=joinProfile.value
+ changed()
+ if(profile)joinProfile.value=profile
 }
 async function compile(){
  if(dependencyReport.value.issues.length){
@@ -596,16 +625,14 @@ onMounted(load)
       <button :disabled="profiling||busy" @click="checkJoinKeys(step)">
        {{profiling?'检查中…':'检查右表关联键重复'}}
       </button>
-      <small v-if="joinProfile">
-       {{joinProfile.hasDuplicateKeys
-        ?'发现 '+joinProfile.duplicateGroups+' 组重复键，右表多出 '+joinProfile.extraRightRows+' 行重复匹配候选'
-        :'右表未发现重复关联键'}}
-       （仅统计右表，不代表 JOIN 最终行数）
-      </small>
+      <p v-if="shownJoinProfile" class="pipeline-join-cardinality" role="status">
+       {{cardinalitySummary(shownJoinProfile)}}
+      </p>
+      <small v-else>仅扫描当前右侧数据集的关联键；修改关联条件后需重新检查。</small>
       <div v-if="joinIssues(step).length" class="pipeline-warning" role="alert">
        {{joinIssues(step).join('；')}}
       </div>
-      <el-checkbox v-model="step.acknowledgeFanout" @change="changed">
+      <el-checkbox v-model="step.acknowledgeFanout" @change="acknowledgeJoinRisk">
        我已了解：右表关联键重复可能放大结果行数
       </el-checkbox>
       <small>必须确认行数放大风险后才能保存；不自动去重，也不改动原始数据。</small>

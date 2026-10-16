@@ -179,9 +179,50 @@ class AnalysisPipelineJoinTest {
       var result=api.joinKeyProfile("main_ds",Map.of("step",join("LEFT")));
       assertEquals(1L,result.get("duplicateGroups"));
       assertEquals(1L,result.get("extraRightRows"));
+      assertEquals(3L,result.get("keyGroups"));
+      assertEquals(4L,result.get("rightRows"));
+      assertEquals(2L,result.get("maxRightMultiplicity"));
       assertEquals(true,result.get("hasDuplicateKeys"));
       assertEquals(false,result.get("exactJoinRowCount"));
       verify(store,times(1)).open(connection);
+    }
+  }
+
+  @Test void rightKeyCardinalityUsesAllGroupsAndDoesNotPredictActualLeftJoinRows()throws Exception{
+    var store=mock(DatabaseStore.class);
+    var catalog=mock(FieldCatalog.class);
+    var ds=Map.<String,Object>of("sql_body",MAIN,"connection_id","conn");
+    var connection=Map.<String,Object>of("id","conn");
+    when(store.dataset("main_ds")).thenReturn(ds);
+    when(store.dataset("archive_ds")).thenReturn(Map.of(
+      "sql_body",SECOND,"connection_id","conn"));
+    when(store.connection("conn")).thenReturn(connection);
+    when(catalog.fields("main_ds")).thenReturn(LEFT);
+    when(catalog.fields("archive_ds")).thenReturn(RIGHT);
+    try(var conn=sample()){
+      var readonly=spy(conn);
+      doReturn(true).when(readonly).isReadOnly();
+      when(store.open(connection)).thenReturn(readonly);
+      var api=new AnalysisPipelineApi(store,catalog,mock(JdbcTemplate.class));
+      var oneKey=new HashMap<>(join("LEFT"));
+      oneKey.put("conditions",List.of(Map.of("leftFieldId","city","rightFieldId","rcity")));
+      var profile=api.joinKeyProfile("main_ds",Map.of("step",oneKey));
+      assertEquals(2L,profile.get("keyGroups"));
+      assertEquals(4L,profile.get("rightRows"));
+      assertEquals(1L,profile.get("duplicateGroups"));
+      assertEquals(2L,profile.get("extraRightRows"));
+      assertEquals(3L,profile.get("maxRightMultiplicity"));
+      assertEquals("RIGHT_SOURCE",profile.get("scope"));
+      assertEquals(false,profile.get("exactJoinRowCount"));
+      // Empty sources must yield zeros rather than NULL totals.
+      try(var stmt=conn.createStatement()){stmt.execute("DELETE FROM archive");}
+      profile=api.joinKeyProfile("main_ds",Map.of("step",oneKey));
+      assertEquals(0L,profile.get("keyGroups"));
+      assertEquals(0L,profile.get("rightRows"));
+      assertEquals(0L,profile.get("duplicateGroups"));
+      assertEquals(0L,profile.get("extraRightRows"));
+      assertEquals(0L,profile.get("maxRightMultiplicity"));
+      assertEquals(false,profile.get("hasDuplicateKeys"));
     }
   }
 }
