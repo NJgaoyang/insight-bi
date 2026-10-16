@@ -9,10 +9,10 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
   const errors=[],saves=[],previews=[]
   let revision=2
   let steps=[
-   {id:'formula-original',type:'formula',fieldId:'profit-field',name:'利润',expression:'[revenue]-[cost]'},
-   {id:'filter-original',type:'filter',fieldId:'profit-field',op:'gte',value:'10'},
+   {id:'formula-original',type:'formula',fieldId:'profit_field',name:'利润',expression:'[revenue]-[cost]'},
+   {id:'filter-original',type:'filter',fieldId:'profit_field',op:'gte',value:'10'},
    {id:'group-original',type:'group',dimensions:['city'],measures:[{
-    id:'total-revenue',fieldId:'profit-field',aggregate:'SUM',name:'收入'}]}
+    id:'total_revenue',fieldId:'profit_field',aggregate:'SUM',name:'收入'}]}
   ]
   const send=(route,value,status=200)=>route.fulfill({
    status,contentType:'application/json',body:JSON.stringify(value)})
@@ -76,7 +76,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
   await cards.first().getByRole('button',{name:'删除'}).click()
   await page.locator('.pipeline-dependency-summary').waitFor()
   assert.ok(await page.locator('.pipeline-dependency-issue').count()>=2)
-  assert.match(await page.locator('.pipeline-dependency-issue').first().innerText(),/profit-field/)
+  assert.match(await page.locator('.pipeline-dependency-issue').first().innerText(),/profit_field/)
   assert.equal(await page.locator('.pipeline-save').isDisabled(),true)
   assert.equal(await page.getByRole('button',{name:'数据预览'}).isDisabled(),true)
   assert.equal(await cards.first().getByRole('button',{name:'预览到此步'}).isDisabled(),false,
