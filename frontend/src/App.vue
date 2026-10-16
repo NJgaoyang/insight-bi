@@ -6,6 +6,7 @@ import Designer from './Designer.vue'
 import AnalysisSubject from './AnalysisSubject.vue'
 import PublishedReport from './PublishedReport.vue'
 import PipelineEditor from './PipelineEditor.vue'
+import ModelRelations from './ModelRelations.vue'
 import GovernanceAdmin from './GovernanceAdmin.vue'
 import MetadataBackupPanel from './MetadataBackupPanel.vue'
 import OperationsPanel from './OperationsPanel.vue'
@@ -15,6 +16,7 @@ const readerMode=ref(false)
 const route=ref('dashboards'),activeId=ref(''),view=ref(false)
 const systemTab=ref<'connections'|'governance'|'backup'|'operations'>('connections')
 const connections=ref<any[]>([]),datasets=ref<Dataset[]>([]),dashboards=ref<any[]>([])
+const modelRelationsOpen=ref(false)
 type Folder={id:string;name:string;parent_id:string|null;created_at?:string}
 const folders=ref<Folder[]>([])
 const dataFolders=ref<Folder[]>([])
@@ -399,7 +401,9 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
      </template>
     </template>
     <template v-if="route==='datasets'">
-      <div class="fine-list-tabs"><button class="selected">数据集</button><span class="fine-list-count">{{publicDataItems.length}} 个</span></div>
+      <div class="fine-list-tabs"><button class="selected">数据集</button><span class="fine-list-count">{{publicDataItems.length}} 个</span>
+       <button type="button" class="model-relations-open" @click="modelRelationsOpen=true">模型关系</button>
+      </div>
       <div v-if="dataFolders.some(f=>(f.parent_id??'')===selectedDataFolder)" class="fine-folder-grid">
         <button v-for="folder in dataFolders.filter(f=>(f.parent_id??'')===selectedDataFolder)" :key="folder.id"
          @click="selectedDataFolder=folder.id"><span class="fine-big-folder">📁</span><span>{{folder.name}}</span></button>
@@ -415,6 +419,9 @@ onBeforeUnmount(()=>{window.removeEventListener('hashchange',handleHash);window.
    </main>
   </div>
  </div>
+ <el-dialog v-model="modelRelationsOpen" title="数据模型关系" width="min(1040px, 92%)">
+  <ModelRelations v-if="modelRelationsOpen" @open-pipeline="id=>{modelRelationsOpen=false;navigate('pipeline/'+id)}"/>
+ </el-dialog>
  <el-dialog v-model="moveDataDialog" title="移动数据集" width="420px">
    <p class="fine-dialog-tip">移动只更改归档位置，不影响 StarRocks 中的真实业务数据。</p>
    <el-select v-model="moveDataTarget" style="width:100%">

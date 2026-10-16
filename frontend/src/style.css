@@ -363,3 +363,31 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 /* Right-side JOIN cardinality: bounded, read-only diagnostic, not an exact result estimate. */
 .pipeline-join-cardinality{margin:4px 0 8px;padding:9px 11px;border:1px solid #d8e4f0;
  border-radius:5px;background:#f7faff;color:#445b75;font-size:12px;line-height:1.65}
+
+
+/* Existing saved-pipeline relationship catalog, scoped to the administrator's datasets. */
+.fine-list-tabs .model-relations-open{margin-left:auto;color:#2d5e9f;font-weight:600;padding:0 12px}
+.model-relations{font-size:13px;color:#35465c;min-height:180px}
+.model-relations-toolbar{display:flex;align-items:center;gap:14px;justify-content:space-between;padding-bottom:12px}
+.model-relations-toolbar p{color:#6e7d8f;margin:0}
+.model-relations-toolbar button,.model-relations-entry footer button{
+ border:1px solid #d7e2ef;background:#fff;color:#335e9d;border-radius:5px;padding:6px 10px;cursor:pointer
+}
+.model-relations-empty{padding:28px 8px;text-align:center;color:#8190a2}
+.model-relations-list{display:grid;gap:9px}
+.model-relations-entry{border:1px solid #e0e7f0;border-radius:7px;padding:12px;background:#fff}
+.model-relations-entry header{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.model-relations-entry header strong{color:#243a56}
+.model-relations-entry header small{color:#8090a5}
+.model-relation-arrow{font-size:16px;color:#6e8db8}
+.model-relations-status{margin-left:auto;border-radius:4px;padding:3px 7px;background:#f1f4f7;color:#65758a;font-size:11px}
+.model-relations-active{background:#eaf6ee;color:#2e7c4e}
+.model-relations-stale{background:#fff5df;color:#946b28}
+.model-relations-invalid{background:#fff0ee;color:#b05848}
+.model-relations-fields{display:flex;flex-wrap:wrap;gap:7px;padding:10px 0}
+.model-relations-fields>span{padding:4px 7px;border:1px solid #dde5ee;border-radius:4px;font-size:12px}
+.model-relations-fields small{display:block;color:#a45045}
+.model-relations-bad-pair{background:#fff6f3}
+.model-relations-entry>p{margin:6px 0;color:#9a6b3c}
+.model-relations-entry footer{display:flex;align-items:center;justify-content:space-between;color:#8593a6;font-size:12px}
+.model-relations-note{font-size:11px;color:#92a0b0;margin-top:12px}

@@ -273,3 +273,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 25. PIPELINE-JOIN-CARDINALITY-BATCH3：右表关联基数风险诊断（2026-10-16）
 
 保留原关联键检查接口，新增右表行数、关联键组数、最大单键记录数，保留重复键组/额外行统计与 `exactJoinRowCount=false`。编辑器诊断绑定 JOIN 源/方式/稳定字段对，修改配置或异步过期返回不能展示旧诊断；仍要求显式确认行数放大风险，并明确该诊断不是 JOIN 最终行数。专项 H2、Node、TypeScript、Chromium 验收详见 [PIPELINE_JOIN_CARDINALITY_BATCH3.md](PIPELINE_JOIN_CARDINALITY_BATCH3.md)。未部署 18110，未连真实 StarRocks。
+
+
+## 26. P1-MODEL-RELATIONS-CATALOG-01：已保存数据关系目录（2026-10-16）
+
+公共数据新增「模型关系」入口，读取 `insight_dataset_pipeline` 中已保存的 JOIN/UNION 关系，展示关联数据集、字段、版本及 ACTIVE/STALE/INVALID 状态，能够返回现有加工编辑器。复用服务器既有安全 Planner/字段目录，不生成 SQL、不访问真实业务数据源、不创建新元表。见 [P1_MODEL_RELATIONS_CATALOG_01.md](P1_MODEL_RELATIONS_CATALOG_01.md)。本批只是可视化关系目录，不能标记任意多表语义关系编辑已完成；现有 18130 预览服务和 18110 线上服务均未覆盖。
