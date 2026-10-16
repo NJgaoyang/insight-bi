@@ -6,7 +6,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
  try{
   const page=await browser.newPage({viewport:{width:1480,height:960}})
   let rows=[],requests=[],errors=[]
-  page.on('pageerror',e=>errors.push(e.message))
+  page.on('pageerror',e=>errors.push(e.stack||e.message))
   const send=(r,v,status=200)=>r.fulfill({status,contentType:'application/json',body:JSON.stringify(v)})
   await page.route('**/api/**',route=>{
    const req=route.request(),url=new URL(req.url()),p=url.pathname,m=req.method()
