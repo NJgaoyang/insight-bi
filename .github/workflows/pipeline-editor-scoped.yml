@@ -20,6 +20,7 @@ on:
       - backend/src/main/java/com/insightbi/analysis/AnalysisPipelineApi.java
       - backend/src/main/java/com/insightbi/analysis/PipelineChangeImpact.java
       - backend/src/test/java/com/insightbi/analysis/PipelineChangeImpactTest.java
+      - backend/src/test/java/com/insightbi/AnalysisPipelineSnapshotBindingTest.java
       - docs/PIPELINE_PUBLISHED_IMPACT_GUARD_01.md
       - backend/src/test/java/com/insightbi/analysis/AnalysisPipelineJoinTest.java
       - scripts/pipeline_join_preflight.test.mjs
@@ -92,4 +93,4 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Real H2 type conversion and existing pipeline compiler checks
         working-directory: backend
-        run: mvn -B -q -Dtest=PipelineChangeImpactTest,AnalysisPipelineApiTest,AnalysisPipelineJoinTest,AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test
+        run: mvn -B -q -Dtest=PipelineChangeImpactTest,AnalysisPipelineSnapshotBindingTest,AnalysisPipelineApiTest,AnalysisPipelineJoinTest,AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test

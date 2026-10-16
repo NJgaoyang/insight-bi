@@ -43,7 +43,14 @@ class AnalysisPipelineSnapshotBindingTest {
       "content",selected)).get("revision"));
     assertEquals(true,api.publish(report).get("ok"));
 
-    assertEquals(2,pipeline.save(datasetId,Map.of("revision",1,"steps",steps)).get("revision"));
+    assertThrows(IllegalStateException.class,()->
+      pipeline.save(datasetId,Map.of("revision",1,"steps",steps)));
+    var impact=pipeline.changeImpact(datasetId,1);
+    assertTrue(impact.requiresAcknowledgment());
+    assertEquals(1,impact.reports().size());
+    assertEquals("加工结果主题",impact.reports().get(0).dashboardName());
+    assertEquals(2,pipeline.save(datasetId,Map.of("revision",1,"steps",steps,
+      "acknowledgePublishedImpact",true,"impactToken",impact.token())).get("revision"));
     var error=assertThrows(IllegalStateException.class,()->api.publish(report));
     assertTrue(error.getMessage().contains("最新版本"));
     assertThrows(IllegalStateException.class,()->api.update(report,Map.of(
