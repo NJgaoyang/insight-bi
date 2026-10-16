@@ -2,7 +2,8 @@ import type {AnalysisWidgetV2} from '../api'
 
 /** P1 view-local layout; component query/visual config stays in shared widgets[]. */
 export type WidgetLayout={columns:6|12;height:320|480|640}
-export type DashboardView={id:string;name:string;widgetIds:string[];layout?:Record<string,WidgetLayout>;jumps?:Record<string,string>}
+import type {ViewFilterConfig} from './viewFilter'
+export type DashboardView={id:string;name:string;widgetIds:string[];layout?:Record<string,WidgetLayout>;jumps?:Record<string,string>;filter?:ViewFilterConfig}
 
 // Old snapshots use the original 380px visual height. New choices are 320/480/640.
 export function viewLayout(view:DashboardView|undefined,id:string){
@@ -54,7 +55,8 @@ export function duplicateDashboardView(view:DashboardView,newId:string,newName:s
   layout:view.layout?Object.fromEntries(Object.entries(view.layout)
    .filter(([id])=>valid.has(id)).map(([id,config])=>[id,{...config}])):undefined,
   jumps:view.jumps?Object.fromEntries(Object.entries(view.jumps)
-   .filter(([id,target])=>valid.has(id)&&target!==view.id)):undefined
+   .filter(([id,target])=>valid.has(id)&&target!==view.id)):undefined,
+  filter:view.filter?{...view.filter}:undefined
  }
 }
 

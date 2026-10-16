@@ -7,6 +7,7 @@ import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
 import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,reorderViewWidgetByKey,resizeViewWidgetByKey,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
+import {viewFilterCandidates,isValidViewFilter,filterForViewWidget,setViewFilter} from './analysis/viewFilter'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -17,6 +18,25 @@ const dashboardViews=ref<DashboardView[]>([])
 const selectedViewId=ref('')
 const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
 const dashboardWidgets=computed(()=>orderedViewWidgets(activeView.value,components.value))
+const viewFilterOptions=computed(()=>viewFilterCandidates(activeView.value,components.value))
+const filterDraft=ref(''),filterApplied=ref('')
+const activeFilterKey=computed(()=>activeView.value?.filter
+ ?JSON.stringify([activeView.value.filter.datasetId,activeView.value.filter.fieldId]):'')
+function changeViewFilter(key:string){
+ const view=activeView.value
+ if(!view)return
+ setViewFilter(view,viewFilterOptions.value.find(x=>x.key===key)||null)
+ filterDraft.value='';filterApplied.value=''
+ mark()
+}
+function applyViewFilter(){
+ filterApplied.value=filterDraft.value.trim().slice(0,120)
+}
+function resetViewFilter(){filterDraft.value='';filterApplied.value=''}
+function pruneInvalidFilters(){
+ for(const view of dashboardViews.value)
+  if(!isValidViewFilter(view,components.value))delete view.filter
+}
 const selectedId=ref('')
 const name=ref('')
 const busy=ref(false)
@@ -362,11 +382,11 @@ async function load(){
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
-  dirty.value=false;resetHistory()
+  dirty.value=false;resetViewFilter();resetHistory()
   await refreshApproval()
  }catch(e:any){ElMessage.error(e.message||'加载分析主题失败')}
  finally{busy.value=false}
@@ -395,6 +415,7 @@ function removeComponent(){
    view.widgetIds=view.widgetIds.filter(id=>id!==removedId)
    removeUnusedLayout(view)
   }
+  pruneInvalidFilters()
   selectedId.value=components.value[0]?.id??'';mark()
  })
  .catch(()=>{})
@@ -403,7 +424,7 @@ function datasetChanged(){
  if(!chosen.value)return
  chosen.value.dimension='';chosen.value.measure='';chosen.value.secondMeasure='';chosen.value.columns=[]
  if(chosen.value.analysisV2)chosen.value.analysisV2={dimensions:[],measures:[],filters:{pre:[],post:[]},sort:[],limit:200}
- mark()
+ pruneInvalidFilters();mark()
 }
 function assignField(field:string,kind:'dimension'|'metric'){
  const widget=chosen.value
@@ -530,7 +551,7 @@ function setDashboardWidgets(ids:string[]){
  const existing=new Set(components.value.map(w=>w.id))
  view.widgetIds=[...new Set(ids.filter(id=>existing.has(id)))]
  removeUnusedLayout(view)
- mark()
+ pruneInvalidFilters();mark()
 }
 function moveDashboardWidget(widgetId:string,offset:number){
  const view=activeView.value
@@ -556,6 +577,7 @@ function resizeDashboardWidget(widgetId:string,kind:'columns'|'height'){
 async function save():Promise<boolean>{
  if(!report.value)return false
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
+ if(dashboardViews.value.some(v=>!isValidViewFilter(v,components.value))){ElMessage.warning('存在失效的仪表板筛选字段，请先调整');return false}
  busy.value=true
  try{
   const savedContent=fingerprint()
@@ -580,6 +602,7 @@ async function publish(){
  }catch(e:any){ElMessage.error(e.message||'发布失败，请检查审批版本')}
 }
 watch(selectedId,()=>{propTab.value='data'})
+watch(selectedViewId,resetViewFilter)
 onMounted(load)
 </script>
 <template>
@@ -745,6 +768,24 @@ onMounted(load)
         :label="component.title||component.id" :value="component.id"/>
       </el-select>
      </div>
+     <div v-if="activeView" class="analysis-view-filter">
+      <label>视图筛选字段</label>
+      <el-select :model-value="activeFilterKey" size="small" filterable
+       aria-label="配置视图筛选字段" placeholder="不使用筛选"
+       @update:model-value="v=>changeViewFilter(String(v))">
+       <el-option label="不使用筛选" value=""/>
+       <el-option v-for="choice in viewFilterOptions" :key="choice.key"
+        :value="choice.key" :label="choice.label"/>
+      </el-select>
+      <template v-if="activeView.filter&&isValidViewFilter(activeView,components)">
+       <el-input v-model="filterDraft" size="small" clearable maxlength="120"
+        aria-label="视图筛选值" placeholder="输入值后点击应用" @keyup.enter="applyViewFilter"/>
+       <button type="button" @click="applyViewFilter">应用</button>
+       <button type="button" @click="resetViewFilter">清除</button>
+       <span v-if="filterApplied" class="analysis-filter-value">已应用：{{filterApplied}}</span>
+      </template>
+      <span v-else-if="activeView.filter" class="analysis-filter-warning">筛选字段已失效，请重新选择</span>
+     </div>
      <div v-if="!dashboardWidgets.length" class="analysis-stage-empty">当前仪表板尚未选择组件</div>
      <div v-else class="analysis-view-grid" aria-label="可编辑仪表板画布">
       <p class="analysis-canvas-shortcuts">焦点在拖动手柄时：方向键调整顺序，Home / End 移至首尾，Shift + 方向键调整宽高。</p>
@@ -776,7 +817,8 @@ onMounted(load)
         <button title="切换组件宽度" @click="resizeDashboardWidget(component.id,'columns')">{{viewLayout(activeView,component.id).columns===12?'半宽':'全宽'}}</button>
         <button title="切换组件高度" @click="resizeDashboardWidget(component.id,'height')">高度</button>
        </div>
-       <AnalysisV2Chart v-if="component.analysisV2" :widget="component" :readonly="true"/>
+       <AnalysisV2Chart v-if="component.analysisV2" :widget="component" :readonly="true"
+        :linked-filter="filterForViewWidget(activeView,component,filterApplied)"/>
        <ChartWidget v-else :widget="component" :datasets="datasets" :readonly="true"/>
       </div>
      </div>

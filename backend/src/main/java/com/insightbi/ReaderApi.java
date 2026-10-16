@@ -125,9 +125,16 @@ class ReaderApi {
   @PostMapping("/dashboards/{id}/widgets/{widgetId}/query")
   Map<String,Object> query(@PathVariable String id,@PathVariable String widgetId,
      @RequestBody Map<String,Object> userParameters,HttpSession session)throws Exception{
-    // No caller-supplied dataset, dimensions, measures, pipeline versions, SQL,
-    // filters or limit. Queries can only execute the saved, published V2 widget.
-    if(!userParameters.isEmpty())throw new IllegalArgumentException("只允许查询已发布的组件配置");
+    // Reader requests cannot supply SQL, dataset IDs, field mappings, ACLs,
+    // measures, arbitrary filters or query budgets. The only optional runtime
+    // input is a value for a filter explicitly published on the selected view.
+    boolean hasViewFilter=!userParameters.isEmpty();
+    if(hasViewFilter&&(userParameters.size()!=2||
+       !userParameters.keySet().equals(Set.of("viewId","filterValue"))||
+       !(userParameters.get("viewId") instanceof String viewId)||viewId.isBlank()||viewId.length()>128||
+       !(userParameters.get("filterValue") instanceof String value)||value.isBlank()||
+       value.length()>120||value.chars().anyMatch(Character::isISOControl)))
+      throw new IllegalArgumentException("仅允许提交已发布视图的筛选值");
     Map<String,Object> row=published(id,(String)session.getAttribute("readerId"));
     Map<String,Object> content=store.map(String.valueOf(row.get("published_json")));
     if(!columnGuard.allowed((String)session.getAttribute("readerId"),content))
@@ -154,11 +161,35 @@ class ReaderApi {
     int limit=config.get("limit") instanceof Number n?n.intValue():100;
     safe.put("limit",Math.min(Math.max(limit,1),200));
     safe.put("datasetId",datasetId);
+    Map<String,Object> publishedViewFilter=null;
+    if(hasViewFilter){
+      String viewId=(String)userParameters.get("viewId");
+      Object rawViews=content.get("dashboards");
+      if(!(rawViews instanceof List<?> views)||views.size()>30)
+        throw new IllegalArgumentException("已发布视图筛选配置无效");
+      Map<?,?> matchingView=null;
+      for(Object entry:views){
+        if(entry instanceof Map<?,?> view&&viewId.equals(view.get("id"))){
+          matchingView=view;break;
+        }
+      }
+      if(matchingView==null||
+         !(matchingView.get("widgetIds") instanceof List<?> ids)||!ids.contains(widgetId)||
+         !(matchingView.get("filter") instanceof Map<?,?> allowedFilter)||
+         !datasetId.equals(allowedFilter.get("datasetId"))||
+         !(allowedFilter.get("fieldId") instanceof String fieldId)||
+         !(config.get("dimensions") instanceof List<?> dimensions)||
+         dimensions.stream().noneMatch(dim->
+           dim instanceof Map<?,?> d&&fieldId.equals(d.get("fieldId"))))
+        throw new IllegalArgumentException("筛选字段不属于已发布视图的当前组件");
+      publishedViewFilter=Map.of("fieldId",(String)allowedFilter.get("fieldId"),
+        "op","eq","value",(String)userParameters.get("filterValue"));
+    }
     // Attach server-managed restrictions only AFTER constructing the immutable
     // published widget request. Client JSON cannot remove, replace or append them.
     List<Map<String,Object>> mandatory=governance.mandatoryRowFilters(
       (String)session.getAttribute("readerId"),datasetId);
-    if(!mandatory.isEmpty()){
+    if(!mandatory.isEmpty()||publishedViewFilter!=null){
       Map<?,?> original=safe.get("filters") instanceof Map<?,?> m?m:Map.of();
       Object rawPre=original.get("pre"),rawPost=original.get("post");
       if(rawPre!=null&&!(rawPre instanceof List<?>))
@@ -167,6 +198,7 @@ class ReaderApi {
         throw new IllegalArgumentException("已发布结果过滤格式无效");
       List<Object> pre=new ArrayList<>();
       if(rawPre instanceof List<?> existing)pre.addAll(existing);
+      if(publishedViewFilter!=null)pre.add(publishedViewFilter);
       pre.addAll(mandatory);
       if(pre.size()>20)throw new IllegalArgumentException("已发布过滤条件超过上限");
       safe.put("filters",Map.of("pre",pre,

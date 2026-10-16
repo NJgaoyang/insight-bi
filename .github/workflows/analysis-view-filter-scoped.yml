@@ -1,0 +1,72 @@
+name: Analysis View Filter Scoped
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/finebi-analysis-engine-p0
+    paths:
+      - frontend/src/analysis/viewFilter.ts
+      - frontend/src/analysis/dashboardLayout.ts
+      - frontend/src/AnalysisSubject.vue
+      - frontend/src/PublishedReport.vue
+      - frontend/src/AnalysisV2Chart.vue
+      - frontend/src/style.css
+      - backend/src/main/java/com/insightbi/ReaderApi.java
+      - backend/src/test/java/com/insightbi/ReaderViewFilterTest.java
+      - scripts/analysis_view_filter.test.mjs
+      - scripts/analysis_view_filter_browser_smoke.cjs
+      - docs/ANALYSIS_VIEW_FILTER_01.md
+      - .github/workflows/analysis-view-filter-scoped.yml
+jobs:
+  view-filter-reader:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Published reader ACL, untrusted filter rejection and bound JDBC values
+        working-directory: backend
+        run: mvn -q -B -Dtest=ReaderViewFilterTest,ReaderApiTest test
+  view-filter-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Stable field/dataset mapping and view isolation
+        run: |
+          node --experimental-strip-types --test scripts/analysis_view_filter.test.mjs
+          node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mjs
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Vue TypeScript and production bundle
+        working-directory: frontend
+        run: npm run build
+      - name: Install scoped Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.58.2
+          npx --yes playwright@1.58.2 install --with-deps chromium
+      - name: Start isolated preview
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 18219 > /tmp/view-filter-preview.log 2>&1 &
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:18219/ >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/view-filter-preview.log
+          exit 1
+      - name: Chromium view filter save/reopen/publish/reader
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18219
+        run: node scripts/analysis_view_filter_browser_smoke.cjs

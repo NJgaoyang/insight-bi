@@ -238,3 +238,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 18. 数据加工编辑增强第四批：步骤依赖影响检查（2026-10-16）
 
 新增顺序式 stable fieldId 依赖检查，在编辑器中标注中间步骤被删/移动后哪些下游步骤字段失效。支持公式/CAST/条件/过滤/JOIN 输出/分组汇总的已知字段引用与 GROUP 字段收缩检查；拒绝保存失效草稿，完整预览被阻断但此前有效前缀仍可预览，撤销可恢复。仍由后端作为 SQL、权限及版本的最终裁决，不改旧资源或线上服务。专项验收见 [PIPELINE_EDITOR_PHASE2_BATCH4_DEPENDENCIES.md](PIPELINE_EDITOR_PHASE2_BATCH4_DEPENDENCIES.md)，只依 GitHub Actions 的定向检查，不宣称离线开发机的生产验收。
+
+
+## 19. ANALYSIS-VIEW-FILTER-01：统一分析主题视图筛选（2026-10-16）
+
+在现有仪表板画布保存模型中新增一个可配置的视图级 stable fieldId 筛选组件；只有同一数据集且 Widget 的维度槽明确绑定该字段时，应用的运行时值才能参与查询。筛选值不存档；Admin 作者预览及发布读者均使用原安全 V2 Query Planner，读者 API 仅接收 `viewId/filterValue`，服务器验证它们与已发布视图/组件/字段配置一致，再叠加行级 ACL，不允许传入 dataset/SQL/filters。详见 [ANALYSIS_VIEW_FILTER_01.md](ANALYSIS_VIEW_FILTER_01.md)；不代表跨数据集字段映射或多条件筛选已完成。开发机仍离线，只有 GitHub 专项 CI 能验证本批，生产 18110 未部署。
