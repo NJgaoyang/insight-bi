@@ -60,15 +60,24 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await dialog.waitFor()
   await dialog.locator('input[maxlength="100"]').fill('订单城市关系')
   const selects=dialog.locator('.semantic-draft-sources .el-select')
-  await selects.nth(0).click()
-  await page.locator('.el-select-dropdown__item:visible').filter({hasText:'订单'}).click()
-  await selects.nth(1).locator('input').fill('城市')
-  await selects.nth(1).locator('input').press('Enter')
+  // Scope each option lookup to its own combobox-controlled listbox. Old
+  // Element Plus poppers can remain mounted during transitions.
+  async function selectOption(select, label){
+    await select.click()
+    const input=select.locator('input[role="combobox"]')
+    const controls=await input.getAttribute('aria-controls')
+    assert.ok(controls,'select needs an accessible listbox id')
+    const list=page.locator('[id="'+controls+'"]')
+    const option=list.locator('[role="option"]').filter({hasText:label}).first()
+    await option.waitFor({state:'visible',timeout:10000})
+    await option.click()
+    assert.match(await select.innerText(),new RegExp(label))
+  }
+  await selectOption(selects.nth(0),'订单')
+  await selectOption(selects.nth(1),'城市')
   const pair=dialog.locator('.semantic-draft-pair')
-  await pair.locator('.el-select').nth(0).locator('input').fill('城市')
-  await pair.locator('.el-select').nth(0).locator('input').press('Enter')
-  await pair.locator('.el-select').nth(1).locator('input').fill('地区')
-  await pair.locator('.el-select').nth(1).locator('input').press('Enter')
+  await selectOption(pair.locator('.el-select').nth(0),'城市')
+  await selectOption(pair.locator('.el-select').nth(1),'地区')
   const saveBtn=dialog.getByRole('button',{name:'保存草稿'})
   if(!await saveBtn.isEnabled()){
     console.log('DRAFT FIELDS DEBUG',JSON.stringify({
