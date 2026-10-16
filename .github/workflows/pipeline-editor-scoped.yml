@@ -10,6 +10,7 @@ on:
       - frontend/src/analysis/pipelineRelationGraph.ts
       - scripts/pipeline_relation_graph.test.mjs
       - docs/PIPELINE_RELATION_GRAPH_BATCH1.md
+      - docs/PIPELINE_RELATION_IMPACT_BATCH2.md
       - scripts/pipeline_dependencies.test.mjs
       - docs/PIPELINE_EDITOR_PHASE2_BATCH4_DEPENDENCIES.md
       - frontend/src/analysis/joinPreflight.ts

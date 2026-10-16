@@ -263,3 +263,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 23. ANALYSIS-DRILL-01：受控视图点选钻取（2026-10-16）
 
 继承旧 jumps，新增显式 drills 开关；同数据集稳定维度才能从来源 Widget 向已配置的目标视图筛选字段传值。运行时值不存档，读者继续受后端发布配置/权限检查约束。具体见 [ANALYSIS_DRILL_01.md](ANALYSIS_DRILL_01.md)。开发机离线，未部署线上。
+
+
+## 24. PIPELINE-RELATION-IMPACT-BATCH2：关系字段影响链（2026-10-16）
+
+在 JOIN 关系可视化基础上，按 stable fieldId 提示右表输出字段在后续过滤、公式、条件转换、分组汇总中的直接及派生引用，GROUP 后的不可见原始字段不错误传播。面板只读，不修改 SQL 编译规则及权限，详见 [PIPELINE_RELATION_IMPACT_BATCH2.md](PIPELINE_RELATION_IMPACT_BATCH2.md)。增加 Node / 浏览器定向检查；未部署线上。

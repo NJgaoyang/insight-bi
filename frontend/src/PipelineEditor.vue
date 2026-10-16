@@ -500,6 +500,19 @@ onMounted(load)
         {{relationGraph.outputs.length}} 个右表输出字段；
         {{relationGraph.downstreamSteps}} 个后续步骤直接引用这些字段
        </p>
+       <section v-if="relationGraph.impacts.length" class="pipeline-relation-impact" aria-label="字段下游影响">
+        <strong>右表字段影响链（仅已配置的引用）</strong>
+        <div v-for="item in relationGraph.impacts" :key="item.outputFieldId" class="pipeline-relation-impact-row">
+         <span class="pipeline-relation-impact-field">{{item.outputName}} <small>{{item.outputFieldId}}</small></span>
+         <span v-if="!item.steps.length" class="pipeline-relation-impact-empty">未发现直接或派生字段引用</span>
+         <span v-for="step in item.steps" :key="step.stepId" class="pipeline-relation-impact-step">
+          第{{step.index}}步 · {{step.type==='formula'?'计算列':step.type==='group'?'分组汇总':
+          step.type==='filter'?'数据过滤':step.type==='case'?'条件列':
+          step.type==='cast'?'类型转换':step.type}}
+         </span>
+        </div>
+        <p>此列表仅显示明确字段引用路径，不包含过滤改变行集等隐式影响；保存仍以服务端编译校验为准。</p>
+       </section>
        <p v-if="relationGraph.warning" class="pipeline-relation-warning" role="status">{{relationGraph.warning}}</p>
       </div>
      </div>

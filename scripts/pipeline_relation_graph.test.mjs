@@ -40,3 +40,45 @@ test('invalid key, unacknowledged fanout, UNION mapping and no raw SQL',()=>{
  assert.match(g?.title||'',/保留重复/)
  assert.equal(JSON.stringify(g).includes('SELECT'),false)
 })
+
+test('impact trace follows formula -> aggregate metric -> later filter through stable IDs',()=>{
+ const steps=[
+  {id:'join',type:'join',sourceDatasetId:'refund',joinType:'LEFT',
+   acknowledgeFanout:true,conditions:[{leftFieldId:'city',rightFieldId:'rcity'}],
+   fields:[{sourceFieldId:'refund',fieldId:'joined_refund',name:'退款额'}]},
+  {id:'derive',type:'formula',fieldId:'net',expression:'[amount]-[joined_refund]'},
+  {id:'group',type:'group',dimensions:['city'],
+   measures:[{id:'net_total',fieldId:'net'}]},
+  {id:'post',type:'filter',fieldId:'net_total'},
+  {id:'unrelated',type:'filter',fieldId:'city'}
+ ]
+ const graph=pipelineRelationGraph(primary,others,left,right,steps)
+ assert.deepEqual(graph?.impacts[0].steps.map(x=>x.stepId),['derive','group','post'])
+ assert.equal(graph?.impacts[0].outputFieldId,'joined_refund')
+ assert.equal(graph?.downstreamSteps,1,'legacy direct count stays unchanged')
+})
+test('separate outputs do not inherit unrelated references and literals',()=>{
+ const steps=[
+  {id:'join',type:'join',sourceDatasetId:'refund',joinType:'LEFT',
+   acknowledgeFanout:true,conditions:[{leftFieldId:'city',rightFieldId:'rcity'}],
+   fields:[{sourceFieldId:'refund',fieldId:'refund_col',name:'退款'},
+           {sourceFieldId:'rcity',fieldId:'city_col',name:'退款城市'}]},
+  {id:'derive',type:'formula',fieldId:'calc',expression:"'[city_col]' + [refund_col]"},
+  {id:'filter',type:'filter',fieldId:'calc'}
+ ]
+ const graph=pipelineRelationGraph(primary,others,left,right,steps)
+ assert.deepEqual(graph?.impacts[0].steps.map(x=>x.stepId),['derive','filter'])
+ assert.deepEqual(graph?.impacts[1].steps,[])
+})
+test('GROUP drops row-level IDs not carried into the grouped result',()=>{
+ const steps=[
+  {id:'join',type:'join',sourceDatasetId:'refund',joinType:'LEFT',
+   acknowledgeFanout:true,conditions:[{leftFieldId:'city',rightFieldId:'rcity'}],
+   fields:[{sourceFieldId:'refund',fieldId:'refund_col',name:'退款'}]},
+  {id:'group',type:'group',dimensions:['city'],
+   measures:[{id:'row_count',fieldId:'amount'}]},
+  {id:'invalid_post',type:'filter',fieldId:'refund_col'}
+ ]
+ const graph=pipelineRelationGraph(primary,others,left,right,steps)
+ assert.deepEqual(graph?.impacts[0].steps,[])
+})

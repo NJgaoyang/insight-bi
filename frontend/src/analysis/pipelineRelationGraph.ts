@@ -32,14 +32,49 @@ export type RelationStep={
  fields?:Array<{sourceFieldId:string;fieldId:string;name:string}>
  distinct?:boolean;acknowledgeFanout?:boolean
  fieldId?:string;sourceFieldId?:string;expression?:string;
- dimensions?:string[];measures?:Array<{fieldId:string}>
+ dimensions?:string[];measures?:Array<{id?:string;fieldId:string}>
 }
 export type RelationGraph={
  mode:'JOIN'|'UNION';source:RelationDataset;target:RelationDataset;
  title:string;links:Array<{from:string;to:string;compatible:boolean}>;
  outputs:Array<{name:string;fieldId:string;sourceFieldId:string}>;
- downstreamSteps:number;warning:string
+ downstreamSteps:number;warning:string;
+ impacts:Array<{outputFieldId:string;outputName:string;steps:Array<{index:number;type:string;stepId:string}>}>
 }
+/**
+ * Conservative, bounded dependency tracing (not a SQL optimizer).
+ * Only explicit field references are tracked. GROUP drops unavailable
+ * row-level IDs; derived field IDs inherit their referenced source path.
+ */
+function traceRelationImpacts(steps:readonly RelationStep[],start:number,
+ outputs:readonly {fieldId:string;name:string}[]):RelationGraph['impacts']{
+ return outputs.map(output=>{
+  let reachable=new Set([output.fieldId])
+  const affected:RelationGraph['impacts'][number]['steps']=[]
+  for(let i=start+1;i<steps.length;i++){
+   const step=steps[i]
+   let used:string[]=[]
+   if(step.type==='formula')used=relationFieldReferences(step.expression||'')
+   else if(step.type==='filter')used=step.fieldId?[step.fieldId]:[]
+   else if(step.type==='cast'||step.type==='case')used=step.sourceFieldId?[step.sourceFieldId]:[]
+   else if(step.type==='group')used=[
+    ...(step.dimensions||[]),...(step.measures||[]).map(m=>m.fieldId)]
+   const touched=used.some(id=>reachable.has(id))
+   if(touched)affected.push({index:i+1,type:step.type,stepId:step.id})
+   if(touched&&['formula','case','cast'].includes(step.type)&&step.fieldId)
+    reachable.add(step.fieldId)
+   if(step.type==='group'){
+    const next=new Set<string>()
+    for(const id of step.dimensions||[])if(reachable.has(id))next.add(id)
+    for(const metric of step.measures||[])
+     if(reachable.has(metric.fieldId)&&metric.id)next.add(metric.id)
+    reachable=next
+   }
+  }
+  return {outputFieldId:output.fieldId,outputName:output.name,steps:affected}
+ })
+}
+
 /** Read-only relation preview. No permission claims and no SQL compilation. */
 export function pipelineRelationGraph(
  primary:RelationDataset,sources:readonly RelationDataset[],
@@ -82,6 +117,7 @@ export function pipelineRelationGraph(
   mode:relation.type==='join'?'JOIN':'UNION',source:primary,target,
   title:relation.type==='join'?(relation.joinType||'LEFT')+' 数据关联'
    :(relation.distinct?'去重上下合并':'保留重复的上下合并'),
-  links,outputs,downstreamSteps,warning
+  links,outputs,downstreamSteps,warning,
+  impacts:traceRelationImpacts(steps,index,outputs)
  }
 }

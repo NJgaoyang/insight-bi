@@ -350,3 +350,12 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .pipeline-relation-warning{font-size:12px;color:#9f6320;margin:8px 0 0}
 @media(max-width:760px){.pipeline-relation-nodes{grid-template-columns:1fr;gap:5px}
 .pipeline-relation-arrow{flex-direction:row;justify-content:center;align-items:center;gap:8px}}
+
+.pipeline-relation-impact{margin-top:12px;padding-top:10px;border-top:1px solid #e5ebf3}
+.pipeline-relation-impact>strong{font-size:12px;color:#435570}
+.pipeline-relation-impact-row{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px}
+.pipeline-relation-impact-field{font-size:12px;font-weight:600;color:#35445d;margin-right:6px}
+.pipeline-relation-impact-field small{font-size:10px;font-weight:400;color:#8290a3}
+.pipeline-relation-impact-step{border:1px solid #d5e1f2;border-radius:4px;background:#f1f5fc;padding:3px 6px;font-size:11px;color:#47607f}
+.pipeline-relation-impact-empty{font-size:11px;color:#8290a3}
+.pipeline-relation-impact>p{font-size:11px;color:#74859c;margin:8px 0 0}

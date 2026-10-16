@@ -54,6 +54,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.match(await relation.innerText(),/当前销售/)
   assert.match(await relation.innerText(),/历史销售/)
   assert.equal(await relation.locator('.pipeline-relation-link').count(),1)
+  assert.equal(await relation.locator('.pipeline-relation-impact-row').count(),1)
+  assert.match(await relation.innerText(),/字段下游影响链/)
+  assert.match(await relation.innerText(),/未发现直接或派生字段引用/)
   assert.match(await relation.innerText(),/行数放大/)
   await relation.getByRole('button',{name:'收起关系'}).click()
   assert.equal(await relation.locator('.pipeline-relation-nodes').count(),0)
@@ -67,6 +70,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.equal(await relation.locator('.pipeline-relation-link').count(),2)
   await step.locator('button').filter({hasText:'添加输出字段'}).click()
   assert.equal(await step.locator('button[title="删除右表输出字段"]').count(),2)
+  assert.equal(await relation.locator('.pipeline-relation-impact-row').count(),2)
   await step.locator('.el-checkbox').click()
   assert.equal(await page.locator('.pipeline-save').isDisabled(),false,
    'acknowledging a valid JOIN unlocks save')
