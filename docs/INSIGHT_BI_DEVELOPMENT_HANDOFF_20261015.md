@@ -258,3 +258,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 22. PIPELINE-RELATION-GRAPH-BATCH1 · 现有加工链关系可视化（2026-10-16）
 
 沿用现有一次同连接 JOIN/UNION 的步骤配置，增加只读关系概览：左右数据集、关联键及类型、输出字段、依赖这些字段的下游步骤计数、行数放大风险提示。关系图不是新的 SQL 编译器，编辑、保存及权限继续由原数据加工逻辑/服务端控制。详见 [PIPELINE_RELATION_GRAPH_BATCH1.md](PIPELINE_RELATION_GRAPH_BATCH1.md)，并纳入 pipeline-editor scoped Node、Chromium 和 TypeScript 定向测试。尚未实现任意多表关系语义模型或跨连接 JOIN；开发机离线，未部署线上 18110。
+
+
+## 23. ANALYSIS-DRILL-01：受控视图点选钻取（2026-10-16）
+
+继承旧 jumps，新增显式 drills 开关；同数据集稳定维度才能从来源 Widget 向已配置的目标视图筛选字段传值。运行时值不存档，读者继续受后端发布配置/权限检查约束。具体见 [ANALYSIS_DRILL_01.md](ANALYSIS_DRILL_01.md)。开发机离线，未部署线上。

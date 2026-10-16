@@ -8,6 +8,7 @@ import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
 import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,reorderViewWidgetByKey,resizeViewWidgetByKey,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
 import {viewFilterCandidates,isValidViewFilter,filterForViewWidget,setViewFilter,mappingCandidates,updateViewFilterMapping,secondaryViewFilterCandidates,isValidSecondaryViewFilter,setSecondaryViewFilter,filtersForViewWidget} from './analysis/viewFilter'
+import {invalidDrillLinks,removeInvalidDrillLinks} from './analysis/drillPath'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -68,9 +69,39 @@ async function changeViewFilter(key:string){
  filterDraft.value='';filterApplied.value=''
  secondaryFilterDraft.value='';secondaryFilterApplied.value=''
  delete view.filter2
+ removeInvalidDrillLinks(dashboardViews.value,components.value)
  mark()
  try{await ensureFilterFieldDirectory()}
  catch(e:unknown){ElMessage.warning(e instanceof Error?e.message:'字段目录读取失败，无法配置跨数据集映射')}
+}
+function canEnableDrill(widget:AnalysisWidgetV2):boolean{
+ const view=activeView.value
+ if(!view?.widgetIds.includes(widget.id))return false
+ const target=dashboardViews.value.find(v=>v.id===view.jumps?.[widget.id])
+ if(!target?.filter||!isValidViewFilter(target,components.value))return false
+ const field=target.filter.fieldId,dataset=target.filter.datasetId
+ return widget.datasetId===dataset&&!!widget.analysisV2?.dimensions.some(d=>d.fieldId===field)&&
+  target.widgetIds.some(id=>components.value.some(w=>w.id===id&&
+   w.datasetId===dataset&&w.analysisV2?.dimensions.some(d=>d.fieldId===field)))
+}
+function setDrillEnabled(widgetId:string,enabled:boolean){
+ const view=activeView.value
+ const widget=components.value.find(w=>w.id===widgetId)
+ if(!view||!widget)return
+ view.drills ||= {}
+ if(enabled&&canEnableDrill(widget))view.drills[widgetId]=true
+ else delete view.drills[widgetId]
+ mark()
+}
+function changeJump(widgetId:string,targetId:string){
+ const view=activeView.value
+ if(!view)return
+ view.jumps ||= {}
+ if(targetId)view.jumps[widgetId]=targetId
+ else delete view.jumps[widgetId]
+ // A newly selected target requires a fresh opt-in; no stale drill permission.
+ if(view.drills)delete view.drills[widgetId]
+ mark()
 }
 function applyViewFilter(){
  filterApplied.value=filterDraft.value.trim().slice(0,120)
@@ -94,6 +125,7 @@ function pruneInvalidFilters(){
    }
    if(!isValidViewFilter(view,components.value))delete view.filter
   }
+ removeInvalidDrillLinks(dashboardViews.value,components.value)
 }
 const selectedId=ref('')
 const name=ref('')
@@ -440,7 +472,7 @@ async function load(){
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined,filter2:v.filter2?{...v.filter2}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,drills:v.drills?{...v.drills}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined,filter2:v.filter2?{...v.filter2}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
@@ -600,6 +632,7 @@ async function removeDashboardView(){
  try{
   await ElMessageBox.confirm('删除「'+view.name+'」视图？共享组件不会被删除。','删除仪表板',{type:'warning'})
   dashboardViews.value=dashboardViews.value.filter(v=>v.id!==view.id)
+  removeInvalidDrillLinks(dashboardViews.value,components.value)
   selectedViewId.value=dashboardViews.value[0].id
   mark()
  }catch{}
@@ -637,6 +670,7 @@ async function save():Promise<boolean>{
  if(!report.value)return false
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
  if(dashboardViews.value.some(v=>!isValidViewFilter(v,components.value)||!isValidSecondaryViewFilter(v,components.value))){ElMessage.warning('存在失效的仪表板筛选字段，请先调整');return false}
+ if(invalidDrillLinks(dashboardViews.value,components.value).length){ElMessage.warning('存在失效的组件钻取路径，请先修复');return false}
  try{
   for(const v of dashboardViews.value){
    if(v.filter?.mappings?.length){
@@ -899,11 +933,18 @@ onMounted(load)
         <button title="进入组件分析编辑" @click="selectDashboardWidget(component.id,true)">编辑</button>
         <el-select :model-value="activeView?.jumps?.[component.id]||''" size="small"
          style="width:126px" placeholder="点击后跳转" aria-label="组件跳转目标"
-         @update:model-value="v=>{if(activeView){activeView.jumps ||= {};if(v)activeView.jumps[component.id]=String(v);else delete activeView.jumps[component.id];mark()}}">
+         @update:model-value="v=>changeJump(component.id,String(v))">
          <el-option label="不跳转" value=""/>
          <el-option v-for="target in dashboardViews.filter(v=>v.id!==selectedViewId)"
           :key="target.id" :label="target.name" :value="target.id"/>
         </el-select>
+        <el-checkbox v-if="activeView?.jumps?.[component.id]"
+         :model-value="!!activeView?.drills?.[component.id]"
+         :disabled="!canEnableDrill(component)"
+         :aria-label="'点击'+component.title+'的维度值进行钻取'"
+         @update:model-value="v=>setDrillEnabled(component.id,!!v)">
+         点选钻取
+        </el-checkbox>
         <button title="组件前移" :disabled="index===0" @click="moveDashboardWidget(component.id,-1)">←</button>
         <button title="组件后移" :disabled="index===dashboardWidgets.length-1" @click="moveDashboardWidget(component.id,1)">→</button>
         <button title="切换组件宽度" @click="resizeDashboardWidget(component.id,'columns')">{{viewLayout(activeView,component.id).columns===12?'半宽':'全宽'}}</button>

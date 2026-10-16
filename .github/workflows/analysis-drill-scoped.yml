@@ -1,0 +1,62 @@
+name: Published Drill Scoped
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/finebi-analysis-engine-p0
+    paths:
+      - frontend/src/analysis/drillPath.ts
+      - frontend/src/analysis/dashboardLayout.ts
+      - frontend/src/AnalysisSubject.vue
+      - frontend/src/PublishedReport.vue
+      - scripts/analysis_drill_path.test.mjs
+      - scripts/analysis_drill_browser_smoke.cjs
+      - docs/ANALYSIS_DRILL_01.md
+      - .github/workflows/analysis-drill-scoped.yml
+jobs:
+  drill-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Opt-in drill field/view boundaries
+        run: |
+          node --experimental-strip-types --test scripts/analysis_drill_path.test.mjs
+          node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mjs
+  drill-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Vue TypeScript and Vite
+        working-directory: frontend
+        run: npm run build
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright-core@1.58.2
+          npx --yes playwright@1.58.2 install --with-deps chromium
+      - name: Isolated Vue preview
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 18219 > /tmp/drill-preview.log 2>&1 &
+          for i in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:18219/ >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/drill-preview.log
+          exit 1
+      - name: Reader chart click -> approved target view only
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18219
+        run: node scripts/analysis_drill_browser_smoke.cjs

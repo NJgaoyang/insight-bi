@@ -3,7 +3,7 @@ import type {AnalysisWidgetV2} from '../api'
 /** P1 view-local layout; component query/visual config stays in shared widgets[]. */
 export type WidgetLayout={columns:6|12;height:320|480|640}
 import type {ViewFilterConfig} from './viewFilter'
-export type DashboardView={id:string;name:string;widgetIds:string[];layout?:Record<string,WidgetLayout>;jumps?:Record<string,string>;filter?:ViewFilterConfig;filter2?:ViewFilterConfig}
+export type DashboardView={id:string;name:string;widgetIds:string[];layout?:Record<string,WidgetLayout>;jumps?:Record<string,string>;drills?:Record<string,boolean>;filter?:ViewFilterConfig;filter2?:ViewFilterConfig}
 
 // Old snapshots use the original 380px visual height. New choices are 320/480/640.
 export function viewLayout(view:DashboardView|undefined,id:string){
@@ -25,6 +25,7 @@ export function orderedViewWidgets(view:DashboardView|undefined,widgets:Analysis
 export function removeUnusedLayout(view:DashboardView){
  const selected=new Set(view.widgetIds)
  if(view.jumps)view.jumps=Object.fromEntries(Object.entries(view.jumps).filter(([id])=>selected.has(id)))
+ if(view.drills)view.drills=Object.fromEntries(Object.entries(view.drills).filter(([id,enabled])=>selected.has(id)&&enabled&&!!view.jumps?.[id]))
  if(!view.layout)return
  view.layout=Object.fromEntries(Object.entries(view.layout).filter(([id])=>selected.has(id)))
 }
@@ -56,6 +57,8 @@ export function duplicateDashboardView(view:DashboardView,newId:string,newName:s
    .filter(([id])=>valid.has(id)).map(([id,config])=>[id,{...config}])):undefined,
   jumps:view.jumps?Object.fromEntries(Object.entries(view.jumps)
    .filter(([id,target])=>valid.has(id)&&target!==view.id)):undefined,
+  drills:view.drills?Object.fromEntries(Object.entries(view.drills)
+   .filter(([id,enabled])=>valid.has(id)&&!!view.jumps?.[id]&&enabled)):undefined,
   filter:view.filter?{...view.filter,mappings:view.filter.mappings?.map(mapping=>({...mapping}))}:undefined,
   filter2:view.filter2?{...view.filter2}:undefined
  }

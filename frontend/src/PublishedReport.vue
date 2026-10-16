@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import {computed,onMounted,ref,watch} from 'vue'
+import {computed,onMounted,nextTick,ref,watch} from 'vue'
 import {api,type Dashboard,type Dataset,type AnalysisWidgetV2,type FilterV2} from './api'
 import Designer from './Designer.vue'
 import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import {cardStyle,orderedViewWidgets,type DashboardView} from './analysis/dashboardLayout'
 import {filterForViewWidget,isValidViewFilter,isValidSecondaryViewFilter,filtersForViewWidget} from './analysis/viewFilter'
+import {drillTarget,type DrillSelection} from './analysis/drillPath'
 
 const props=defineProps<{id:string;viewerMode?:boolean}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -49,9 +50,29 @@ const jumpTarget=(id:string)=>{
  const target=activeView.value?.jumps?.[id]
  return target&&dashboardViews.value.some(v=>v.id===target)?target:''
 }
-function navigateWidget(id:string){const target=jumpTarget(id);if(target){linkedSelection.value=null;selectedViewId.value=target}}
+let pendingDrill:{widgetId:string;selection:DrillSelection}|null=null
+async function navigateWidget(id:string,fromChart=false){
+ const target=jumpTarget(id)
+ if(!target)return
+ const source=widgets.value.find(w=>w.id===id)
+ const candidate=fromChart&&source&&pendingDrill?.widgetId===id
+  ?drillTarget(activeView.value,source,pendingDrill.selection,dashboardViews.value,widgets.value):null
+ pendingDrill=null
+ linkedSelection.value=null
+ selectedViewId.value=target
+ await nextTick() // View-change watcher clears the previous view's runtime filters.
+ if(candidate&&selectedViewId.value===candidate.targetViewId){
+  filterDraft.value=candidate.value
+  filterApplied.value=candidate.value
+ }
+}
 function selectDimension(widget:AnalysisWidgetV2,selection:{fieldId:string;value:string|number}|null){
- if(props.viewerMode||!selection||jumpTarget(widget.id))return
+ if(!selection)return
+ if(jumpTarget(widget.id)){
+  pendingDrill={widgetId:widget.id,selection}
+  return
+ }
+ if(props.viewerMode)return
  linkedSelection.value={datasetId:widget.datasetId,fieldId:selection.fieldId,
   value:selection.value,sourceWidgetId:widget.id}
 }
@@ -73,7 +94,7 @@ async function load(){
   widgets.value=Array.isArray(saved.content?.widgets)?saved.content.widgets:[]
   const stored=(saved.content as typeof saved.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined,filter2:v.filter2?{...v.filter2}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,drills:v.drills?{...v.drills}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined,filter2:v.filter2?{...v.filter2}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:widgets.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   if(!props.viewerMode)datasets.value=await api<Dataset[]>('/datasets')
@@ -136,7 +157,7 @@ onMounted(load)
       :viewer-report-id="viewerMode?id:undefined"
       :viewer-view-id="readerFilterView(widget)"
       :viewer-filter-value2="readerSecondValue(widget)"
-      @select-dimension="selection=>selectDimension(widget,selection)" @navigate="navigateWidget(widget.id)"/>
+      @select-dimension="selection=>selectDimension(widget,selection)" @navigate="navigateWidget(widget.id,true)"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
     </div>
    </div>
