@@ -218,3 +218,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 14. 统一分析工作台第二批：键盘布局控制（2026-10-16）
 
 键盘可在现有仪表板画布手柄上执行方向键/Home/End 顺序变更以及 Shift+方向键的有限宽高调整；仅修改当前视图引用和布局，旧 Widget 和旧 V1 Designer 不转换。新增快捷键说明及屏幕阅读器反馈；保留已有的拖动、撤销/重做、保存及发布语义。详细代码及验证门禁见 [UNIFIED_ANALYSIS_WORKSPACE_PHASE2_KEYBOARD.md](UNIFIED_ANALYSIS_WORKSPACE_PHASE2_KEYBOARD.md)。当前远程开发机显示离线，GitHub CI 结果需独立核验，未部署生产环境。
+
+
+## 15. 数据加工编辑增强第一批（2026-10-16）
+
+在已有步骤前后移和后端编译/保存能力上，新增有限安全复制（formula/case/filter）、中间步骤服务端数据预览与最多 30 步编辑撤销/重做。复制 formula/case 时重置输出 stable fieldId 并保留原始输入字段依赖；JOIN/UNION/GROUP 不允许复制。仍走原处理版本与后端校验，未部署线上。验收文档：[PIPELINE_EDITOR_PHASE2_BATCH1.md](PIPELINE_EDITOR_PHASE2_BATCH1.md)。远程开发机当前离线，使用 GitHub 专项 CI 核对本批，不等同于真实数据源验收。

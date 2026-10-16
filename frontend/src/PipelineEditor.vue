@@ -2,6 +2,7 @@
 import {computed,onMounted,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,type FieldV2} from './api'
+import {copyEditablePipelineStep,prefixForPipelinePreview} from './analysis/pipelineEditing'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -43,7 +44,27 @@ const profiling=ref(false)
 const previewRows=ref<Record<string,unknown>[]>([])
 const previewColumns=ref<Column[]>([])
 const truncated=ref(false)
-let savedSteps='[]'
+let savedSteps='[]',lastSteps='[]',previewVersion=0
+const undoHistory=ref<string[]>([]),redoHistory=ref<string[]>([])
+const previewScope=ref('')
+function clearPreview(){
+ previewVersion++
+ joinProfile.value=null
+ sqlPreview.value='';previewRows.value=[];previewColumns.value=[]
+ truncated.value=false;previewScope.value=''
+}
+function restoreStepHistory(from:typeof undoHistory,to:typeof redoHistory){
+ const snapshot=from.value.pop()
+ if(snapshot===undefined)return
+ to.value.push(JSON.stringify(steps.value))
+ if(to.value.length>30)to.value.shift()
+ steps.value=JSON.parse(snapshot) as Step[]
+ lastSteps=snapshot
+ dirty.value=snapshot!==savedSteps
+ clearPreview()
+}
+function undoSteps(){restoreStepHistory(undoHistory,redoHistory)}
+function redoSteps(){restoreStepHistory(redoHistory,undoHistory)}
 
 const selectable=(index:number):Column[]=>{
  let fields:Column[]=baseFields.value.filter(f=>!f.calculated||f.phase==='ROW')
@@ -75,9 +96,15 @@ const selectable=(index:number):Column[]=>{
 }
 const isGroupLimit=computed(()=>steps.value.filter(s=>s.type==='group').length>=2)
 function changed(){
- joinProfile.value=null
- dirty.value=JSON.stringify(steps.value)!==savedSteps
- sqlPreview.value='';previewRows.value=[];previewColumns.value=[]
+ const next=JSON.stringify(steps.value)
+ if(next!==lastSteps){
+  undoHistory.value.push(lastSteps)
+  if(undoHistory.value.length>30)undoHistory.value.shift()
+  redoHistory.value=[]
+  lastSteps=next
+ }
+ dirty.value=next!==savedSteps
+ clearPreview()
 }
 function nextId(prefix:string){return prefix+'_'+crypto.randomUUID().replace(/-/g,'').slice(0,12)}
 function insertFormulaField(step:FormulaStep,id:string){
@@ -246,6 +273,21 @@ function move(index:number,delta:number){
  changed()
 }
 function removeStep(index:number){steps.value.splice(index,1);changed()}
+function duplicateStep(index:number){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ const original=steps.value[index]
+ if(!original)return
+ const copy=copyEditablePipelineStep(original,nextId('s'),nextId('field'))
+ if(!copy){ElMessage.warning('仅支持复制计算列、条件列或过滤步骤');return}
+ if(steps.value.some(step=>step.id===copy.id||
+    ((step.type==='formula'||step.type==='case')&&
+     (copy.type==='formula'||copy.type==='case')&&step.fieldId===copy.fieldId))){
+  ElMessage.warning('无法生成唯一步骤标识');return
+ }
+ steps.value.splice(index+1,0,copy)
+ changed()
+}
+function previewStep(index:number){void preview(index)}
 function request(){return {steps:steps.value,limit:queryLimit.value}}
 async function load(){
  loading.value=true
@@ -266,7 +308,8 @@ async function load(){
   if(savedJoin)await ensureRightFields(savedJoin.sourceDatasetId)
   if(savedUnion)await ensureRightFields(savedUnion.sourceDatasetId)
   revision.value=config.revision;stale.value=config.stale
-  savedSteps=JSON.stringify(steps.value);dirty.value=false
+  savedSteps=JSON.stringify(steps.value);lastSteps=savedSteps;dirty.value=false
+  undoHistory.value=[];redoHistory.value=[];clearPreview()
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'读取步骤失败')}
  finally{loading.value=false}
 }
@@ -288,15 +331,23 @@ async function compile(){
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'步骤编译失败')}
  finally{busy.value=false}
 }
-async function preview(){
+async function preview(upTo?:number){
+ if(busy.value)return
+ let input:Step[]
+ try{input=upTo===undefined?structuredClone(steps.value):prefixForPipelinePreview(steps.value,upTo)}
+ catch{ElMessage.warning('无效的预览位置');return}
+ const sequence=++previewVersion
  busy.value=true
  try{
   const result=await post<{rows:Record<string,unknown>[];columns:Column[];truncated:boolean}>(
-   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/preview',request())
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/preview',{steps:input,limit:queryLimit.value})
+  if(sequence!==previewVersion)return
   previewRows.value=result.rows;previewColumns.value=result.columns
   truncated.value=result.truncated;sqlPreview.value=''
- }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'真实数据预览失败')}
- finally{busy.value=false}
+  previewScope.value=upTo===undefined?'完整加工链':'截至第 '+(upTo+1)+' 步'
+ }catch(e:unknown){
+  if(sequence===previewVersion)ElMessage.error(e instanceof Error?e.message:'真实数据预览失败')
+ }finally{busy.value=false}
 }
 async function save(){
  busy.value=true
@@ -305,7 +356,8 @@ async function save(){
    '/datasets/'+encodeURIComponent(props.id)+'/pipeline',{
     steps:steps.value,revision:revision.value})
   revision.value=result.revision;stale.value=result.stale
-  savedSteps=JSON.stringify(steps.value);dirty.value=false
+  savedSteps=JSON.stringify(steps.value);lastSteps=savedSteps;dirty.value=false
+  undoHistory.value=[];redoHistory.value=[]
   ElMessage.success('加工步骤已保存')
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'保存失败')}
  finally{busy.value=false}
@@ -329,7 +381,9 @@ onMounted(load)
    <span v-if="stale" class="pipeline-warning">数据集 SQL 已变化，请重新校验保存</span>
    <div class="pipeline-actions">
     <button :disabled="busy||loading" @click="compile">SQL 预览</button>
-    <button :disabled="busy||loading" @click="preview">数据预览</button>
+    <button :disabled="busy||loading" @click="preview()">数据预览</button>
+    <button title="撤销加工编辑" :disabled="busy||loading||!undoHistory.length" @click="undoSteps">撤销</button>
+    <button title="重做加工编辑" :disabled="busy||loading||!redoHistory.length" @click="redoSteps">重做</button>
     <button class="pipeline-save" :disabled="busy||loading||!dirty" @click="save">保存步骤</button>
    </div>
   </header>
@@ -355,6 +409,8 @@ onMounted(load)
       <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':step.type==='union'?'上下合并':step.type==='join'?'数据关联':'分组汇总'}}</strong>
       <button title="步骤前移" :disabled="index===0||(index===1&&['union','join'].includes(steps[0]?.type||''))" @click="move(index,-1)">↑</button>
       <button title="步骤后移" :disabled="index===steps.length-1||step.type==='union'||step.type==='join'" @click="move(index,1)">↓</button>
+      <button title="复制步骤" :disabled="busy||steps.length>=12||!['formula','case','filter'].includes(step.type)" @click="duplicateStep(index)">复制</button>
+      <button title="预览至此步骤" :disabled="busy" @click="previewStep(index)">预览到此步</button>
       <button title="删除步骤" @click="removeStep(index)">删除</button>
      </header>
      <div v-if="step.type==='union'" class="pipeline-fields">
@@ -518,7 +574,7 @@ onMounted(load)
     </section>
    </div>
    <aside class="pipeline-result">
-    <div class="pipeline-result-head"><strong>预览结果</strong>
+    <div class="pipeline-result-head"><strong>预览结果 <small v-if="previewScope">· {{previewScope}}</small></strong>
      <el-input-number v-model="queryLimit" :min="1" :max="200" size="small"/>
     </div>
     <pre v-if="sqlPreview" class="pipeline-sql">{{sqlPreview}}</pre>
