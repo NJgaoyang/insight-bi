@@ -12,9 +12,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
    const req=route.request(),url=new URL(req.url()),p=url.pathname,m=req.method()
    if(p==='/api/me')return send(route,{user:'admin',csrf:'csrf'})
    if(p==='/api/datasets'&&m==='GET')return send(route,[
-    {id:'ds1',name:'订单',connection_id:'local'},
-    {id:'ds2',name:'城市',connection_id:'local'},
-    {id:'ds3',name:'其他连接',connection_id:'other'}])
+    {id:'ds1',name:'订单',connection_id:'local',folder_id:null,fields:[]},
+    {id:'ds2',name:'城市',connection_id:'local',folder_id:null,fields:[]},
+    {id:'ds3',name:'其他连接',connection_id:'other',folder_id:null,fields:[]}])
    if(p==='/api/model/relations')return send(route,[])
    if(p==='/api/model/semantic-relations'&&m==='GET')return send(route,rows)
    if(p==='/api/model/semantic-relations'&&m==='POST'){
