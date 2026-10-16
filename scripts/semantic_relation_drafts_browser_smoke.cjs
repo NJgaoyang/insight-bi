@@ -69,7 +69,19 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await pair.locator('.el-select').nth(0).locator('input').press('Enter')
   await pair.locator('.el-select').nth(1).locator('input').fill('地区')
   await pair.locator('.el-select').nth(1).locator('input').press('Enter')
-  await dialog.getByRole('button',{name:'保存草稿'}).click()
+  const saveBtn=dialog.getByRole('button',{name:'保存草稿'})
+  if(!await saveBtn.isEnabled()){
+    console.log('DRAFT FIELDS DEBUG',JSON.stringify({
+      sources:await selects.allTextContents(),
+      pairs:await pair.locator('.el-select').allTextContents(),
+      inputs:await dialog.locator('.el-select input').evaluateAll(nodes=>nodes.map(n=>({
+        value:n.value,role:n.getAttribute('role'),expanded:n.getAttribute('aria-expanded')
+      }))),
+      errors,dialogs:(await dialog.innerText()).slice(0,1400)
+    }))
+    throw new Error('Draft fields not selected: save is disabled')
+  }
+  await saveBtn.click()
   await page.locator('.semantic-draft-item').waitFor()
   assert.match(await page.locator('.semantic-draft-item').innerText(),/草稿/)
   assert.equal(requests.length,1)
