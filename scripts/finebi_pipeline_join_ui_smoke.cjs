@@ -31,6 +31,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
       field('refund','退款额','DECIMAL','refund')])
    if(path==='/api/datasets/ds1/pipeline'&&method==='GET')
     return send({datasetId:'ds1',steps,revision,stale:false})
+   if(path==='/api/datasets/ds1/pipeline/change-impact'&&method==='GET')
+    return send({revision,reports:[],token:'',requiresAcknowledgment:false})
    if(path==='/api/datasets/ds1/pipeline'&&method==='PUT'){
     const body=req.postDataJSON()
     assert.equal(body.revision,revision)

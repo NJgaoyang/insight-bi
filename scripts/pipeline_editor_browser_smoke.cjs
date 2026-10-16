@@ -29,8 +29,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
      {id:'city',name:'城市',sourceColumn:'city',logicalType:'STRING',numeric:false,calculated:false,phase:'ROW'}])
    if(url==='/api/datasets/ds1/pipeline'&&method==='GET')
     return send(route,{datasetId:'ds1',steps,revision,stale:false})
+   if(url==='/api/datasets/ds1/pipeline/change-impact'&&method==='GET')
+    return send(route,{revision,reports:[{dashboardId:'r1',dashboardName:'已发布经营分析',widgetCount:2}],
+     token:'published-risk-2026',requiresAcknowledgment:true})
    if(url==='/api/datasets/ds1/pipeline'&&method==='PUT'){
     const data=req.postDataJSON();assert.equal(data.revision,revision)
+    assert.equal(data.acknowledgePublishedImpact,true)
+    assert.equal(data.impactToken,'published-risk-2026')
     saves.push(data);steps=structuredClone(data.steps);revision++
     return send(route,{revision,stale:false})
    }
@@ -64,6 +69,11 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
   await page.locator('button[title="重做加工编辑"]').click()
   assert.equal(await cards.count(),4)
   await page.locator('.pipeline-save').click()
+  const confirmation=page.getByRole('dialog',{name:'确认已发布模型变更影响'})
+  await confirmation.waitFor()
+  assert.match(await confirmation.innerText(),/已发布经营分析/)
+  assert.match(await confirmation.innerText(),/2 个组件/)
+  await confirmation.getByRole('button',{name:'已了解影响，继续保存'}).click()
   await page.waitForFunction(()=>document.querySelector('.pipeline-save')?.hasAttribute('disabled'))
   assert.equal(saves.length,1)
   assert.equal(saves[0].steps.length,4)

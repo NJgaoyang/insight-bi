@@ -21,6 +21,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18216'
     {id:'city',name:'城市',sourceColumn:'city',logicalType:'STRING',numeric:false,calculated:false,phase:'ROW'}])
    if(path==='/api/datasets/ds1/pipeline'&&method==='GET')
     return send(route,{datasetId:'ds1',steps,revision,stale:false})
+   if(path==='/api/datasets/ds1/pipeline/change-impact'&&method==='GET')
+    return send(route,{revision,reports:[],token:'',requiresAcknowledgment:false})
    if(path==='/api/datasets/ds1/pipeline'&&method==='PUT'){
     const payload=request.postDataJSON()
     assert.equal(payload.revision,revision)

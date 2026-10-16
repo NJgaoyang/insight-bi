@@ -438,17 +438,45 @@ async function preview(upTo?:number){
   if(sequence===previewVersion)ElMessage.error(e instanceof Error?e.message:'真实数据预览失败')
  }finally{busy.value=false}
 }
+type PublishedImpact={dashboardId:string;dashboardName:string;widgetCount:number}
+type ChangeImpact={revision:number;reports:PublishedImpact[];token:string;requiresAcknowledgment:boolean}
 async function save(){
  if(dependencyReport.value.issues.length||joinValidationProblems.value.length){
   ElMessage.warning('加工链存在无效配置，请先修复');return
  }
+ if(busy.value)return
  busy.value=true
+ const draft=JSON.stringify(steps.value)
  try{
+  // A no-op / new pipeline does not require published impact confirmation.
+  const impact=await api<ChangeImpact>(
+   '/datasets/'+encodeURIComponent(props.id)+'/pipeline/change-impact?revision='+revision.value)
+  if(impact.revision!==revision.value)
+   throw new Error('模型版本已变化，请刷新后重新检查影响')
+  if(impact.requiresAcknowledgment){
+   const reports=impact.reports.map(r=>r.dashboardName+'（'+r.widgetCount+' 个组件）')
+   const summary=reports.slice(0,5).join('、')+
+    (reports.length>5?'等 '+reports.length+' 个分析主题':'')
+   try{
+    await ElMessageBox.confirm(
+     '保存将升级加工版本，导致以下已发布组件的原版本绑定失效：'+summary+
+     '。确认后需检查并重新发布受影响的分析主题。',
+     '确认已发布模型变更影响',{
+      type:'warning',confirmButtonText:'已了解影响，继续保存',cancelButtonText:'取消'
+     })
+   }catch{return}
+  }
+  if(draft!==JSON.stringify(steps.value))
+   throw new Error('加工步骤已变化，请重新执行影响检查')
   const result=await put<{revision:number;stale:boolean}>(
    '/datasets/'+encodeURIComponent(props.id)+'/pipeline',{
-    steps:steps.value,revision:revision.value})
+    steps:JSON.parse(draft) as Step[],revision:revision.value,
+    ...(impact.requiresAcknowledgment?{
+     acknowledgePublishedImpact:true,impactToken:impact.token
+    }:{})
+   })
   revision.value=result.revision;stale.value=result.stale
-  savedSteps=JSON.stringify(steps.value);lastSteps=savedSteps;dirty.value=false
+  savedSteps=draft;lastSteps=savedSteps;dirty.value=false
   undoHistory.value=[];redoHistory.value=[]
   ElMessage.success('加工步骤已保存')
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'保存失败')}

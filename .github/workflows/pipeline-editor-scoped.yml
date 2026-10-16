@@ -18,6 +18,9 @@ on:
       - scripts/pipeline_join_cardinality.test.mjs
       - docs/PIPELINE_JOIN_CARDINALITY_BATCH3.md
       - backend/src/main/java/com/insightbi/analysis/AnalysisPipelineApi.java
+      - backend/src/main/java/com/insightbi/analysis/PipelineChangeImpact.java
+      - backend/src/test/java/com/insightbi/analysis/PipelineChangeImpactTest.java
+      - docs/PIPELINE_PUBLISHED_IMPACT_GUARD_01.md
       - backend/src/test/java/com/insightbi/analysis/AnalysisPipelineJoinTest.java
       - scripts/pipeline_join_preflight.test.mjs
       - scripts/finebi_pipeline_join_ui_smoke.cjs
@@ -89,4 +92,4 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Real H2 type conversion and existing pipeline compiler checks
         working-directory: backend
-        run: mvn -B -q -Dtest=AnalysisPipelineJoinTest,AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test
+        run: mvn -B -q -Dtest=PipelineChangeImpactTest,AnalysisPipelineApiTest,AnalysisPipelineJoinTest,AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test

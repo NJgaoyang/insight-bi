@@ -47,6 +47,19 @@ public class AnalysisPipelineApi {
       "stale",!sourceHash(id,ds,steps).equals(row.get("source_sql_hash")));
   }
 
+  /** Inspect current published consumers before changing a saved pipeline revision. */
+  @GetMapping("/datasets/{id}/pipeline/change-impact")
+  public PipelineChangeImpact.Snapshot changeImpact(@PathVariable String id,
+                                                     @RequestParam int revision){
+    store.dataset(id);
+    var rows=db.queryForList(
+      "SELECT revision FROM insight_dataset_pipeline WHERE dataset_id=?",id);
+    int actual=rows.isEmpty()?0:((Number)rows.get(0).get("revision")).intValue();
+    if(revision!=actual)
+      throw new IllegalStateException("加工步骤版本已变化，请刷新后重新检查影响");
+    return PipelineChangeImpact.inspect(store,db,id,revision);
+  }
+
   @PutMapping("/datasets/{id}/pipeline")
   @Transactional
   public Map<String,Object> save(@PathVariable String id,@RequestBody Map<String,Object> body){
@@ -63,6 +76,14 @@ public class AnalysisPipelineApi {
     String config=store.json(Map.of("steps",steps));
     if(config.length()>50_000)throw new IllegalArgumentException("加工配置超过大小限制");
     String hash=sourceHash(id,ds,steps);
+    // The server is authoritative: clients cannot bypass the warning by
+    // directly calling PUT without a fresh, exact published snapshot token.
+    var impact=PipelineChangeImpact.inspect(store,db,id,revision);
+    if(impact.requiresAcknowledgment()&&
+       (!Boolean.TRUE.equals(body.get("acknowledgePublishedImpact"))||
+        !impact.token().equals(body.get("impactToken"))))
+      throw new IllegalStateException(
+        "当前加工版本仍被已发布分析主题引用，需先确认模型变更影响");
     if(revision==0){
       if(!db.queryForList("SELECT dataset_id FROM insight_dataset_pipeline WHERE dataset_id=?",id).isEmpty())
         throw new IllegalStateException("加工步骤已被其他编辑者保存，请刷新后重试");

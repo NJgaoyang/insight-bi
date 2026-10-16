@@ -283,3 +283,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 27. P1-MODEL-RELATIONS-IMPACT-02：模型版本依赖影响（2026-10-16）
 
 关系目录新增「影响分析」只读查看已保存加工结果在哪些分析主题草稿与发布快照中被 V2 组件显式绑定，并对比 `pipelineRevision` 与当前加工版本，显示匹配与过期组件数量。服务端仅查现有元数据表，不读取源业务表，不包含任意跨报表字段传递血缘，详见 [P1_MODEL_RELATIONS_IMPACT_02.md](P1_MODEL_RELATIONS_IMPACT_02.md)。定向 Java、Vue、Chromium 测试覆盖，不覆盖/重启正在运行的 18130 预览环境。
+
+
+## 28. PIPELINE-PUBLISHED-IMPACT-GUARD-01：加工保存前确认已发布绑定风险（2026-10-16）
+
+在既有 `GET/PUT /datasets/{id}/pipeline` 之外新增只读 `GET /datasets/{id}/pipeline/change-impact?revision=N`；只对已发布快照中直接绑定当前加工修订的 V2 组件要求显式风险确认。服务端保存时再次计算受影响报表快照及修订版本指纹，拒绝绕过弹窗、伪造确认、确认后发布内容变更，保持旧 API 版本 CAS、SQL 安全编译与 JOIN 风险确认；无受影响发布组件时原行为不变。测试和已知风险见 [PIPELINE_PUBLISHED_IMPACT_GUARD_01.md](PIPELINE_PUBLISHED_IMPACT_GUARD_01.md)。不自动部署 18130/18110，不宣称完整语义模型审批已实现。
