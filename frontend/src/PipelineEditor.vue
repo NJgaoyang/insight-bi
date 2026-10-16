@@ -418,7 +418,7 @@ onMounted(load)
     <button :disabled="busy||loading" @click="preview()">数据预览</button>
     <button title="撤销加工编辑" :disabled="busy||loading||!undoHistory.length" @click="undoSteps">撤销</button>
     <button title="重做加工编辑" :disabled="busy||loading||!redoHistory.length" @click="redoSteps">重做</button>
-    <button class="pipeline-save" :disabled="busy||loading||!dirty||joinValidationProblems.length" @click="save">保存步骤</button>
+    <button class="pipeline-save" :disabled="busy||loading||!dirty||joinValidationProblems.length>0" @click="save">保存步骤</button>
    </div>
   </header>
   <div v-if="loading" class="pipeline-empty">正在读取加工配置…</div>
