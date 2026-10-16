@@ -17,6 +17,8 @@ on:
       - docs/P1_CROSS_DATASET_MAPPING_01.md
       - scripts/analysis_view_filter.test.mjs
       - scripts/analysis_view_filter_browser_smoke.cjs
+      - scripts/analysis_view_filter_multi_browser_smoke.cjs
+      - docs/ANALYSIS_VIEW_FILTER_02.md
       - docs/ANALYSIS_VIEW_FILTER_01.md
       - .github/workflows/analysis-view-filter-scoped.yml
 jobs:
@@ -72,3 +74,7 @@ jobs:
         env:
           P0_PREVIEW_URL: http://127.0.0.1:18219
         run: node scripts/analysis_view_filter_browser_smoke.cjs
+      - name: Chromium two-dimension AND, save, publish and reader
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18219
+        run: node scripts/analysis_view_filter_multi_browser_smoke.cjs

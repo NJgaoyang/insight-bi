@@ -5,7 +5,7 @@ import Designer from './Designer.vue'
 import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import {cardStyle,orderedViewWidgets,type DashboardView} from './analysis/dashboardLayout'
-import {filterForViewWidget,isValidViewFilter} from './analysis/viewFilter'
+import {filterForViewWidget,isValidViewFilter,isValidSecondaryViewFilter,filtersForViewWidget} from './analysis/viewFilter'
 
 const props=defineProps<{id:string;viewerMode?:boolean}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -17,22 +17,33 @@ const datasets=ref<Dataset[]>([])
 const dashboardViews=ref<DashboardView[]>([])
 const selectedViewId=ref('')
 const filterDraft=ref(''),filterApplied=ref('')
+const filterDraft2=ref(''),filterApplied2=ref('')
 const linkedSelection=ref<{datasetId:string;fieldId:string;value:string|number;sourceWidgetId:string}|null>(null)
 const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId.value))
 const visibleWidgets=computed(()=>orderedViewWidgets(activeView.value,widgets.value))
 function applyViewFilter(){
  filterApplied.value=filterDraft.value.trim().slice(0,120)
+ filterApplied2.value=filterDraft2.value.trim().slice(0,120)
  linkedSelection.value=null
 }
-function clearViewFilter(){filterDraft.value='';filterApplied.value=''}
+function clearViewFilter(){filterDraft.value='';filterApplied.value='';filterDraft2.value='';filterApplied2.value=''}
 watch(selectedViewId,()=>{clearViewFilter();linkedSelection.value=null})
+function resolvedFilters(widget:AnalysisWidgetV2):FilterV2[]{
+ const pinned=filtersForViewWidget(activeView.value,widget,filterApplied.value,filterApplied2.value)
+ return pinned.length?pinned:(props.viewerMode?[]:linkedFilterFor(widget)?[linkedFilterFor(widget)!]:[])
+}
 function resolvedFilter(widget:AnalysisWidgetV2):FilterV2|null{
- const viewFilter=filterForViewWidget(activeView.value,widget,filterApplied.value)
- return viewFilter||(props.viewerMode?null:linkedFilterFor(widget))
+ return filterForViewWidget(activeView.value,widget,filterApplied.value)
+   ||(props.viewerMode?null:linkedFilterFor(widget))
+}
+function readerSecondValue(widget:AnalysisWidgetV2):string|undefined{
+ const f=activeView.value?.filter2
+ return f&&filterApplied2.value&&widget.datasetId===f.datasetId&&
+  widget.analysisV2?.dimensions.some(d=>d.fieldId===f.fieldId)?filterApplied2.value:undefined
 }
 function readerFilterView(widget:AnalysisWidgetV2):string|undefined{
- return props.viewerMode&&filterForViewWidget(activeView.value,widget,filterApplied.value)
-  ?activeView.value?.id:undefined
+ return props.viewerMode&&(filterForViewWidget(activeView.value,widget,filterApplied.value)
+   ||readerSecondValue(widget))?activeView.value?.id:undefined
 }
 const jumpTarget=(id:string)=>{
  const target=activeView.value?.jumps?.[id]
@@ -62,7 +73,7 @@ async function load(){
   widgets.value=Array.isArray(saved.content?.widgets)?saved.content.widgets:[]
   const stored=(saved.content as typeof saved.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined,filter2:v.filter2?{...v.filter2}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:widgets.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   if(!props.viewerMode)datasets.value=await api<Dataset[]>('/datasets')
@@ -94,6 +105,11 @@ onMounted(load)
     <label>{{activeView.filter.label||activeView.filter.fieldId}}</label>
     <el-input v-model="filterDraft" size="small" clearable maxlength="120"
      aria-label="已发布视图筛选值" placeholder="输入值后应用" @keyup.enter="applyViewFilter"/>
+    <template v-if="activeView?.filter2&&isValidSecondaryViewFilter(activeView,widgets)">
+     <label>{{activeView.filter2.label||activeView.filter2.fieldId}}</label>
+     <el-input v-model="filterDraft2" size="small" clearable maxlength="120"
+      aria-label="第二已发布视图筛选值" placeholder="第二条件（AND）" @keyup.enter="applyViewFilter"/>
+    </template>
     <button type="button" @click="applyViewFilter">应用筛选</button>
     <button type="button" @click="clearViewFilter">清除筛选</button>
     <span v-if="filterApplied" class="analysis-filter-value">当前：{{filterApplied}}</span>
@@ -116,8 +132,10 @@ onMounted(load)
      </div>
      <AnalysisV2Chart v-if="widget.analysisV2" :widget="widget" :readonly="true"
       :navigable="!!jumpTarget(widget.id)" :linked-filter="resolvedFilter(widget)"
+      :linked-filters="resolvedFilters(widget)"
       :viewer-report-id="viewerMode?id:undefined"
       :viewer-view-id="readerFilterView(widget)"
+      :viewer-filter-value2="readerSecondValue(widget)"
       @select-dimension="selection=>selectDimension(widget,selection)" @navigate="navigateWidget(widget.id)"/>
      <ChartWidget v-else :widget="widget" :datasets="datasets" :readonly="true"/>
     </div>

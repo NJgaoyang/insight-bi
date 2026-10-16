@@ -35,22 +35,23 @@ class ReaderViewFilterTest {
    Map.of("username","filteruser","displayName","图表读者","role","VIEWER")).get("id");
   governance.setPassword(userId,Map.of("password","reader-filter-password-2026"));
   governance.setActivation(userId,Map.of("enabled",true));
-  jdbc.execute("CREATE TABLE sales(city VARCHAR(80),revenue DECIMAL(12,2))");
+  jdbc.execute("CREATE TABLE sales(city VARCHAR(80),region VARCHAR(80),revenue DECIMAL(12,2))");
   jdbc.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json) VALUES(?,?,?,?,?)",
    "sales-source","收入数据","test-connection","SELECT city,revenue FROM sales",
    store.json(List.of(Map.of("name","city","type","VARCHAR"),
-    Map.of("name","revenue","type","DECIMAL"))));
+    Map.of("name","region","type","VARCHAR"),Map.of("name","revenue","type","DECIMAL"))));
   var fields=new FieldCatalog(store,jdbc).fields("sales-source");
   String city=fields.stream().filter(f->"city".equals(f.sourceColumn())).findFirst().orElseThrow().id();
   String revenue=fields.stream().filter(f->"revenue".equals(f.sourceColumn())).findFirst().orElseThrow().id();
-  var binding=Map.of("dimensions",List.of(Map.of("fieldId",city)),
+  String region=fields.stream().filter(f->"region".equals(f.sourceColumn())).findFirst().orElseThrow().id();
+  var binding=Map.of("dimensions",List.of(Map.of("fieldId",city),Map.of("fieldId",region)),
    "measures",List.of(Map.of("id","total","fieldId",revenue,"aggregate","SUM")),
    "filters",Map.of("pre",List.of(),"post",List.of()),"sort",List.of(),"limit",100);
   var widget1=Map.of("id","w1","title","销售额","datasetId","sales-source","type","bar","analysisV2",binding);
   var widget2=Map.of("id","w2","title","对照指标","datasetId","sales-source","type","metric","analysisV2",binding);
   var filterConfig=Map.of("datasetId","sales-source","fieldId",city,"label","城市");
   var view1=Map.of("id","v1","name","经营","widgetIds",List.of("w1"),
-   "filter",filterConfig);
+   "filter",filterConfig,"filter2",Map.of("datasetId","sales-source","fieldId",region,"label","地区"));
   var view2=Map.of("id","v2","name","其他","widgetIds",List.of("w2"));
   String dashboard=(String)admin.create(Map.of("name","筛选报表","mode","grid","kind","analysis")).get("id");
   jdbc.update("UPDATE insight_dashboard SET status='published',published_json=? WHERE id=?",
@@ -75,6 +76,27 @@ class ReaderViewFilterTest {
    .compile("SELECT city,revenue FROM sales",analysis.received);
   assertFalse(compiled.sql().contains("OR 1=1"));
   assertTrue(compiled.params().contains("北京' OR 1=1"));
+  // Two independent dimensions combine as AND with mandatory reader policies.
+  reader.query(dashboard,"w1",Map.of("viewId","v1",
+   "filterValue","上海","filterValue2","华东"),session);
+  var both=(List<?>)((Map<?,?>)analysis.received.get("filters")).get("pre");
+  assertEquals(3,both.size());
+  assertEquals(Map.of("fieldId",region,"op","eq","value","华东"),both.get(1));
+  assertEquals(Map.of("fieldId",city,"op","eq","value","北京"),both.get(2));
+  // Secondary can be applied alone, and the old empty request still works.
+  reader.query(dashboard,"w1",Map.of("viewId","v1","filterValue2","华东"),session);
+  var secondOnly=(List<?>)((Map<?,?>)analysis.received.get("filters")).get("pre");
+  assertEquals(2,secondOnly.size());
+  assertEquals(Map.of("fieldId",region,"op","eq","value","华东"),secondOnly.get(0));
+  assertThrows(IllegalArgumentException.class,()->
+   reader.query(dashboard,"w2",Map.of("viewId","v2","filterValue2","华东"),session));
+  assertThrows(IllegalArgumentException.class,()->
+   reader.query(dashboard,"w1",Map.of("viewId","v1","filterValue2",""),session));
+  assertThrows(IllegalArgumentException.class,()->
+   reader.query(dashboard,"w1",Map.of("viewId","v1","filterValue2","x".repeat(121)),session));
+  assertThrows(IllegalArgumentException.class,()->
+   reader.query(dashboard,"w1",Map.of("viewId","v1",
+    "filterValue","北京","filterValue2","华东","sql","SELECT *"),session));
 
   assertThrows(IllegalArgumentException.class,()->
    reader.query(dashboard,"w1",Map.of("viewId","v2","filterValue","北京"),session));

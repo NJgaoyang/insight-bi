@@ -7,7 +7,7 @@ import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
 import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,reorderViewWidgetByKey,resizeViewWidgetByKey,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
-import {viewFilterCandidates,isValidViewFilter,filterForViewWidget,setViewFilter,mappingCandidates,updateViewFilterMapping} from './analysis/viewFilter'
+import {viewFilterCandidates,isValidViewFilter,filterForViewWidget,setViewFilter,mappingCandidates,updateViewFilterMapping,secondaryViewFilterCandidates,isValidSecondaryViewFilter,setSecondaryViewFilter,filtersForViewWidget} from './analysis/viewFilter'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -20,6 +20,17 @@ const activeView=computed(()=>dashboardViews.value.find(v=>v.id===selectedViewId
 const dashboardWidgets=computed(()=>orderedViewWidgets(activeView.value,components.value))
 const viewFilterOptions=computed(()=>viewFilterCandidates(activeView.value,components.value))
 const filterDraft=ref(''),filterApplied=ref('')
+const secondaryFilterDraft=ref(''),secondaryFilterApplied=ref('')
+const secondaryFilterOptions=computed(()=>secondaryViewFilterCandidates(activeView.value,components.value))
+const secondFilterKey=computed(()=>activeView.value?.filter2
+ ?JSON.stringify([activeView.value.filter2.datasetId,activeView.value.filter2.fieldId]):'')
+function changeSecondaryFilter(key:string){
+ const view=activeView.value
+ if(!view)return
+ setSecondaryViewFilter(view,secondaryFilterOptions.value.find(x=>x.key===key)||null)
+ secondaryFilterDraft.value='';secondaryFilterApplied.value=''
+ mark()
+}
 const filterFieldDirectory=ref<Record<string,FieldV2[]>>({})
 async function ensureFilterFieldDirectory(){
  const view=activeView.value
@@ -55,15 +66,21 @@ async function changeViewFilter(key:string){
  if(!view)return
  setViewFilter(view,viewFilterOptions.value.find(x=>x.key===key)||null)
  filterDraft.value='';filterApplied.value=''
+ secondaryFilterDraft.value='';secondaryFilterApplied.value=''
+ delete view.filter2
  mark()
  try{await ensureFilterFieldDirectory()}
  catch(e:unknown){ElMessage.warning(e instanceof Error?e.message:'字段目录读取失败，无法配置跨数据集映射')}
 }
 function applyViewFilter(){
  filterApplied.value=filterDraft.value.trim().slice(0,120)
+ secondaryFilterApplied.value=secondaryFilterDraft.value.trim().slice(0,120)
 }
-function resetViewFilter(){filterDraft.value='';filterApplied.value=''}
+function resetViewFilter(){filterDraft.value='';filterApplied.value='';secondaryFilterDraft.value='';secondaryFilterApplied.value=''}
 function pruneInvalidFilters(){
+ for(const view of dashboardViews.value){
+  if(!isValidSecondaryViewFilter(view,components.value))delete view.filter2
+ }
  for(const view of dashboardViews.value)
   if(!isValidViewFilter(view,components.value)){
    if(view.filter?.mappings?.length){
@@ -423,7 +440,7 @@ async function load(){
   components.value=Array.isArray(item.content?.widgets)?item.content.widgets.map(w=>({...w,style:w.style||{},columns:w.columns||[]})):[]
   const stored=(item.content as typeof item.content & {dashboards?:DashboardView[]}).dashboards
   dashboardViews.value=Array.isArray(stored)&&stored.length
-   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined}))
+   ?stored.map(v=>({id:v.id,name:v.name,widgetIds:[...v.widgetIds],layout:v.layout?{...v.layout}:undefined,jumps:v.jumps?{...v.jumps}:undefined,filter:v.filter?{...v.filter,mappings:v.filter.mappings?.map(mapping=>({...mapping}))}:undefined,filter2:v.filter2?{...v.filter2}:undefined}))
    :[{id:'overview',name:'仪表板',widgetIds:components.value.map(w=>w.id)}]
   selectedViewId.value=dashboardViews.value[0]?.id??''
   selectedId.value=components.value[0]?.id??''
@@ -619,7 +636,7 @@ function resizeDashboardWidget(widgetId:string,kind:'columns'|'height'){
 async function save():Promise<boolean>{
  if(!report.value)return false
  if(!name.value.trim()){ElMessage.warning('请输入分析主题名称');return false}
- if(dashboardViews.value.some(v=>!isValidViewFilter(v,components.value))){ElMessage.warning('存在失效的仪表板筛选字段，请先调整');return false}
+ if(dashboardViews.value.some(v=>!isValidViewFilter(v,components.value)||!isValidSecondaryViewFilter(v,components.value))){ElMessage.warning('存在失效的仪表板筛选字段，请先调整');return false}
  try{
   for(const v of dashboardViews.value){
    if(v.filter?.mappings?.length){
@@ -845,6 +862,16 @@ onMounted(load)
        </div>
        <el-input v-model="filterDraft" size="small" clearable maxlength="120"
         aria-label="视图筛选值" placeholder="输入值后点击应用" @keyup.enter="applyViewFilter"/>
+       <el-select :model-value="secondFilterKey" size="small" clearable filterable
+        aria-label="配置第二筛选字段" placeholder="第二筛选字段（可选）"
+        @update:model-value="v=>changeSecondaryFilter(String(v))">
+        <el-option label="不使用第二筛选" value=""/>
+        <el-option v-for="choice in secondaryFilterOptions" :key="choice.key"
+         :value="choice.key" :label="choice.label"/>
+       </el-select>
+       <el-input v-if="activeView.filter2" v-model="secondaryFilterDraft" size="small"
+        clearable maxlength="120" aria-label="第二视图筛选值" placeholder="第二条件（AND）"
+        @keyup.enter="applyViewFilter"/>
        <button type="button" @click="applyViewFilter">应用</button>
        <button type="button" @click="resetViewFilter">清除</button>
        <span v-if="filterApplied" class="analysis-filter-value">已应用：{{filterApplied}}</span>
@@ -883,7 +910,8 @@ onMounted(load)
         <button title="切换组件高度" @click="resizeDashboardWidget(component.id,'height')">高度</button>
        </div>
        <AnalysisV2Chart v-if="component.analysisV2" :widget="component" :readonly="true"
-        :linked-filter="filterForViewWidget(activeView,component,filterApplied)"/>
+        :linked-filter="filtersForViewWidget(activeView,component,filterApplied,secondaryFilterApplied)[0]||null"
+        :linked-filters="filtersForViewWidget(activeView,component,filterApplied,secondaryFilterApplied)"/>
        <ChartWidget v-else :widget="component" :datasets="datasets" :readonly="true"/>
       </div>
      </div>

@@ -5,7 +5,7 @@ import {analysisCsv} from './analysis/exportCsv'
 import {buildPivot,pivotCell,pivotRowTotal,pivotColumnTotal,pivotGrandTotal,pivotParentTotal,pivotParentCell,formatPivotTotal,type PivotAxis} from './analysis/pivotTable'
 import {api,type AnalysisWidgetV2,type QueryV2Result,type FilterV2} from './api'
 
-const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null;viewerReportId?:string;viewerViewId?:string}>()
+const props=defineProps<{widget:AnalysisWidgetV2,readonly?:boolean,navigable?:boolean,linkedFilter?:FilterV2|null;linkedFilters?:FilterV2[];viewerReportId?:string;viewerViewId?:string;viewerFilterValue2?:string}>()
 const emit=defineEmits<{(e:'navigate'):void;(e:'selectDimension',selection:{fieldId:string;value:string|number}|null):void;(e:'tableColumnsChange',hiddenIds:string[]):void}>()
 const element=ref<HTMLElement|null>(null)
 const loading=ref(false),error=ref(''),rows=ref<Record<string,unknown>[]>([])
@@ -109,12 +109,18 @@ async function load(){
   const path=props.viewerReportId
    ?'/reader/dashboards/'+encodeURIComponent(props.viewerReportId)+'/widgets/'+encodeURIComponent(props.widget.id)+'/query'
    :'/analysis/v2/query'
+  const readerPrimary=props.linkedFilter?.op==='eq'&&typeof props.linkedFilter.value==='string'
+     ?props.linkedFilter.value:undefined
+  const readerSecondary=props.viewerFilterValue2&&props.viewerFilterValue2.trim()
+     ?props.viewerFilterValue2:undefined
   const request=props.viewerReportId
-   ?(props.viewerViewId&&props.linkedFilter?.op==='eq'&&typeof props.linkedFilter.value==='string'
-     ?{viewId:props.viewerViewId,filterValue:props.linkedFilter.value}:{})
+   ?(props.viewerViewId&&(readerPrimary||readerSecondary)
+     ?{viewId:props.viewerViewId,...(readerPrimary?{filterValue:readerPrimary}:{}),
+        ...(readerSecondary?{filterValue2:readerSecondary}:{})}:{})
    :{datasetId:props.widget.datasetId,...config,
    ...(props.widget.type==='pivot'?{pivot:{...config.pivot,showTotals:config.pivot?.showTotals!==false}}:{}),
-   filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilter?[props.linkedFilter]:[])],post:config.filters?.post||[]}}
+   filters:{pre:[...(config.filters?.pre||[]),...(props.linkedFilters??(props.linkedFilter?[props.linkedFilter]:[]))],
+     post:config.filters?.post||[]}}
   const response=await api<QueryV2Result>(path,{method:'POST',body:JSON.stringify(request),signal:controller.signal})
   if(gen!==generation)return
   result.value=response;rows.value=response.rows;pivotPage.value=1
@@ -180,7 +186,7 @@ const queryKey=computed(()=>{
    usePipeline:b.usePipeline??false,pipelineRevision:b.pipelineRevision,
    dimensions:b.dimensions,
    measures:b.measures.map(m=>({id:m.id,fieldId:m.fieldId,aggregate:m.aggregate,distinct:m.distinct,alias:m.alias})),
-   isPivot:props.widget.type==='pivot',filters:b.filters,linkedFilter:props.linkedFilter,viewerViewId:props.viewerViewId,rank:b.rank,share:b.share,running:b.running,periodCompare:b.periodCompare,sort:b.sort,limit:b.limit
+   isPivot:props.widget.type==='pivot',filters:b.filters,linkedFilter:props.linkedFilter,linkedFilters:props.linkedFilters,viewerViewId:props.viewerViewId,viewerFilterValue2:props.viewerFilterValue2,rank:b.rank,share:b.share,running:b.running,periodCompare:b.periodCompare,sort:b.sort,limit:b.limit
  }:null])
 })
 watch(queryKey,load,{immediate:true})

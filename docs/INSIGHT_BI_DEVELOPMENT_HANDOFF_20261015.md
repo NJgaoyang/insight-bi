@@ -248,3 +248,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 20. P1-CROSS-DATASET-MAPPING-01：同连接跨数据集显式映射（2026-10-16）
 
 统一仪表板视图的筛选器现可逐个目标 Widget 配置另一数据集的显式 stable fieldId 映射，仅允许同一连接且服务端字段类型完全相同的物理维度，不再仅限同一数据集。前端保存映射但不保存运行时值；读者仅传 `viewId/filterValue`，服务端结合已发布配置重新校验目标 Widget/来源 Widget 的维度、连接、物理字段类型并叠加强制行权限。无映射、类型不匹配、跨连接均拒绝；旧同源筛选继续兼容。新增 H2、Node 与 Chromium 定向验收，详见 [P1_CROSS_DATASET_MAPPING_01.md](P1_CROSS_DATASET_MAPPING_01.md)。不代表实现跨数据集 SQL JOIN、完整语义模型或多字段钻取；开发机离线、未部署线上 18110。
+
+
+## 21. ANALYSIS-VIEW-FILTER-02：受控双条件 AND 筛选（2026-10-16）
+
+在原视图 filter 主字段与跨数据集显式映射的基础上，新增可选 filter2 同一数据集的不同维度，运行时值互不干扰，并在 Widget 同时绑定相应维度时作为第二个 AND 条件叠加。读者 API 保持旧的空请求和单值协议，按发布快照核验后才可使用 `filterValue2`（也支持只有第二条件的视图查询），禁止任意 SQL/字段和超范围输入；行级强制过滤仍附加。详见 [ANALYSIS_VIEW_FILTER_02.md](ANALYSIS_VIEW_FILTER_02.md)。本批不提供任意多条件/OR 或第二字段跨数据集映射，开发机仍离线，未部署线上 18110。

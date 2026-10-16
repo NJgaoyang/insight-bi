@@ -129,12 +129,18 @@ class ReaderApi {
     // measures, arbitrary filters or query budgets. The only optional runtime
     // input is a value for a filter explicitly published on the selected view.
     boolean hasViewFilter=!userParameters.isEmpty();
-    if(hasViewFilter&&(userParameters.size()!=2||
-       !userParameters.keySet().equals(Set.of("viewId","filterValue"))||
-       !(userParameters.get("viewId") instanceof String viewId)||viewId.isBlank()||viewId.length()>128||
-       !(userParameters.get("filterValue") instanceof String value)||value.isBlank()||
-       value.length()>120||value.chars().anyMatch(Character::isISOControl)))
+    boolean hasFirst=userParameters.containsKey("filterValue");
+    boolean hasSecond=userParameters.containsKey("filterValue2");
+    if(hasViewFilter&&(!userParameters.containsKey("viewId")||(!hasFirst&&!hasSecond)||
+       userParameters.size()>3||!Set.of("viewId","filterValue","filterValue2").containsAll(userParameters.keySet())||
+       !(userParameters.get("viewId") instanceof String viewId)||viewId.isBlank()||viewId.length()>128))
       throw new IllegalArgumentException("仅允许提交已发布视图的筛选值");
+    for(String key:List.of("filterValue","filterValue2")){
+      if(!userParameters.containsKey(key))continue;
+      if(!(userParameters.get(key) instanceof String value)||value.isBlank()||
+         value.length()>120||value.chars().anyMatch(Character::isISOControl))
+        throw new IllegalArgumentException("筛选值无效");
+    }
     Map<String,Object> row=published(id,(String)session.getAttribute("readerId"));
     Map<String,Object> content=store.map(String.valueOf(row.get("published_json")));
     if(!columnGuard.allowed((String)session.getAttribute("readerId"),content))
@@ -161,7 +167,7 @@ class ReaderApi {
     int limit=config.get("limit") instanceof Number n?n.intValue():100;
     safe.put("limit",Math.min(Math.max(limit,1),200));
     safe.put("datasetId",datasetId);
-    Map<String,Object> publishedViewFilter=null;
+    Map<String,Object> publishedViewFilter=null,publishedViewFilter2=null;
     if(hasViewFilter){
       String viewId=(String)userParameters.get("viewId");
       Object rawViews=content.get("dashboards");
@@ -174,8 +180,10 @@ class ReaderApi {
         }
       }
       if(matchingView==null||
-         !(matchingView.get("widgetIds") instanceof List<?> ids)||!ids.contains(widgetId)||
-         !(matchingView.get("filter") instanceof Map<?,?> allowedFilter)||
+         !(matchingView.get("widgetIds") instanceof List<?> ids)||!ids.contains(widgetId))
+        throw new IllegalArgumentException("当前组件不在已发布视图中");
+      if(hasFirst){
+      if(!(matchingView.get("filter") instanceof Map<?,?> allowedFilter)||
          !(allowedFilter.get("datasetId") instanceof String sourceDataset)||
          !(allowedFilter.get("fieldId") instanceof String sourceFieldId))
         throw new IllegalArgumentException("筛选字段不属于已发布视图的当前组件");
@@ -238,12 +246,33 @@ class ReaderApi {
         throw new IllegalArgumentException("筛选映射未绑定目标组件的维度");
       publishedViewFilter=Map.of("fieldId",validatedTarget,
         "op","eq","value",(String)userParameters.get("filterValue"));
+      }
+      if(hasSecond){
+        if(!(matchingView.get("filter") instanceof Map<?,?> firstFilter)||
+           !(firstFilter.get("datasetId") instanceof String primaryDataset)||
+           !(firstFilter.get("fieldId") instanceof String primaryField)||
+           !(matchingView.get("filter2") instanceof Map<?,?> secondFilter)||
+           !datasetId.equals(primaryDataset)||
+           !datasetId.equals(secondFilter.get("datasetId"))||
+           !(secondFilter.get("fieldId") instanceof String secondField)||
+           primaryField.equals(secondField)||
+           !(config.get("dimensions") instanceof List<?> dimensions)||
+           dimensions.stream().noneMatch(dim->dim instanceof Map<?,?> d&&
+              secondField.equals(d.get("fieldId"))))
+          throw new IllegalArgumentException("第二筛选字段不属于已发布的当前组件");
+        // Only a pinned, physical dimension of the published target is allowed.
+        if(new com.insightbi.analysis.FieldCatalog(store,db).fields(datasetId).stream()
+           .noneMatch(field->field.id().equals(secondField)&&!field.calculated()))
+          throw new IllegalArgumentException("第二筛选字段不可用");
+        publishedViewFilter2=Map.of("fieldId",secondField,
+           "op","eq","value",(String)userParameters.get("filterValue2"));
+      }
     }
     // Attach server-managed restrictions only AFTER constructing the immutable
     // published widget request. Client JSON cannot remove, replace or append them.
     List<Map<String,Object>> mandatory=governance.mandatoryRowFilters(
       (String)session.getAttribute("readerId"),datasetId);
-    if(!mandatory.isEmpty()||publishedViewFilter!=null){
+    if(!mandatory.isEmpty()||publishedViewFilter!=null||publishedViewFilter2!=null){
       Map<?,?> original=safe.get("filters") instanceof Map<?,?> m?m:Map.of();
       Object rawPre=original.get("pre"),rawPost=original.get("post");
       if(rawPre!=null&&!(rawPre instanceof List<?>))
@@ -253,6 +282,7 @@ class ReaderApi {
       List<Object> pre=new ArrayList<>();
       if(rawPre instanceof List<?> existing)pre.addAll(existing);
       if(publishedViewFilter!=null)pre.add(publishedViewFilter);
+      if(publishedViewFilter2!=null)pre.add(publishedViewFilter2);
       pre.addAll(mandatory);
       if(pre.size()>20)throw new IllegalArgumentException("已发布过滤条件超过上限");
       safe.put("filters",Map.of("pre",pre,

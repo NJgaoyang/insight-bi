@@ -5,7 +5,7 @@ export type CrossDatasetMapping={widgetId:string;fieldId:string}
 export type ViewFilterConfig={datasetId:string;fieldId:string;label?:string;mappings?:CrossDatasetMapping[]}
 export type DatasetConnection={id:string;connection_id:string}
 export type FieldDirectory=Record<string,readonly Pick<FieldV2,'id'|'logicalType'|'calculated'|'phase'>[]>
-export type FilterView={widgetIds:string[];filter?:ViewFilterConfig}
+export type FilterView={widgetIds:string[];filter?:ViewFilterConfig;filter2?:ViewFilterConfig}
 export type ViewFilterCandidate={datasetId:string;fieldId:string;label:string;key:string}
 export function viewFilterCandidates(view:FilterView|undefined,widgets:readonly AnalysisWidgetV2[]):ViewFilterCandidate[]{
  if(!view)return []
@@ -90,4 +90,39 @@ export function updateViewFilterMapping(
  if(fieldId)retained.push({widgetId,fieldId})
  if(retained.length)view.filter.mappings=retained
  else delete view.filter.mappings
+}
+
+
+/** Optional second dimension is restricted to the primary dataset in this batch. */
+export function secondaryViewFilterCandidates(
+ view:FilterView|undefined,widgets:readonly AnalysisWidgetV2[]
+):ViewFilterCandidate[]{
+ if(!view?.filter)return []
+ return viewFilterCandidates(view,widgets).filter(c=>
+  c.datasetId===view.filter!.datasetId&&c.fieldId!==view.filter!.fieldId)
+}
+export function isValidSecondaryViewFilter(view:FilterView|undefined,widgets:readonly AnalysisWidgetV2[]):boolean{
+ if(!view?.filter2)return true
+ if(!view.filter||view.filter2.mappings?.length)return false
+ return secondaryViewFilterCandidates(view,widgets).some(c=>
+  c.datasetId===view.filter2!.datasetId&&c.fieldId===view.filter2!.fieldId)
+}
+export function setSecondaryViewFilter(view:FilterView,choice:ViewFilterCandidate|null):void{
+ if(choice)view.filter2={datasetId:choice.datasetId,fieldId:choice.fieldId,label:choice.label}
+ else delete view.filter2
+}
+/** AND semantics: return one or two verified conditions, never implicit cross-dataset matches. */
+export function filtersForViewWidget(
+ view:FilterView|undefined,widget:AnalysisWidgetV2,first:string,second:string
+):FilterV2[]{
+ const result:FilterV2[]=[]
+ const primary=filterForViewWidget(view,widget,first)
+ if(primary)result.push(primary)
+ const config=view?.filter2
+ if(config&&view?.widgetIds.includes(widget.id)&&widget.datasetId===config.datasetId&&
+    widget.analysisV2?.dimensions.some(d=>d.fieldId===config.fieldId)&&
+    typeof second==='string'&&!!second.trim()&&second.length<=120&&
+    view.filter?.datasetId===config.datasetId&&view.filter.fieldId!==config.fieldId)
+  result.push({fieldId:config.fieldId,op:'eq',value:second})
+ return result
 }

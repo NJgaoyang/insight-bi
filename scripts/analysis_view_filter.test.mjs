@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {filterForViewWidget,isValidViewFilter,setViewFilter,viewFilterCandidates,mappingCandidates,updateViewFilterMapping} from '../frontend/src/analysis/viewFilter.ts'
+import {filterForViewWidget,isValidViewFilter,setViewFilter,viewFilterCandidates,mappingCandidates,updateViewFilterMapping,secondaryViewFilterCandidates,isValidSecondaryViewFilter,setSecondaryViewFilter,filtersForViewWidget} from '../frontend/src/analysis/viewFilter.ts'
 const widget=(id,datasetId,fieldId)=>({
  id,title:'组件 '+id,datasetId,analysisV2:{dimensions:[{fieldId}],measures:[{id:'m',fieldId:'revenue',aggregate:'SUM'}],
   filters:{pre:[],post:[]},sort:[],limit:100}
@@ -80,4 +80,36 @@ test('field type mismatch and calculated target are never offered as mappings',(
  v.widgetIds=['s']
  assert.equal(isValidViewFilter(v,w),false)
  assert.equal(filterForViewWidget(v,w[1],'北京'),null)
+})
+
+test('second view filter exposes only another dimension on the primary dataset',()=>{
+ const widgets2=[widget('a','sales','city'),widget('b','sales','region'),
+  widget('c','expenses','region')]
+ const view={widgetIds:['a','b','c'],filter:{datasetId:'sales',fieldId:'city'}}
+ assert.deepEqual(secondaryViewFilterCandidates(view,widgets2).map(c=>c.fieldId),['region'])
+ setSecondaryViewFilter(view,secondaryViewFilterCandidates(view,widgets2)[0])
+ assert.equal(isValidSecondaryViewFilter(view,widgets2),true)
+ assert.deepEqual(filtersForViewWidget(view,widgets2[1],'北京','华北'),
+  [{fieldId:'region',op:'eq',value:'华北'}])
+ assert.deepEqual(filtersForViewWidget(view,widgets2[0],'北京','华北'),
+  [{fieldId:'city',op:'eq',value:'北京'}])
+ assert.deepEqual(filtersForViewWidget(view,widgets2[2],'北京','华北'),[])
+ // Both conditions apply on a chart with both fields explicitly bound.
+ widgets2[0].analysisV2.dimensions.push({fieldId:'region'})
+ assert.deepEqual(filtersForViewWidget(view,widgets2[0],'北京','华北'),
+  [{fieldId:'city',op:'eq',value:'北京'},{fieldId:'region',op:'eq',value:'华北'}])
+ assert.deepEqual(filtersForViewWidget(view,widgets2[0],'','华北'),
+  [{fieldId:'region',op:'eq',value:'华北'}])
+ assert.equal(JSON.stringify(view).includes('华北'),false)
+})
+test('secondary rejects same field, missing primary, foreign dataset and mapped target',()=>{
+ const view={widgetIds:['a','b','c'],filter:{datasetId:'sales',fieldId:'city'},
+  filter2:{datasetId:'sales',fieldId:'city'}}
+ assert.equal(isValidSecondaryViewFilter(view,widgets),false)
+ view.filter2={datasetId:'expenses',fieldId:'city'}
+ assert.equal(isValidSecondaryViewFilter(view,widgets),false)
+ view.filter2={datasetId:'sales',fieldId:'province',mappings:[{widgetId:'d',fieldId:'city'}]}
+ assert.equal(isValidSecondaryViewFilter(view,widgets),false)
+ delete view.filter
+ assert.equal(isValidSecondaryViewFilter(view,widgets),false)
 })
