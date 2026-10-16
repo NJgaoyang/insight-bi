@@ -9,6 +9,7 @@ const emit=defineEmits<{(e:'back'):void}>()
 
 type FormulaStep={id:string;type:'formula';fieldId:string;name:string;expression:string}
 type FilterStep={id:string;type:'filter';fieldId:string;op:string;value?:string;values?:string[]}
+type CastStep={id:string;type:'cast';fieldId:string;sourceFieldId:string;name:string;outputType:'STRING'|'DECIMAL'}
 type Measure={id:string;fieldId:string;aggregate:'SUM'|'AVG'|'COUNT'|'MIN'|'MAX';name:string}
 type GroupStep={id:string;type:'group';dimensions:string[];measures:Measure[]}
 type CaseStep={id:string;type:'case';fieldId:string;sourceFieldId:string;name:string;
@@ -19,7 +20,7 @@ type JoinKey={leftFieldId:string;rightFieldId:string}
 type JoinOutput={sourceFieldId:string;fieldId:string;name:string}
 type JoinStep={id:string;type:'join';sourceDatasetId:string;joinType:'INNER'|'LEFT';
  conditions:JoinKey[];fields:JoinOutput[];acknowledgeFanout:boolean}
-type Step=FormulaStep|FilterStep|GroupStep|CaseStep|UnionStep|JoinStep
+type Step=FormulaStep|FilterStep|GroupStep|CaseStep|CastStep|UnionStep|JoinStep
 type Column={id:string;name:string;label:string;type:string;numeric:boolean}
 
 const loading=ref(true),busy=ref(false),dirty=ref(false),stale=ref(false)
@@ -73,7 +74,7 @@ const selectable=(index:number):Column[]=>{
   if(step.type==='formula'){
    fields=[...fields,{id:step.fieldId,name:'step_'+step.fieldId,label:step.name,type:'DECIMAL',numeric:true}]
   }
-  if(step.type==='case'){
+  if(step.type==='case'||step.type==='cast'){
    fields=[...fields,{id:step.fieldId,name:'step_'+step.fieldId,label:step.name,
     type:step.outputType,numeric:step.outputType==='DECIMAL'}]
   }
@@ -241,6 +242,27 @@ function changeFilterOperator(step:FilterStep){
  }
  changed()
 }
+function addCast(){
+ if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
+ const available=selectable(steps.value.length)
+ const source=available.find(f=>f.numeric)||available.find(f=>['DATE','DATETIME','BOOLEAN'].includes(f.type))
+ if(!source){ElMessage.warning('当前步骤没有可安全转换的数值或日期字段');return}
+ steps.value.push({id:nextId('s'),type:'cast',fieldId:nextId('field'),
+  sourceFieldId:source.id,name:source.label+'（文本）',outputType:'STRING'})
+ changed()
+}
+function castTargetsFor(index:number,sourceId:string):Array<'STRING'|'DECIMAL'>{
+ const field=selectable(index).find(f=>f.id===sourceId)
+ if(!field)return []
+ if(['INTEGER','DECIMAL','DOUBLE'].includes(field.type))return ['STRING','DECIMAL']
+ if(['DATE','DATETIME','BOOLEAN'].includes(field.type))return ['STRING']
+ return []
+}
+function changeCastSource(step:CastStep,index:number){
+ const allowed=castTargetsFor(index,step.sourceFieldId)
+ if(!allowed.includes(step.outputType))step.outputType=allowed[0]||'STRING'
+ changed()
+}
 function addFilter(){
  if(steps.value.length>=12){ElMessage.warning('最多添加 12 个步骤');return}
  const id=nextId('s'),field=selectable(steps.value.length)[0]
@@ -394,6 +416,7 @@ onMounted(load)
      <strong>加工步骤</strong><small>按顺序执行 · 最多 12 步</small>
      <div>
       <button @click="addFormula">＋ 计算列</button>
+      <button @click="addCast">＋ 类型转换</button>
       <button @click="addFilter">＋ 过滤</button>
       <button @click="addCase">＋ 条件列</button>
       <button :disabled="steps.some(x=>x.type==='union'||x.type==='join')||!unionCandidates.length"
@@ -406,7 +429,7 @@ onMounted(load)
     <div v-if="!steps.length" class="pipeline-empty">暂无加工步骤，可从上方添加</div>
     <section v-for="(step,index) in steps" :key="step.id" class="pipeline-step">
      <header class="pipeline-step-header">
-      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':step.type==='union'?'上下合并':step.type==='join'?'数据关联':'分组汇总'}}</strong>
+      <strong>{{index+1}}. {{step.type==='formula'?'计算列':step.type==='filter'?'数据过滤':step.type==='case'?'条件列':step.type==='cast'?'类型转换':step.type==='union'?'上下合并':step.type==='join'?'数据关联':'分组汇总'}}</strong>
       <button title="步骤前移" :disabled="index===0||(index===1&&['union','join'].includes(steps[0]?.type||''))" @click="move(index,-1)">↑</button>
       <button title="步骤后移" :disabled="index===steps.length-1||step.type==='union'||step.type==='join'" @click="move(index,1)">↓</button>
       <button title="复制步骤" :disabled="busy||steps.length>=12||!['formula','case','filter'].includes(step.type)" @click="duplicateStep(index)">复制</button>
@@ -489,6 +512,21 @@ onMounted(load)
        我已了解：右表关联键重复可能放大结果行数
       </el-checkbox>
       <small>必须确认行数放大风险后才能保存；不自动去重，也不改动原始数据。</small>
+     </div>
+     <div v-else-if="step.type==='cast'" class="pipeline-fields">
+      <label>源字段（仅数值、日期、布尔字段）</label>
+      <el-select :model-value="step.sourceFieldId" filterable
+       @update:model-value="v=>{step.sourceFieldId=String(v);changeCastSource(step,index)}">
+       <el-option v-for="field in selectable(index).filter(f=>['INTEGER','DECIMAL','DOUBLE','DATE','DATETIME','BOOLEAN'].includes(f.type))"
+        :key="field.id" :label="field.label" :value="field.id"/>
+      </el-select>
+      <label>输出字段名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>
+      <label>目标类型</label>
+      <el-select v-model="step.outputType" @change="changed">
+       <el-option v-for="type in castTargetsFor(index,step.sourceFieldId)"
+        :key="type" :value="type" :label="type==='DECIMAL'?'数值 DECIMAL(38,12)':'文本 STRING'"/>
+      </el-select>
+      <small>生成新的稳定字段 ID，保留源字段。文本转数值不允许直接转换，以免无效数据被当作 0；数值转 DECIMAL 可能出现精度舍入。</small>
      </div>
      <div v-else-if="step.type==='formula'" class="pipeline-fields">
       <label>列名称</label><el-input v-model="step.name" maxlength="100" @input="changed"/>

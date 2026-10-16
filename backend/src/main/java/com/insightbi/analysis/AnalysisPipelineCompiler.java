@@ -49,6 +49,7 @@ public final class AnalysisPipelineCompiler {
         throw new IllegalArgumentException("最多支持两级分组汇总");
       state=switch(type){
         case "formula"->formula(state,step);
+        case "cast"->castColumn(state,step);
         case "filter"->filter(state,step);
         case "case"->caseColumn(state,step);
         case "union"->union(state,step,index);
@@ -212,6 +213,45 @@ public final class AnalysisPipelineCompiler {
       joinType+" JOIN ("+ReadOnlySqlGuard.validate(source.sourceSql())+") bis ON "+
       String.join(" AND ",on);
     return new State(sql,fields,state.params(),false);
+  }
+
+  /**
+   * Safe, non-destructive type conversion. The source field remains untouched;
+   * output receives a new stable ID so later steps bind it explicitly.
+   * Text -> number is intentionally rejected: MySQL-compatible engines may
+   * silently coerce malformed numeric text to zero.
+   */
+  private State castColumn(State state,Map<String,Object> step){
+    String id=required(step,"fieldId"),name=required(step,"name");
+    if(!id.matches("[A-Za-z_][A-Za-z0-9_]{0,48}")||
+       state.fields().containsKey(id)||name.length()>100)
+      throw new IllegalArgumentException("转换列 ID 或名称无效/冲突");
+    String sourceId=required(step,"sourceFieldId");
+    FieldCatalog.Field original=find(state,sourceId);
+    if(original.calculated()&&!"ROW".equals(original.phase()))
+      throw new IllegalArgumentException("只允许对明细级字段执行类型转换");
+    String outputType=required(step,"outputType").toUpperCase(Locale.ROOT);
+    String inputType=original.logicalType();
+    String castType;
+    if("DECIMAL".equals(outputType) &&
+       Set.of("INTEGER","DECIMAL","DOUBLE").contains(inputType)){
+      // The decimal envelope is bounded by StarRocks DECIMAL V3 precision.
+      // Wider/longer values can round or overflow; surface that in the UI.
+      castType="DECIMAL(38,12)";
+    }else if("STRING".equals(outputType) &&
+             Set.of("INTEGER","DECIMAL","DOUBLE","DATE","DATETIME","BOOLEAN")
+               .contains(inputType)){
+      castType="CHAR(255)";
+    }else{
+      throw new IllegalArgumentException("不支持该类型转换；文本转数字需先清洗异常值");
+    }
+    String column="step_"+id;
+    String sql="SELECT biq.*, CAST("+fieldExpr(state,original)+" AS "+castType+
+      ") AS "+FormulaCompiler.quote(column)+" FROM ("+state.sql()+") biq";
+    var fields=new LinkedHashMap<>(state.fields());
+    fields.put(id,new FieldCatalog.Field(id,name,column,outputType,"BOTH",
+      "DECIMAL".equals(outputType),false,"ROW",null));
+    return new State(sql,fields,state.params(),state.grouped());
   }
 
   private State formula(State state,Map<String,Object> step){

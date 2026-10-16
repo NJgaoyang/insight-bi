@@ -223,3 +223,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 15. 数据加工编辑增强第一批（2026-10-16）
 
 在已有步骤前后移和后端编译/保存能力上，新增有限安全复制（formula/case/filter）、中间步骤服务端数据预览与最多 30 步编辑撤销/重做。复制 formula/case 时重置输出 stable fieldId 并保留原始输入字段依赖；JOIN/UNION/GROUP 不允许复制。仍走原处理版本与后端校验，未部署线上。验收文档：[PIPELINE_EDITOR_PHASE2_BATCH1.md](PIPELINE_EDITOR_PHASE2_BATCH1.md)。远程开发机当前离线，使用 GitHub 专项 CI 核对本批，不等同于真实数据源验收。
+
+
+## 16. 数据加工编辑增强第二批：安全类型转换（2026-10-16）
+
+新增后端 `AnalysisPipelineCompiler` 的受控 CAST 步骤及前端类型转换配置，可以以新 stable fieldId 生成数字→定点数和数字/日期/布尔→文本字段，并供后续过滤/汇总使用。禁止字符串→数值的宽松静默转换，保留原数据字段；继续沿用旧的编译、真实数据预览、revision 保存与权限，不新增查询 API。见 [PIPELINE_EDITOR_PHASE2_BATCH2_CAST.md](PIPELINE_EDITOR_PHASE2_BATCH2_CAST.md)。H2/MySQL 模式的专用 Java 测试、Vue 构建、Chromium mock REST 测试加入专项 CI。当前开发机离线，**并未通过真实 StarRocks 驱动专门验收**，未部署线上服务。

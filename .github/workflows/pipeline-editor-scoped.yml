@@ -6,6 +6,10 @@ on:
       - feat/finebi-analysis-engine-p0
     paths:
       - frontend/src/PipelineEditor.vue
+      - backend/src/main/java/com/insightbi/analysis/AnalysisPipelineCompiler.java
+      - backend/src/test/java/com/insightbi/analysis/AnalysisPipelineCastTest.java
+      - scripts/pipeline_cast_browser_smoke.cjs
+      - docs/PIPELINE_EDITOR_PHASE2_BATCH2_CAST.md
       - frontend/src/analysis/pipelineEditing.ts
       - scripts/pipeline_editor_step.test.mjs
       - scripts/pipeline_editor_browser_smoke.cjs
@@ -48,3 +52,21 @@ jobs:
         env:
           P0_PREVIEW_URL: http://127.0.0.1:18216
         run: node scripts/pipeline_editor_browser_smoke.cjs
+      - name: Chromium controlled type cast preview save reload
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18216
+        run: node scripts/pipeline_cast_browser_smoke.cjs
+  pipeline-cast-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Real H2 type conversion and existing pipeline compiler checks
+        working-directory: backend
+        run: mvn -B -q -Dtest=AnalysisPipelineCastTest,AnalysisPipelineCompilerTest test
