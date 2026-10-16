@@ -129,8 +129,8 @@ async function load(){
   if(gen===generation){error.value=e instanceof Error?e.message:'查询失败';rows.value=[];result.value=null;dispose()}
  }finally{if(gen===generation){loading.value=false;if(activeRequest===controller)activeRequest=null}}
 }
-function selectRow(index:number){
- const dim=bindings.value?.dimensions[0],col=dimNames.value[0],row=rows.value[index]
+function selectRow(index:number,displayedRow?:Record<string,unknown>){
+ const dim=bindings.value?.dimensions[0],col=dimNames.value[0],row=displayedRow??rows.value[index]
  if(!dim||!col||!row)return
  const value=row[col.name]
  if(typeof value==='string'||typeof value==='number')emit('selectDimension',{fieldId:dim.fieldId,value})
@@ -224,7 +224,7 @@ onBeforeUnmount(()=>{generation++;activeRequest?.abort();observer?.disconnect();
    <table><thead><tr><th v-for="c in visibleColumns" :key="c.name">{{c.label}}</th></tr></thead>
    <tbody><tr v-for="(row,index) in tableRows" :key="index"
     :role="navigable?'button':undefined" :tabindex="navigable?0:undefined"
-    @click="selectRow(index);navigable&&emit('navigate')" @keydown.enter="selectRow(index);navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
+    @click="selectRow(index,row);navigable&&emit('navigate')" @keydown.enter="selectRow(index,row);navigable&&emit('navigate')"><td v-for="c in visibleColumns" :key="c.name">{{formatCell(row,c)}}</td></tr></tbody></table>
   </div>
   <div v-else-if="widget.type==='pivot'" class="v2-table-wrap v2-pivot-wrap">
    <div v-if="pivotModel?.error" class="v2-chart-notice v2-chart-error">{{pivotModel.error}}</div>

@@ -9,6 +9,7 @@ on:
       - frontend/src/analysis/dashboardLayout.ts
       - frontend/src/AnalysisSubject.vue
       - frontend/src/PublishedReport.vue
+      - frontend/src/AnalysisV2Chart.vue
       - scripts/analysis_drill_path.test.mjs
       - scripts/analysis_drill_browser_smoke.cjs
       - docs/ANALYSIS_DRILL_01.md

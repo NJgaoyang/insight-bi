@@ -41,14 +41,18 @@ const result={columns:[
   })
   await page.goto(origin+'/?reader=1#/reader-view/report',{waitUntil:'domcontentloaded'})
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] .v2-table-wrap tbody tr').first().waitFor()
+  const table=page.locator('.analysis-dashboard-card[data-widget-id="w1"] .v2-table-wrap')
+  await table.locator('input[aria-label="搜索当前表格结果"]').fill('上海')
+  await page.waitForFunction(()=>document.querySelectorAll('.analysis-dashboard-card[data-widget-id="w1"] .v2-table-wrap tbody tr').length===1)
+  assert.match(await table.locator('tbody tr').first().innerText(),/上海/)
   const drillResponse=page.waitForResponse(resp=>
    resp.url().endsWith('/api/reader/dashboards/report/widgets/w2/query')&&
-   (resp.request().postData()||'').includes('"filterValue":"北京"'))
+   (resp.request().postData()||'').includes('"filterValue":"上海"'))
   await page.locator('.analysis-dashboard-card[data-widget-id="w1"] .v2-table-wrap tbody tr').first().click()
   await drillResponse
   assert.ok(calls.some(x=>x.widget==='w2'&&
-   JSON.stringify(x.body)==='{"viewId":"to","filterValue":"北京"}'))
-  assert.equal(await page.locator('input[aria-label="已发布视图筛选值"]').inputValue(),'北京')
+   JSON.stringify(x.body)==='{"viewId":"to","filterValue":"上海"}'))
+  assert.equal(await page.locator('input[aria-label="已发布视图筛选值"]').inputValue(),'上海')
   assert.equal(await page.locator('.analysis-view-picker .el-select__selected-item').count()>0,true)
   const unfiltered=page.waitForResponse(resp=>
    resp.url().endsWith('/api/reader/dashboards/report/widgets/w2/query')&&

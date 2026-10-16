@@ -55,7 +55,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   assert.match(await relation.innerText(),/历史销售/)
   assert.equal(await relation.locator('.pipeline-relation-link').count(),1)
   assert.equal(await relation.locator('.pipeline-relation-impact-row').count(),1)
-  assert.match(await relation.innerText(),/字段下游影响链/)
+  assert.match(await relation.innerText(),/右表字段影响链/)
   assert.match(await relation.innerText(),/未发现直接或派生字段引用/)
   assert.match(await relation.innerText(),/行数放大/)
   await relation.getByRole('button',{name:'收起关系'}).click()
