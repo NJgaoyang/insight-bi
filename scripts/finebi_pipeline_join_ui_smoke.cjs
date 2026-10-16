@@ -58,6 +58,16 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18117'
   await step.locator('button').filter({hasText:'添加输出字段'}).click()
   assert.equal(await step.locator('button[title="删除右表输出字段"]').count(),2)
   await step.locator('.el-checkbox').click()
+  assert.equal(await page.locator('.pipeline-save').isDisabled(),false,
+   'acknowledging a valid JOIN unlocks save')
+  await step.locator('button').filter({hasText:'添加关联条件'}).click()
+  assert.equal(await page.locator('.pipeline-save').isDisabled(),true,
+   'adding a new JOIN key must revoke the previous fanout acknowledgment')
+  assert.match(await step.locator('[role="alert"]').innerText(),/重新确认/)
+  await step.locator('button[title="删除关联条件"]').last().click()
+  assert.equal(await page.locator('.pipeline-save').isDisabled(),true)
+  await step.locator('.el-checkbox').click()
+  assert.equal(await page.locator('.pipeline-save').isDisabled(),false)
   await page.locator('.pipeline-actions button').filter({hasText:'SQL 预览'}).click()
   await page.locator('.pipeline-sql').waitFor()
   assert.equal(compiles.length,1)

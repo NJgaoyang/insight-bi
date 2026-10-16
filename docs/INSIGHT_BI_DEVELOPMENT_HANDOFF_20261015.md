@@ -228,3 +228,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 16. 数据加工编辑增强第二批：安全类型转换（2026-10-16）
 
 新增后端 `AnalysisPipelineCompiler` 的受控 CAST 步骤及前端类型转换配置，可以以新 stable fieldId 生成数字→定点数和数字/日期/布尔→文本字段，并供后续过滤/汇总使用。禁止字符串→数值的宽松静默转换，保留原数据字段；继续沿用旧的编译、真实数据预览、revision 保存与权限，不新增查询 API。见 [PIPELINE_EDITOR_PHASE2_BATCH2_CAST.md](PIPELINE_EDITOR_PHASE2_BATCH2_CAST.md)。H2/MySQL 模式的专用 Java 测试、Vue 构建、Chromium mock REST 测试加入专项 CI。当前开发机离线，**并未通过真实 StarRocks 驱动专门验收**，未部署线上服务。
+
+
+## 17. 数据加工编辑增强第三批：JOIN 配置前置校验（2026-10-16）
+
+增强数据关联配置的即时风险提示：同连接数据集、等值键存在和类型匹配、重复键、稳定输出字段 ID 和名称约束。关联键或 JOIN 方式变化会撤销之前的 `acknowledgeFanout`，明确要求用户重新确认；未通过则 UI 禁止保存，后端现有 JOIN 校验仍作为最终权威。纯前端迭代、不新建 API/表、不涉及线上部署。见 [PIPELINE_EDITOR_PHASE2_BATCH3_JOIN.md](PIPELINE_EDITOR_PHASE2_BATCH3_JOIN.md)。

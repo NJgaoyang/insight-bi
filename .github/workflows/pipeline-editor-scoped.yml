@@ -6,6 +6,10 @@ on:
       - feat/finebi-analysis-engine-p0
     paths:
       - frontend/src/PipelineEditor.vue
+      - frontend/src/analysis/joinPreflight.ts
+      - scripts/pipeline_join_preflight.test.mjs
+      - scripts/finebi_pipeline_join_ui_smoke.cjs
+      - docs/PIPELINE_EDITOR_PHASE2_BATCH3_JOIN.md
       - backend/src/main/java/com/insightbi/analysis/AnalysisPipelineCompiler.java
       - backend/src/test/java/com/insightbi/analysis/AnalysisPipelineCastTest.java
       - scripts/pipeline_cast_browser_smoke.cjs
@@ -26,8 +30,8 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Test safe copies and bounded prefix preview
-        run: node --experimental-strip-types --test scripts/pipeline_editor_step.test.mjs
+      - name: Test safe copies, preview and JOIN preflight
+        run: node --experimental-strip-types --test scripts/pipeline_editor_step.test.mjs scripts/pipeline_join_preflight.test.mjs
       - name: Install pinned frontend dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
@@ -56,6 +60,10 @@ jobs:
         env:
           P0_PREVIEW_URL: http://127.0.0.1:18216
         run: node scripts/pipeline_cast_browser_smoke.cjs
+      - name: Chromium same-connection JOIN acknowledgment and save
+        env:
+          P0_PREVIEW_URL: http://127.0.0.1:18216
+        run: node scripts/finebi_pipeline_join_ui_smoke.cjs
   pipeline-cast-backend:
     runs-on: ubuntu-latest
     timeout-minutes: 12

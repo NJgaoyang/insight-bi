@@ -3,6 +3,7 @@ import {computed,onMounted,ref} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {api,post,put,type FieldV2} from './api'
 import {copyEditablePipelineStep,prefixForPipelinePreview} from './analysis/pipelineEditing'
+import {joinPreflight} from './analysis/joinPreflight'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -96,6 +97,17 @@ const selectable=(index:number):Column[]=>{
  return fields
 }
 const isGroupLimit=computed(()=>steps.value.filter(s=>s.type==='group').length>=2)
+function joinIssues(step:JoinStep):string[]{
+ return joinPreflight(step,baseColumns(),rightFields(step.sourceDatasetId),
+  unionCandidates.value.map(d=>d.id))
+}
+const joinValidationProblems=computed(()=>steps.value
+ .filter((s):s is JoinStep=>s.type==='join').flatMap(s=>joinIssues(s)))
+function changeJoinKeys(step:JoinStep){
+ // Acknowledgment applies only to the exact current key set and join type.
+ step.acknowledgeFanout=false
+ changed()
+}
 function changed(){
  const next=JSON.stringify(steps.value)
  if(next!==lastSteps){
@@ -208,7 +220,7 @@ function addJoinKey(step:JoinStep){
  const next=choices.find(x=>x.matchingName)||choices[0]
  if(!next){ElMessage.warning('没有更多类型兼容的关联字段组合');return}
  step.conditions.push({leftFieldId:next.leftFieldId,rightFieldId:next.rightFieldId})
- changed()
+ changeJoinKeys(step)
 }
 function addJoinOutput(step:JoinStep){
  if(step.fields.length>=30)return
@@ -406,7 +418,7 @@ onMounted(load)
     <button :disabled="busy||loading" @click="preview()">数据预览</button>
     <button title="撤销加工编辑" :disabled="busy||loading||!undoHistory.length" @click="undoSteps">撤销</button>
     <button title="重做加工编辑" :disabled="busy||loading||!redoHistory.length" @click="redoSteps">重做</button>
-    <button class="pipeline-save" :disabled="busy||loading||!dirty" @click="save">保存步骤</button>
+    <button class="pipeline-save" :disabled="busy||loading||!dirty||joinValidationProblems.length" @click="save">保存步骤</button>
    </div>
   </header>
   <div v-if="loading" class="pipeline-empty">正在读取加工配置…</div>
@@ -469,23 +481,23 @@ onMounted(load)
         :label="source.name" :value="source.id"/>
       </el-select>
       <label>关联方式</label>
-      <el-select v-model="step.joinType" @change="changed">
+      <el-select v-model="step.joinType" @change="changeJoinKeys(step)">
        <el-option label="LEFT JOIN（保留左表全部记录）" value="LEFT"/>
        <el-option label="INNER JOIN（只保留匹配记录）" value="INNER"/>
       </el-select>
       <label>关联条件（等值匹配，最多 4 组）</label>
       <div v-for="(condition,ci) in step.conditions" :key="ci" class="pipeline-measure">
-       <el-select v-model="condition.leftFieldId" filterable @change="changed">
+       <el-select v-model="condition.leftFieldId" filterable @change="changeJoinKeys(step)">
         <el-option v-for="field in baseColumns()" :key="field.id" :label="field.label"
          :value="field.id"/>
        </el-select>
        <span>＝</span>
-       <el-select v-model="condition.rightFieldId" filterable @change="changed">
+       <el-select v-model="condition.rightFieldId" filterable @change="changeJoinKeys(step)">
         <el-option v-for="field in rightFields(step.sourceDatasetId)" :key="field.id"
          :label="field.label" :value="field.id"/>
        </el-select>
        <button :disabled="step.conditions.length===1"
-        title="删除关联条件" @click="step.conditions.splice(ci,1);changed()">×</button>
+        title="删除关联条件" @click="step.conditions.splice(ci,1);changeJoinKeys(step)">×</button>
       </div>
       <button :disabled="step.conditions.length>=4" @click="addJoinKey(step)">＋ 添加关联条件</button>
       <label>右表输出字段（最多 30 列）</label>
@@ -508,6 +520,9 @@ onMounted(load)
         :'右表未发现重复关联键'}}
        （仅统计右表，不代表 JOIN 最终行数）
       </small>
+      <div v-if="joinIssues(step).length" class="pipeline-warning" role="alert">
+       {{joinIssues(step).join('；')}}
+      </div>
       <el-checkbox v-model="step.acknowledgeFanout" @change="changed">
        我已了解：右表关联键重复可能放大结果行数
       </el-checkbox>
