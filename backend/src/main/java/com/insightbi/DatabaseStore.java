@@ -78,6 +78,12 @@ public class DatabaseStore {
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_dataset_pipeline (dataset_id VARCHAR(36) PRIMARY KEY, config_json LONGTEXT NOT NULL, source_sql_hash VARCHAR(64) NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   // Draft-only semantic relationships. Not consumed by query SQL or published reports.
   jdbc.execute("CREATE TABLE IF NOT EXISTS insight_semantic_relation (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100) NOT NULL, source_dataset_id VARCHAR(36) NOT NULL, target_dataset_id VARCHAR(36) NOT NULL, pairs_json LONGTEXT NOT NULL, revision INT NOT NULL DEFAULT 1, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(source_dataset_id,target_dataset_id))");
+  // Approval is revision-pinned metadata only: never grants SQL or reader access.
+  if(!columnExists("insight_semantic_relation","approved_revision"))
+    jdbc.execute("ALTER TABLE insight_semantic_relation ADD COLUMN approved_revision INT");
+  if(!columnExists("insight_semantic_relation","approved_at"))
+    jdbc.execute("ALTER TABLE insight_semantic_relation ADD COLUMN approved_at TIMESTAMP");
+
 
 
 

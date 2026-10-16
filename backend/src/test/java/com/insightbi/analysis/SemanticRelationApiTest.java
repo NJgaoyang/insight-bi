@@ -72,6 +72,36 @@ class SemanticRelationApiTest {
   assertEquals(0,f.db().queryForObject(
    "SELECT COUNT(*) FROM insight_semantic_relation",Integer.class));
  }
+ @Test void approveIsRevisionPinnedAndNeverEnablesAnExecutableRelationship(){
+  var f=fixture();
+  var created=f.api().create(Map.of("name","城市映射","sourceDatasetId","left",
+   "targetDatasetId","right","pairs",pairs("city","region")));
+  assertEquals("APPROVED",f.api().approve(created.id(),Map.of("revision",1)).status());
+  assertEquals("APPROVED",f.api().list().get(0).status());
+  assertEquals(1,f.db().queryForObject(
+   "SELECT approved_revision FROM insight_semantic_relation WHERE id=?",Integer.class,created.id()));
+  assertThrows(IllegalStateException.class,()->
+   f.api().approve(created.id(),Map.of("revision",2)));
+  var edited=f.api().update(created.id(),Map.of(
+   "revision",1,"name","更新关系","pairs",pairs("city","region")));
+  assertEquals(2,edited.revision());
+  assertEquals("DRAFT",f.api().list().get(0).status());
+  assertNull(f.db().queryForObject(
+   "SELECT approved_revision FROM insight_semantic_relation WHERE id=?",Integer.class,created.id()));
+  assertThrows(IllegalStateException.class,()->
+   f.api().approve(created.id(),Map.of("revision",1)));
+  assertEquals("APPROVED",f.api().approve(created.id(),Map.of("revision",2)).status());
+  f.db().update("DELETE FROM insight_dataset WHERE id=?","right");
+  assertEquals("INVALID",f.api().list().get(0).status());
+  assertThrows(RuntimeException.class,()->
+   f.api().approve(created.id(),Map.of("revision",2)));
+ }
+ @Test void rejectsBlankOrSpaceOnlyNames(){
+  var f=fixture();
+  assertThrows(IllegalArgumentException.class,()->
+   f.api().create(Map.of("name","   ","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region"))));
+ }
  @Test void staleOrRemovedPhysicalFieldsShowInvalidWithoutExecutingDataQuery(){
   var f=fixture();
   var saved=f.api().create(Map.of("name","初始","sourceDatasetId","left",

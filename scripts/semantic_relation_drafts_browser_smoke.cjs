@@ -25,10 +25,15 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     rows=[{id:'draft1',...data,revision:1,status:'DRAFT',reason:''}]
     return send(route,rows[0])
    }
+   if(p==='/api/model/semantic-relations/draft1/approve'&&m==='POST'){
+    assert.equal(req.postDataJSON().revision,1)
+    rows=[{...rows[0],status:'APPROVED'}]
+    return send(route,rows[0])
+   }
    if(p==='/api/model/semantic-relations/draft1'&&m==='PUT'){
     const data=req.postDataJSON()
     assert.equal(data.revision,1)
-    rows=[{...rows[0],name:data.name,pairs:data.pairs,revision:2}]
+    rows=[{...rows[0],name:data.name,pairs:data.pairs,revision:2,status:'DRAFT'}]
     return send(route,rows[0])
    }
    if(p==='/api/model/semantic-relations/draft1'&&m==='DELETE'){
@@ -97,12 +102,19 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await page.locator('.semantic-draft-item').waitFor()
   assert.match(await page.locator('.semantic-draft-item').innerText(),/草稿/)
   assert.equal(requests.length,1)
+  await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).click()
+  const approval=page.locator('.el-message-box').last()
+  await approval.waitFor()
+  await approval.locator('.el-message-box__btns .el-button--primary').click()
+  await page.getByText(/已确认 v1/).waitFor()
+  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),0)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})
   await edit.locator('input[maxlength="100"]').fill('城市映射更新')
   await edit.getByRole('button',{name:'保存草稿'}).click()
   await page.getByText('城市映射更新').waitFor()
   assert.match(await page.locator('.semantic-draft-item').innerText(),/v2/)
+  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'删除'}).click()
   const confirm=page.locator('.el-message-box').last()
   await confirm.waitFor()

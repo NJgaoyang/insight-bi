@@ -7,7 +7,7 @@ type Dataset={id:string;name:string;connection_id:string}
 type Field={id:string;name:string;logicalType:string;calculated:boolean;hidden?:boolean}
 type Pair={leftFieldId:string;rightFieldId:string}
 type Draft={id:string;name:string;sourceDatasetId:string;targetDatasetId:string;
- pairs:Pair[];revision:number;status:'DRAFT'|'INVALID';reason:string}
+ pairs:Pair[];revision:number;status:'DRAFT'|'INVALID'|'APPROVED';reason:string}
 const drafts=ref<Draft[]>([])
 const datasets=ref<Dataset[]>([])
 const source=ref(''),target=ref(''),name=ref('')
@@ -74,6 +74,20 @@ async function save(){
   formOpen.value=false;clear();await load()
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'保存草稿失败');busy.value=false}
 }
+async function approve(row:Draft){
+ if(busy.value||row.status!=='DRAFT')return
+ try{
+  await ElMessageBox.confirm(
+   '确认当前 v'+row.revision+' 字段关系定义？仅标记元数据版本，不会启用 JOIN 或发布查询。',
+   '确认语义关系版本',{type:'warning',confirmButtonText:'确认当前版本',cancelButtonText:'取消'})
+ }catch{return}
+ busy.value=true
+ try{
+  await post('/model/semantic-relations/'+encodeURIComponent(row.id)+'/approve',{revision:row.revision})
+  ElMessage.success('关系版本已确认；暂不参与查询')
+  await load()
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关系确认失败');busy.value=false}
+}
 async function erase(row:Draft){
  try{await ElMessageBox.confirm('删除关系草稿「'+row.name+'」？不会修改原有加工链。','删除草稿',{type:'warning'})}
  catch{return}
@@ -99,9 +113,11 @@ onMounted(load)
       → {{datasets.find(d=>d.id===row.targetDatasetId)?.name||'目标数据集已删除'}}
       · {{row.pairs.length}} 组字段 · v{{row.revision}}</small>
      <span v-if="row.status==='INVALID'" class="semantic-draft-error">{{row.reason}}</span>
-     <span v-else class="semantic-draft-state">草稿 · 未发布</span>
+     <span v-else-if="row.status==='APPROVED'" class="semantic-draft-approved">已确认 v{{row.revision}} · 未用于查询</span>
+     <span v-else class="semantic-draft-state">草稿 · 待确认</span>
     </div>
     <div class="semantic-draft-actions">
+     <button v-if="row.status==='DRAFT'" type="button" @click="approve(row)">确认版本</button>
      <button type="button" @click="edit(row)">编辑</button>
      <button type="button" @click="erase(row)">删除</button>
     </div>

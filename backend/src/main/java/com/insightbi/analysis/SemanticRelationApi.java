@@ -27,7 +27,7 @@ public class SemanticRelationApi {
   @GetMapping
   public List<Relation> list(){
     var saved=db.queryForList(
-      "SELECT id,name,source_dataset_id,target_dataset_id,pairs_json,revision "+
+      "SELECT id,name,source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision "+
       "FROM insight_semantic_relation ORDER BY name,id LIMIT 101");
     if(saved.size()>100)throw new IllegalStateException("草稿关系超过安全展示上限");
     List<Relation> result=new ArrayList<>();
@@ -38,9 +38,11 @@ public class SemanticRelationApi {
       String reason="";
       try{validate(source,target,pairs);}
       catch(RuntimeException invalid){reason="字段或数据集已变化，请编辑并重新确认"; }
+      int rev=((Number)row.get("revision")).intValue();
+      int approved=row.get("approved_revision") instanceof Number number?number.intValue():0;
       result.add(new Relation(String.valueOf(row.get("id")),String.valueOf(row.get("name")),
-        source,target,pairs,((Number)row.get("revision")).intValue(),
-        reason.isEmpty()?"DRAFT":"INVALID",reason));
+        source,target,pairs,rev,
+        !reason.isEmpty()?"INVALID":approved==rev?"APPROVED":"DRAFT",reason));
     }
     return result;
   }
@@ -75,12 +77,39 @@ public class SemanticRelationApi {
     var pairs=bodyPairs(body.get("pairs"));
     validate(current.sourceDatasetId(),current.targetDatasetId(),pairs);
     int changed=db.update(
-      "UPDATE insight_semantic_relation SET name=?,pairs_json=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP "+
+      "UPDATE insight_semantic_relation SET name=?,pairs_json=?,revision=revision+1,approved_revision=NULL,approved_at=NULL,updated_at=CURRENT_TIMESTAMP "+
       "WHERE id=? AND revision=?",name,store.json(pairs),id,expected);
     if(changed!=1)throw new IllegalStateException("关系草稿版本已变化，请刷新");
     return new Relation(id,name,current.sourceDatasetId(),current.targetDatasetId(),
       pairs,expected+1,"DRAFT","");
   }
+  /** Explicit administrator confirmation of a validated, immutable draft revision. */
+  @PostMapping("/{relationId}/approve")
+  @Transactional
+  public Relation approve(@PathVariable String relationId,@RequestBody Map<String,Object> body){
+    String relation=id(relationId);
+    int expected=revision(body.get("revision"));
+    // Lock this model row through the revalidation/approval write. Concurrent
+    // edits cannot sneak an obsolete confirmation onto a later revision.
+    var rows=db.queryForList(
+      "SELECT id,name,source_dataset_id,target_dataset_id,pairs_json,revision "+
+      "FROM insight_semantic_relation WHERE id=? FOR UPDATE",relation);
+    if(rows.size()!=1)throw new IllegalArgumentException("关系草稿不存在");
+    var row=rows.get(0);
+    int actual=((Number)row.get("revision")).intValue();
+    if(actual!=expected)throw new IllegalStateException("关系版本已变化，请刷新后重新确认");
+    String source=String.valueOf(row.get("source_dataset_id"));
+    String target=String.valueOf(row.get("target_dataset_id"));
+    List<Pair> mapping=readPairs(String.valueOf(row.get("pairs_json")));
+    validate(source,target,mapping);
+    int saved=db.update(
+      "UPDATE insight_semantic_relation SET approved_revision=?,approved_at=CURRENT_TIMESTAMP "+
+      "WHERE id=? AND revision=?",expected,relation,expected);
+    if(saved!=1)throw new IllegalStateException("关系草稿版本已变化，请刷新");
+    return new Relation(relation,String.valueOf(row.get("name")),source,target,mapping,
+      expected,"APPROVED","");
+  }
+
   @DeleteMapping("/{relationId}")
   @Transactional
   public Map<String,Object> delete(@PathVariable String relationId,@RequestParam int revision){
@@ -148,7 +177,7 @@ public class SemanticRelationApi {
     return value;
   }
   private static String name(Object raw){
-    if(!(raw instanceof String value)||value.isBlank()||value.length()>100)
+    if(!(raw instanceof String value)||value.trim().isBlank()||value.trim().length()>100)
       throw new IllegalArgumentException("请输入 1 至 100 字的关系名称");
     return value.trim();
   }

@@ -432,3 +432,5 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .semantic-draft button:disabled,.semantic-draft-primary:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:760px){.semantic-draft-sources{grid-template-columns:1fr}
  .semantic-draft-item{flex-wrap:wrap}}
+
+.semantic-draft-approved{color:#2f7a59;font-size:11px;font-weight:600}

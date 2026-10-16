@@ -293,3 +293,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 29. P1-SEMANTIC-RELATION-DRAFT-01：受控语义关系草稿元数据（2026-10-16）
 
 公共数据的模型关系中新增独立“语义关系草稿”编辑区域，支持同连接主/目标数据集、最多三组非隐藏物理稳定字段映射和新增/编辑/删除；数据库增加独立增量元数据表，使用 CAS 修订号和数据集对唯一性，保存时服务器严格检验连接、字段类型与数量，失效关系不可更新。草稿不进入现有 SQL 执行、读者权限或报表发布。详见 [P1_SEMANTIC_RELATION_DRAFT_01.md](P1_SEMANTIC_RELATION_DRAFT_01.md)。本批未实现可执行多表语义模型或跨连接 JOIN，18310 无新部署（当前预览仍 18130）。
+
+
+## 30. P1-SEMANTIC-RELATION-APPROVAL-02：关系草稿修订确认（2026-10-16）
+
+语义关系元数据草稿新增独立的确认修订号和确认时间；管理员在关系字段合法、同连接且客户端版本准确时可以确认当前修订。编辑关系后批准标志清空；字段/源数据集失效后列表报告 INVALID，禁止确认。UI 明确提示“已确认版本仍未用于查询”。与现有 JOIN、SQL Planner、读者权限和发布快照完全隔离。详见 [P1_SEMANTIC_RELATION_APPROVAL_02.md](P1_SEMANTIC_RELATION_APPROVAL_02.md)。
