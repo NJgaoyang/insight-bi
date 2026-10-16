@@ -213,3 +213,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 
 
 定向兼容补充：本批隔离 Chromium 复验旧版已发布 V2/V1 只读视图及读者授权，发现旧脚本 `scripts/finebi_published_views_ui_smoke.cjs` 误用页面第一张表定位部门，已改为严格定位「部门管理」区块；专项测试通过。原有授权后端及页面代码均未因此修改。
+
+
+## 14. 统一分析工作台第二批：键盘布局控制（2026-10-16）
+
+键盘可在现有仪表板画布手柄上执行方向键/Home/End 顺序变更以及 Shift+方向键的有限宽高调整；仅修改当前视图引用和布局，旧 Widget 和旧 V1 Designer 不转换。新增快捷键说明及屏幕阅读器反馈；保留已有的拖动、撤销/重做、保存及发布语义。详细代码及验证门禁见 [UNIFIED_ANALYSIS_WORKSPACE_PHASE2_KEYBOARD.md](UNIFIED_ANALYSIS_WORKSPACE_PHASE2_KEYBOARD.md)。当前远程开发机显示离线，GitHub CI 结果需独立核验，未部署生产环境。

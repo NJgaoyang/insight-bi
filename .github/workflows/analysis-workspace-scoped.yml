@@ -9,6 +9,7 @@ on:
       - frontend/src/AnalysisSubject.vue
       - frontend/src/style.css
       - scripts/analysis_workspace_layout.test.mjs
+      - docs/UNIFIED_ANALYSIS_WORKSPACE_PHASE2_KEYBOARD.md
       - scripts/analysis_workspace_browser_smoke.cjs
       - .github/workflows/analysis-workspace-scoped.yml
 

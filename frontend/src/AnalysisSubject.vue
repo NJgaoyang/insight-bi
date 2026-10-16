@@ -6,7 +6,7 @@ import AnalysisV2Chart from './AnalysisV2Chart.vue'
 import ChartWidget from './ChartWidget.vue'
 import FormulaEditor from './analysis/FormulaEditor.vue'
 import AnalysisFilters from './analysis/AnalysisFilters.vue'
-import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
+import {cardStyle,orderedViewWidgets,removeUnusedLayout,viewLayout,reorderViewWidget,reorderViewWidgetByKey,resizeViewWidgetByKey,duplicateDashboardView,type DashboardView,type WidgetLayout} from './analysis/dashboardLayout'
 
 const props=defineProps<{id:string}>()
 const emit=defineEmits<{(e:'back'):void}>()
@@ -438,6 +438,25 @@ function switchKind(kind:string){
  chosen.value.type=kind;mark()
 }
 const draggingWidget=ref('')
+const canvasKeyboardAnnouncement=ref('')
+const canvasMovementKeys=new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'])
+function onCanvasGripKey(event:KeyboardEvent,widgetId:string){
+ if(!canvasMovementKeys.has(event.key)||event.altKey||event.ctrlKey||event.metaKey)return
+ if(event.shiftKey&&(event.key==='Home'||event.key==='End'))return
+ event.preventDefault()
+ event.stopPropagation()
+ const view=activeView.value
+ if(!view||!view.widgetIds.includes(widgetId))return
+ const changed=event.shiftKey
+  ?resizeViewWidgetByKey(view,widgetId,event.key)
+  :reorderViewWidgetByKey(view,widgetId,event.key)
+ if(!changed)return
+ const widget=components.value.find(w=>w.id===widgetId)
+ canvasKeyboardAnnouncement.value=event.shiftKey
+  ?'已调整 '+(widget?.title||'组件')+' 在当前视图的尺寸'
+  :'已将 '+(widget?.title||'组件')+' 移动到第 '+(view.widgetIds.indexOf(widgetId)+1)+' 位'
+ mark()
+}
 function startViewDrag(event:DragEvent,widgetId:string){
  const view=activeView.value
  if(!view||!view.widgetIds.includes(widgetId)||!event.dataTransfer)return
@@ -728,6 +747,8 @@ onMounted(load)
      </div>
      <div v-if="!dashboardWidgets.length" class="analysis-stage-empty">当前仪表板尚未选择组件</div>
      <div v-else class="analysis-view-grid" aria-label="可编辑仪表板画布">
+      <p class="analysis-canvas-shortcuts">焦点在拖动手柄时：方向键调整顺序，Home / End 移至首尾，Shift + 方向键调整宽高。</p>
+      <span class="analysis-sr-only" role="status" aria-live="polite" aria-atomic="true">{{canvasKeyboardAnnouncement}}</span>
       <div v-for="(component,index) in dashboardWidgets" :key="component.id"
        class="analysis-dashboard-card analysis-layout-card"
        :class="{'analysis-widget-selected':selectedId===component.id,'analysis-widget-dragging':draggingWidget===component.id}"
@@ -735,9 +756,11 @@ onMounted(load)
        @dragover.prevent @drop="dropViewWidget($event,component.id)">
        <div class="analysis-layout-toolbar">
         <span class="analysis-widget-drag-handle" draggable="true"
-         role="button" tabindex="0" title="拖动调整组件顺序"
-         :aria-label="'拖动 '+component.title+' 调整顺序'"
-         @dragstart="startViewDrag($event,component.id)" @dragend="draggingWidget=''">⋮⋮</span>
+         role="button" tabindex="0" title="拖动或键盘调整组件顺序与尺寸"
+         aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Home End Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown"
+         :aria-label="'调整 '+component.title+' 的顺序或尺寸'"
+         @dragstart="startViewDrag($event,component.id)" @dragend="draggingWidget=''"
+         @keydown="onCanvasGripKey($event,component.id)">⋮⋮</span>
         <strong>{{component.title}}</strong>
         <button title="在当前画布选中组件" @click="selectDashboardWidget(component.id)">选中</button>
         <button title="进入组件分析编辑" @click="selectDashboardWidget(component.id,true)">编辑</button>

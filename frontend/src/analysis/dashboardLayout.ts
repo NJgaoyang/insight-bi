@@ -57,3 +57,39 @@ export function duplicateDashboardView(view:DashboardView,newId:string,newName:s
    .filter(([id,target])=>valid.has(id)&&target!==view.id)):undefined
  }
 }
+
+
+/** Keyboard ordering only changes widget references within the active view. */
+export function reorderViewWidgetByKey(view:DashboardView,id:string,key:string):boolean{
+ const index=view.widgetIds.indexOf(id)
+ if(index<0)return false
+ if(key==='Home')return reorderViewWidget(view,id,view.widgetIds[0],'before')
+ if(key==='End')return reorderViewWidget(view,id,view.widgetIds[view.widgetIds.length-1],'after')
+ if(key==='ArrowLeft'||key==='ArrowUp')
+  return index>0&&reorderViewWidget(view,id,view.widgetIds[index-1],'before')
+ if(key==='ArrowRight'||key==='ArrowDown')
+  return index<view.widgetIds.length-1&&reorderViewWidget(view,id,view.widgetIds[index+1],'after')
+ return false
+}
+
+/** Shift+arrow resizes within the existing 6/12-column and 320/480/640px choices. */
+export function resizeViewWidgetByKey(view:DashboardView,id:string,key:string):boolean{
+ if(!view.widgetIds.includes(id))return false
+ const old=viewLayout(view,id)
+ let columns=old.columns
+ let height=old.height
+ if(key==='ArrowLeft')columns=6
+ else if(key==='ArrowRight')columns=12
+ else if(key==='ArrowUp'){
+  if(height===640)height=480
+  else if(height===480||height===380)height=320
+ }else if(key==='ArrowDown'){
+  if(height===320||height===380)height=480
+  else if(height===480)height=640
+ }else return false
+ if(columns===old.columns&&height===old.height)return false
+ // Legacy cards rendered at 380px; never persist that unsupported height.
+ const safeHeight:320|480|640=height===380?480:height
+ view.layout={...view.layout,[id]:{columns,height:safeHeight}}
+ return true
+}

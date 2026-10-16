@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {reorderViewWidget,duplicateDashboardView,viewLayout,cardStyle,orderedViewWidgets,removeUnusedLayout}
+import {reorderViewWidget,reorderViewWidgetByKey,resizeViewWidgetByKey,duplicateDashboardView,viewLayout,cardStyle,orderedViewWidgets,removeUnusedLayout}
   from '../frontend/src/analysis/dashboardLayout.ts'
 
 const original=()=>({
@@ -59,4 +59,37 @@ test('view copy does not introduce self-referential jumps and validates IDs',()=
  assert.equal(copy.jumps.w2,undefined)
  assert.throws(()=>duplicateDashboardView(source,'overview','invalid'))
  assert.throws(()=>duplicateDashboardView(source,'second',' '))
+})
+
+
+test('keyboard arrows and Home/End reorder one view only',()=>{
+ const active=original(),other=original(),widgets=components()
+ assert.equal(reorderViewWidgetByKey(active,'w2','Home'),true)
+ assert.deepEqual(active.widgetIds,['w2','w1','w3'])
+ assert.equal(reorderViewWidgetByKey(active,'w2','End'),true)
+ assert.deepEqual(active.widgetIds,['w1','w3','w2'])
+ assert.equal(reorderViewWidgetByKey(active,'w2','ArrowUp'),true)
+ assert.deepEqual(active.widgetIds,['w1','w2','w3'])
+ assert.equal(reorderViewWidgetByKey(active,'w1','ArrowLeft'),false)
+ assert.equal(reorderViewWidgetByKey(active,'w3','ArrowRight'),false)
+ assert.equal(reorderViewWidgetByKey(active,'w3','Tab'),false)
+ assert.equal(reorderViewWidgetByKey(active,'unknown','Home'),false)
+ assert.deepEqual(other.widgetIds,['w1','w2','w3'])
+ assert.deepEqual(widgets,components())
+})
+test('keyboard resizing uses bounded layout and stays isolated to active view',()=>{
+ const active=original(),other=structuredClone(active)
+ assert.equal(resizeViewWidgetByKey(active,'w1','ArrowLeft'),true)
+ assert.deepEqual(active.layout.w1,{columns:6,height:480})
+ assert.equal(resizeViewWidgetByKey(active,'w1','ArrowLeft'),false)
+ assert.equal(resizeViewWidgetByKey(active,'w1','ArrowDown'),true)
+ assert.deepEqual(active.layout.w1,{columns:6,height:640})
+ assert.equal(resizeViewWidgetByKey(active,'w1','ArrowDown'),false)
+ assert.equal(resizeViewWidgetByKey(active,'w1','ArrowUp'),true)
+ assert.equal(resizeViewWidgetByKey(active,'w1','ArrowRight'),true)
+ assert.deepEqual(active.layout.w1,{columns:12,height:480})
+ assert.equal(resizeViewWidgetByKey(active,'w2','ArrowUp'),false)
+ assert.equal(resizeViewWidgetByKey(active,'unknown','ArrowLeft'),false)
+ assert.equal(resizeViewWidgetByKey(active,'w1','Enter'),false)
+ assert.deepEqual(other.layout.w1,{columns:12,height:480})
 })

@@ -296,3 +296,8 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 
 .v2-pivot-subtotal th,.v2-pivot-subtotal td{background:#eaf1fa!important;font-weight:600;color:#304e74}
 .v2-pivot-subtotal td{text-align:right}
+
+/* View-local dashboard keyboard controls; no user data is stored in these hints. */
+.analysis-canvas-shortcuts{grid-column:1/-1;margin:0;color:#748399;font-size:11px;line-height:1.4}
+.analysis-sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:760px){.analysis-canvas-shortcuts{font-size:10px}}
