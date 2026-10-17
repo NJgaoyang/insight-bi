@@ -363,3 +363,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 43. P1-SEMANTIC-RLS-PREEXEC-AUTH-15：读者行锁与源账号最小权限门禁（2026-10-17）
 
 新增只限内部使用的双侧 RLS 执行前读者身份锁：必须在 READ_COMMITTED 可写元数据事务中先锁定读者账号行，再复核双侧策略绑定指纹；治理行策略、列拒绝和账号删除均在 ACL 修改前先持有同一行锁，H2 双线程检验撤权阻塞与后续失效。来源账号使用保守的 MySQL SHOW GRANTS 白名单检查；StarRocks 及未知授权 fail-closed，仍须真实源最小权限审计。本批无 Reader JOIN、无新 API 或 DDL、不部署生产，详情见 [P1_SEMANTIC_RLS_PREEXEC_AUTH_15.md](P1_SEMANTIC_RLS_PREEXEC_AUTH_15.md)。
+
+
+## 44. P1-SEMANTIC-RLS-EXECUTION-LIFECYCLE-16：保持元数据锁至来源资源关闭（2026-10-17）
+
+新增包内 `SemanticRelationRlsExecutionLifecycle`，按顺序协调并发额度、READ_COMMITTED 读者行锁、来源 MySQL SHOW GRANTS 检查和有限制的 JDBC PreparedStatement。测试回调结束后先关闭来源语句、回滚并关闭源连接，再释放元数据锁与并发额度。只用 H2 两线程及测试专用代理核验撤权等待和拒绝异常路径；没有真实数据库授权证明，也未开放 Reader JOIN / 发布。无 DDL、不部署。详见 [P1_SEMANTIC_RLS_EXECUTION_LIFECYCLE_16.md](P1_SEMANTIC_RLS_EXECUTION_LIFECYCLE_16.md)。
