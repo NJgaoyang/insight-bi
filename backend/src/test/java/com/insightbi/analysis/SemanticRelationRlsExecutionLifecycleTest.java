@@ -157,7 +157,8 @@ class SemanticRelationRlsExecutionLifecycleTest {
                 return Proxy.newProxyInstance(ResultSet.class.getClassLoader(),
                   new Class<?>[]{ResultSet.class},(rp,rm,ra)->{
                     if(rm.getName().equals("next"))
-                      return index.getAndIncrement()<values.size();
+                      return index.getAndIncrement()<(
+                        "Ssl_cipher".equals(values.get(0))?1:values.size());
                     if(rm.getName().equals("getString"))
                       return values.get(values.size()==2&&
                         "Ssl_cipher".equals(values.get(0))
