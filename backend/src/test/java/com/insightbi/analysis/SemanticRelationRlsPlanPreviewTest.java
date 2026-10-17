@@ -186,7 +186,7 @@ class SemanticRelationRlsPlanPreviewTest {
     );
     for(String source:risky){
       f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",source,"left");
-      assertThrows(IllegalStateException.class,()->
+      assertThrows(RuntimeException.class,()->
         SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(source,
           FieldCatalog.index(f.catalog().fields("left"))),source);
     }
