@@ -213,16 +213,19 @@ async function sealReleaseSnapshot(){
  finally{reviewBusy.value=false}
 }
 async function previewRowSecurity(){
- const relation=reviewRow.value,reader=reviewReader.value
+ const relation=reviewRow.value,reader=reviewReader.value,join=reviewJoin.value
  if(!relation||!reader||relation.status!=='APPROVED'||rlsBusy.value)return
  rlsBusy.value=true;rlsPreview.value=null
  try{
   const plan=await post<DualRlsPlan>(
    '/model/semantic-relations/'+encodeURIComponent(relation.id)+'/rls-plan-preview',{
-    revision:relation.revision,readerId:reader,joinType:reviewJoin.value,
+    revision:relation.revision,readerId:reader,joinType:join,
     leftFieldIds:[...new Set(relation.pairs.map(x=>x.leftFieldId))],
     rightFieldIds:[...new Set(relation.pairs.map(x=>x.rightFieldId))]})
-  if(reviewRow.value?.id===relation.id&&reviewReader.value===reader)
+  // Do not show a plan that finished after the operator switched reader,
+  // JOIN type or relation revision in the review dialog.
+  if(reviewRow.value?.id===relation.id&&reviewRow.value.revision===relation.revision&&
+     reviewReader.value===reader&&reviewJoin.value===join)
    rlsPreview.value=plan
  }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'双侧行权限编译预览失败'}
  finally{rlsBusy.value=false}
