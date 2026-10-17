@@ -173,7 +173,6 @@ class SemanticRelationRlsPlanPreviewTest {
     List<String> risky=List.of(
       "SELECT city, COUNT(*) AS tenant FROM rls_orders GROUP BY city",
       "SELECT DISTINCT city,tenant FROM rls_orders",
-      "SELECT city, tenant FROM rls_orders WHERE tenant='A'",
       "SELECT city, tenant FROM rls_orders ORDER BY city",
       "SELECT city, tenant FROM rls_orders LIMIT 5",
       "SELECT city, tenant FROM rls_orders UNION ALL SELECT city,tenant FROM rls_orders",
@@ -181,7 +180,6 @@ class SemanticRelationRlsPlanPreviewTest {
       "SELECT city,tenant FROM (SELECT city,tenant FROM rls_orders) x",
       "WITH v AS (SELECT city,tenant FROM rls_orders) SELECT city,tenant FROM v",
       "SELECT city, CONCAT(tenant,'x') AS tenant FROM rls_orders",
-      "SELECT city AS tenant,tenant AS city FROM rls_orders",
       "SELECT * FROM rls_orders"
     );
     for(String source:risky){
@@ -208,6 +206,65 @@ class SemanticRelationRlsPlanPreviewTest {
       "SELECT o.city,o.tenant FROM rls_orders o",fields));
     assertDoesNotThrow(()->SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
       "SELECT city,tenant FROM rls_orders",fields));
+  }
+
+  @Test void sourceWhereAndIdentityAliasesPreserveBilateralRlsJoinSemantics(){
+    var f=fixture();
+    policy(f,"left",f.leftTenant(),"A");
+    policy(f,"right",f.rightTenant(),"B");
+    f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+      "SELECT city AS city, tenant AS tenant FROM rls_orders WHERE tenant='A'","left");
+    f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+      "SELECT city,tenant FROM rls_cities WHERE tenant='B'","right");
+    f.api().approve(f.id(),Map.of("revision",1));
+    var plan=f.api().rlsPlanPreview(f.id(),body(f,"LEFT"));
+    assertEquals(1,plan.leftBindCount());
+    assertEquals(1,plan.rightBindCount());
+    assertEquals(2,plan.totalBindCount());
+    var rows=f.db().query(plan.sqlPreview(),ps->{
+      ps.setString(1,"A");ps.setString(2,"B");
+    },(rs,i)->List.of(rs.getString(1),rs.getString(2)==null?"NULL":rs.getString(2)));
+    assertEquals(2,rows.size());
+    assertTrue(rows.contains(List.of("Paris","Paris")));
+    assertTrue(rows.contains(List.of("Rome","NULL")));
+  }
+
+  @Test void directColumnRenameAndBoundedAndPredicatesHaveVerifiableLineage(){
+    var map=Map.of(
+      "renamed",new FieldCatalog.Field("renamed","Renamed","region_name",
+        "STRING","DIMENSION",false,false,"ROW",null),
+      "tenant",new FieldCatalog.Field("tenant","Tenant","tenant",
+        "STRING","DIMENSION",false,false,"ROW",null));
+    assertDoesNotThrow(()->SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
+      "SELECT o.city AS region_name, o.tenant AS tenant FROM rls_orders AS o "+
+      "WHERE o.city='Paris' AND o.tenant='A'",map));
+    assertDoesNotThrow(()->SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
+      "SELECT city AS region_name,tenant FROM rls_orders WHERE city='Paris'",map));
+  }
+
+  @Test void unsafeWhereAndOpaqueAliasConstructsStillFailClosed(){
+    var f=fixture();
+    var fields=FieldCatalog.index(f.catalog().fields("left"));
+    for(String sql:List.of(
+      "SELECT city,tenant FROM rls_orders WHERE city='Paris' OR tenant='A'",
+      "SELECT city,tenant FROM rls_orders WHERE city IN ('Paris')",
+      "SELECT city,tenant FROM rls_orders WHERE city LIKE 'P%'",
+      "SELECT city,tenant FROM rls_orders WHERE city=?",
+      "SELECT city,tenant FROM rls_orders WHERE city=(SELECT MAX(city) FROM rls_orders)",
+      "SELECT city,tenant FROM rls_orders WHERE COUNT(city)=1",
+      "SELECT city,tenant FROM rls_orders WHERE other='not-projected'",
+      "SELECT city,tenant FROM rls_orders WHERE x.tenant='A'",
+      "SELECT city,tenant FROM rls_orders WHERE city='Paris' -- comment",
+      "SELECT city,tenant FROM rls_orders WHERE city='Paris' AND tenant='A' "+
+        "AND city='Rome' AND tenant='B' AND city='Paris'",
+      "SELECT city AS tenant,tenant AS tenant FROM rls_orders",
+      "SELECT city AS city,city AS tenant FROM rls_orders",
+      "SELECT city AS region_name,tenant FROM rls_orders WHERE city='Paris'",
+      "SELECT city,tenant FROM rls_orders WHERE city='O''Reilly'",
+      "SELECT city,tenant FROM rls_orders WHERE city='Paris'; DELETE FROM rls_orders"
+    ))
+      assertThrows(RuntimeException.class,()->
+        SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(sql,fields),sql);
   }
 
   @Test void forgedParametersInvalidJoinAndNonSelectSourceFailClosed(){

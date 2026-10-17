@@ -338,3 +338,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 38. P1-SEMANTIC-RELATION-SOURCE-LINEAGE-10：RLS 源 SQL 直投影与预聚合阻断（2026-10-17）
 
 双侧 RLS 管理员编译预览现在要求两侧 SQL 均为可证明字段血缘的单表直接物理列投影；复用 SELECT AST，并严格拒绝预聚合、CTE、UNION、复杂过滤、关联、子查询、改名及缺失物理列。这只收紧 RLS 预览，不放开审查、候选正式发布或读者 SQL。只验改动范围的 Java/H2 专项，无 DDL 或线上部署。详见 [P1_SEMANTIC_RELATION_SOURCE_LINEAGE_10.md](P1_SEMANTIC_RELATION_SOURCE_LINEAGE_10.md)。
+
+
+## 39. P1-SEMANTIC-RELATION-SOURCE-LINEAGE-11：受限 WHERE 与字段别名安全血缘（2026-10-17）
+
+双侧 RLS **管理员编译预览**允许已确认单表源使用直接物理字段的显式 `AS` 别名及最多四个 `AND` 的列等值字面量 WHERE；完整子语法匹配 + JSQLParser AST 双重校验物理列、输出别名、限定符和字段目录映射，保留聚合/OR/子查询/函数/注释/运行时占位符全部拒绝。仅测试 `SemanticRelationRlsPlanPreviewTest`，不放行读者 JOIN、正式模型发布、权限审查或真实 StarRocks；无 DDL/线上部署。见 [P1_SEMANTIC_RELATION_SOURCE_LINEAGE_11.md](P1_SEMANTIC_RELATION_SOURCE_LINEAGE_11.md)。
