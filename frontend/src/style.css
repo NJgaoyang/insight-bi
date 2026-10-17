@@ -446,5 +446,5 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .semantic-draft-bind{display:flex;flex-direction:column;gap:8px;padding:8px;background:#f5f8fc;border:1px solid #d9e5f3;border-radius:5px;font-size:12px}
 .semantic-review-snapshots button,.semantic-draft-bind button{margin-left:8px;border:1px solid #c5d8ed;background:white;padding:5px 9px;border-radius:5px;cursor:pointer;color:#37649b}
 
-.semantic-rls-plan{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #c5d8ed;border-radius:6px;background:#f7f9fc}
+.semantic-rls-plan{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #c5d8ed;border-radius:6px;background:#f7f9fc;max-width:100%;min-width:0;overflow:hidden}
 .semantic-rls-plan pre{max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all;padding:8px;background:#eaf0f8;color:#28415f;border-radius:4px;font-size:11px}
