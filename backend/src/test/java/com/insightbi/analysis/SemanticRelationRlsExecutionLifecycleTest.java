@@ -84,12 +84,12 @@ class SemanticRelationRlsExecutionLifecycleTest {
   /** H2 is the only database. Proxy simulates a MySQL grant response and a
       truthful JDBC read-only hint strictly inside this isolated test fixture. */
   private static Connection simulatedSource(Connection jdbc,boolean allow,
-                                            AtomicBoolean closed){
+                                            AtomicBoolean closed,boolean wrongCatalog){
     AtomicBoolean readOnly=new AtomicBoolean();
     return (Connection)Proxy.newProxyInstance(Connection.class.getClassLoader(),
       new Class<?>[]{Connection.class},(proxy,method,args)->{
         String op=method.getName();
-        if(op.equals("getCatalog"))return "analytics";
+        if(op.equals("getCatalog"))return wrongCatalog?"unapproved":"analytics";
         if(op.equals("setReadOnly")){
           readOnly.set((Boolean)args[0]);return null;
         }
@@ -130,7 +130,8 @@ class SemanticRelationRlsExecutionLifecycleTest {
     SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),READER,
       "left","right",f.left(),f.right(),f.plan(),f.binds(),
       engine,"analytics",
-      ()->simulatedSource(f.source().getConnection(),grants,closed),probe);
+      ()->simulatedSource(f.source().getConnection(),grants,closed,
+        "starrocks".equals(engine)),probe);
   }
 
   @Test void joinStatementAndSourceClosedBeforeRevocationRowLockReleased()throws Exception{
@@ -188,7 +189,7 @@ class SemanticRelationRlsExecutionLifecycleTest {
     }
   }
 
-  @Test void unauthorizedGrantsOrEngineNeverReachPreparedCallbackAndCloseConnection(){
+  @Test void unauthorizedGrantsOrWrongActualCatalogNeverReachPreparedCallback(){
     var f=fixture();
     var callbackCount=new AtomicInteger();
     var close=new AtomicBoolean();

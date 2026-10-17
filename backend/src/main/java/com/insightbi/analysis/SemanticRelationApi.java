@@ -601,9 +601,22 @@ public class SemanticRelationApi {
   }
   /** Deterministic snapshot of both source SQL strings, connections and physical fields. */
   private String sourceFingerprint(String leftId,String rightId){
-    return SemanticRelationSourceFingerprint.compute(
-      store.dataset(leftId),store.dataset(rightId),
-      catalog.fields(leftId),catalog.fields(rightId));
+    var left=store.dataset(leftId);
+    var right=store.dataset(rightId);
+    var lFields=catalog.fields(leftId);
+    var rFields=catalog.fields(rightId);
+    // Legacy metadata-only fixtures may not have a registered connection.
+    // The isolated execution gate REFUSES such approvals. Real, registered
+    // connections pin endpoint, account and credential in approvals from now on.
+    var connections=db.queryForList(
+      "SELECT id,engine,host,port,db_name,username,credential "+
+      "FROM insight_connection WHERE id=?",String.valueOf(left.get("connection_id")));
+    if(connections.isEmpty())
+      return SemanticRelationSourceFingerprint.compute(left,right,lFields,rFields);
+    if(connections.size()!=1)
+      throw new IllegalStateException("数据连接元数据重复");
+    return SemanticRelationSourceFingerprint.computeWithConnection(
+      left,right,lFields,rFields,connections.get(0));
   }
   private Map<String,FieldCatalog.Field> physicalFields(String dataset){
     var fields=new HashMap<String,FieldCatalog.Field>();

@@ -24,6 +24,41 @@ public final class SemanticRelationSourceFingerprint {
       return HexFormat.of().formatHex(d.digest());
     }catch(NoSuchAlgorithmException e){throw new IllegalStateException("SHA-256 不可用",e);}
   }
+  /**
+   * New approvals with a persisted connection also pin its effective endpoint,
+   * account and encrypted credential version. The stored approval hash changes
+   * on any connection edit, even when connection_id itself stays unchanged.
+   * Do NOT return this hash or the credential outside the server.
+   */
+  public static String computeWithConnection(Map<String,Object> left,
+      Map<String,Object> right,List<FieldCatalog.Field> leftFields,
+      List<FieldCatalog.Field> rightFields,Map<String,Object> connection){
+    if(connection==null)throw new IllegalStateException("连接元数据未登记");
+    String connectionId=required(connection,"id");
+    if(!connectionId.equals(left.get("connection_id"))||
+       !connectionId.equals(right.get("connection_id")))
+      throw new IllegalStateException("关系双方没有使用相同的登记连接");
+    try{
+      MessageDigest d=MessageDigest.getInstance("SHA-256");
+      add(d,"semantic-relation-source-v2-connection");
+      add(d,compute(left,right,leftFields,rightFields));
+      for(String key:List.of("id","engine","host","db_name","username","credential"))
+        add(d,required(connection,key));
+      Object port=connection.get("port");
+      if(!(port instanceof Number p)||p.intValue()<1||p.intValue()>65535)
+        throw new IllegalStateException("连接端口元数据无效");
+      add(d,Integer.toString(p.intValue()));
+      return HexFormat.of().formatHex(d.digest());
+    }catch(NoSuchAlgorithmException e){
+      throw new IllegalStateException("SHA-256 不可用",e);
+    }
+  }
+  private static String required(Map<String,Object> data,String key){
+    if(!(data.get(key) instanceof String s)||s.isBlank())
+      throw new IllegalStateException("数据库连接配置缺少必要项: "+key);
+    return s;
+  }
+
   private static void append(MessageDigest d,Map<String,Object> source,
                              List<FieldCatalog.Field> fields){
     if(source==null||fields==null)throw new IllegalArgumentException("关系源快照不存在");

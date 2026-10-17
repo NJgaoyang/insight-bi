@@ -368,3 +368,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 44. P1-SEMANTIC-RLS-EXECUTION-LIFECYCLE-16：保持元数据锁至来源资源关闭（2026-10-17）
 
 新增包内 `SemanticRelationRlsExecutionLifecycle`，按顺序协调并发额度、READ_COMMITTED 读者行锁、来源 MySQL SHOW GRANTS 检查和有限制的 JDBC PreparedStatement。测试回调结束后先关闭来源语句、回滚并关闭源连接，再释放元数据锁与并发额度。只用 H2 两线程及测试专用代理核验撤权等待和拒绝异常路径；没有真实数据库授权证明，也未开放 Reader JOIN / 发布。无 DDL、不部署。详见 [P1_SEMANTIC_RLS_EXECUTION_LIFECYCLE_16.md](P1_SEMANTIC_RLS_EXECUTION_LIFECYCLE_16.md)。
+
+
+## 45. P1-SEMANTIC-RLS-SOURCE-APPROVAL-BINDING-17：审批来源与连接配置指纹闭环（2026-10-17）
+
+对登记的真实连接新审批指纹增加 engine/host/port/db_name/username/credential 配置，变更后需要重新确认；无登记连接的历史草稿保留原元数据行为，但隔离来源门禁一律拒绝。新增 `SemanticRelationRlsApprovedSourceGate` 在现有持有读者行锁的事务内锁关系、双侧数据集、字段及连接记录，重验审批哈希，按关联键与输出字段重新生成 RLS SQL，并比对 SQL/字段与权限绑定证明。P1-16 内部生命周期不再接受调用者自行指定的来源引擎与 catalog；相关 H2 测试覆盖连接、源 SQL、字段、关联版本失效时借源前拒绝。没有新 DDL、不连接生产、不开放 Reader JOIN 或发布。详见 [P1_SEMANTIC_RLS_SOURCE_APPROVAL_BINDING_17.md](P1_SEMANTIC_RLS_SOURCE_APPROVAL_BINDING_17.md)。

@@ -1,5 +1,7 @@
 package com.insightbi.analysis;
 
+import com.insightbi.DatabaseStore;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -18,8 +20,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * until AFTER the source statement and connection have been closed. Only
  * compliant governance writers are serialized by this locking protocol.
  *
- * Source SQL and ACL snapshots still require runtime fingerprint revalidation
- * before this can become an actual reader execution path.
+ * Approved SQL, physical fields and registered connection metadata are now
+ * revalidated while locked. A test source factory still cannot prove the
+ * actual remote host/credential, so this never authorizes reader execution.
  */
 final class SemanticRelationRlsExecutionLifecycle {
   @FunctionalInterface interface SourceConnection {
@@ -31,17 +34,17 @@ final class SemanticRelationRlsExecutionLifecycle {
   private SemanticRelationRlsExecutionLifecycle(){}
 
   static void inspect(JdbcTemplate metadata,DataSourceTransactionManager transactions,
+                      DatabaseStore store,FieldCatalog catalog,String relationId,
                       String reader,String leftId,String rightId,
                       Map<String,FieldCatalog.Field> leftFields,
                       Map<String,FieldCatalog.Field> rightFields,
                       SemanticRelationRlsPlanPreview.Preview plan,
                       SemanticRelationRlsBindPreflight.Attestation expected,
-                      String engine,String catalog,SourceConnection source,
-                      StatementProbe probe){
+                      SourceConnection source,StatementProbe probe){
     if(TransactionSynchronizationManager.isActualTransactionActive())
       throw new IllegalStateException("不能在不确定的外部事务中嵌套 JOIN 生命周期");
-    if(metadata==null||transactions==null||source==null||probe==null||
-       engine==null||catalog==null)
+    if(metadata==null||transactions==null||store==null||catalog==null||
+       relationId==null||source==null||probe==null)
       throw new IllegalArgumentException("受控生命周期缺少必要输入");
     // Admission happens before a transaction lock or source JDBC connection.
     try(var reservation=SemanticRelationRlsExecutionBoundary.reserve(plan,expected)){
@@ -53,11 +56,16 @@ final class SemanticRelationRlsExecutionLifecycle {
         // Lock remains held until this lambda returns and transaction commits.
         SemanticRelationRlsRevocationGate.requireCurrentInTransaction(
           metadata,reader,leftId,rightId,leftFields,rightFields,plan,expected);
+        // Only the approved relationship's locked, persisted source definition
+        // may supply the engine/catalog. Callers must not choose them.
+        var verified=SemanticRelationRlsApprovedSourceGate.require(
+          metadata,store,catalog,relationId,reader,leftId,rightId,plan,expected);
         try(Connection connection=source.open()){
           connection.setAutoCommit(false);
           try{
             // Must use the ACTUAL source connection for SHOW GRANTS.
-            SemanticRelationRlsSourceGrantGate.require(connection,engine,catalog);
+            SemanticRelationRlsSourceGrantGate.require(
+              connection,verified.engine(),verified.catalog());
             try(PreparedStatement prepared=SemanticRelationRlsExecutionBoundary.prepare(
                 connection,plan,expected,reservation)){
               probe.inspect(prepared); // Test-only; this class executes no SQL itself.
