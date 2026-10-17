@@ -347,8 +347,12 @@ class SemanticRelationRlsPlanPreviewTest {
     assertEquals(1,one.leftCount());
     assertEquals(2,one.rightCount());
     assertTrue(one.bindingHash().matches("[0-9a-f]{64}"));
-    assertFalse(one.toString().contains("B"));
-    assertFalse(one.toString().contains("C"));
+    // The attestation surface has counts plus a digest only; it cannot
+    // accidentally serialize the original per-reader allowlist values.
+    assertEquals(3,SemanticRelationRlsBindPreflight.Attestation.class
+      .getRecordComponents().length);
+    assertEquals(String.class,SemanticRelationRlsBindPreflight.Attestation.class
+      .getRecordComponents()[2].getType());
     f.db().update("UPDATE insight_reader_row_policy_value SET allowed_value=? "+
       "WHERE user_id=? AND dataset_id=? AND allowed_value=?","D",READER,"right","C");
     var changed=SemanticRelationRlsBindPreflight.inspect(f.db(),READER,"left","right",
