@@ -6,6 +6,13 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.net.URI;
+import java.io.IOException;
+import java.sql.SQLException;
+import java.security.GeneralSecurityException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.util.*;
@@ -17,6 +24,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class SemanticRelationRlsTlsConnectionFactoryTest {
   @TempDir Path directory;
@@ -277,4 +285,104 @@ class SemanticRelationRlsTlsConnectionFactoryTest {
     assertThrows(IllegalStateException.class,()->
       pinned(f,approved(f),caFile,null));
   }
+  private static TransactionTemplate writeTransaction(Fixture f){
+    var tx=new TransactionTemplate(f.transactions());
+    tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+    return tx;
+  }
+  private java.sql.Connection testOpen(Fixture f,Path root,String pin,
+      SemanticRelationRlsTlsConnectionFactory.TlsConnector connector){
+    return writeTransaction(f).execute(status->{
+      try{
+        return SemanticRelationRlsTlsConnectionFactory.openApprovedWithConnector(
+          f.db(),f.store(),approved(f),root,SECRET,pin,connector);
+      }catch(IOException|GeneralSecurityException|SQLException failure){
+        throw new IllegalStateException("隔离 TLS 握手拒绝",failure);
+      }
+    });
+  }
+
+  @Test void originalCaReplacementDuringHandshakeCannotReplacePinnedSnapshot()
+      throws Exception{
+    var f=fixture();
+    var original=trustedRoot();
+    var rotation=rotatedRoot();
+    byte[] rotatedBytes=Files.readAllBytes(rotation);
+    String pin=SemanticRelationRlsTlsConnectionFactory.caFingerprint(original,SECRET);
+    var captured=new AtomicReference<Path>();
+    var connection=mock(java.sql.Connection.class);
+    var actual=testOpen(f,original,pin,(url,properties)->{
+      var snapshot=Path.of(URI.create(
+        properties.getProperty("trustCertificateKeyStoreUrl")));
+      captured.set(snapshot);
+      try{
+        assertNotEquals(original.toRealPath(),snapshot.toRealPath());
+        assertEquals("VERIFY_IDENTITY",properties.getProperty("sslMode"));
+        assertEquals("r--------",
+          PosixFilePermissions.toString(Files.getPosixFilePermissions(snapshot)));
+        assertEquals("rwx------",
+          PosixFilePermissions.toString(Files.getPosixFilePermissions(snapshot.getParent())));
+        assertEquals(pin,SemanticRelationRlsTlsConnectionFactory.caFingerprint(
+          snapshot,SECRET));
+        // Malicious/surprise rotation of operator CA during the connection's
+        // handshake cannot change the temporary trust material Connector/J sees.
+        Files.write(original,rotatedBytes);
+        assertEquals(pin,SemanticRelationRlsTlsConnectionFactory.caFingerprint(
+          snapshot,SECRET));
+        assertNotEquals(pin,SemanticRelationRlsTlsConnectionFactory.caFingerprint(
+          original,SECRET));
+      }catch(Exception issue){throw new SQLException("Mock TLS handshake failed",issue);}
+      return connection;
+    });
+    assertSame(connection,actual);
+    assertNotNull(captured.get());
+    assertFalse(Files.exists(captured.get()));
+    assertFalse(Files.exists(captured.get().getParent()));
+    verify(connection,never()).close();
+    assertThrows(IllegalStateException.class,()->testOpen(f,original,pin,
+      (url,properties)->fail("Rotated unapproved CA must not start handshake")));
+  }
+
+  @Test void snapshotIsDestroyedOnHandshakeFailureAndOversizedCaFailsClosed()
+      throws Exception{
+    var f=fixture();
+    var root=trustedRoot();
+    String pin=SemanticRelationRlsTlsConnectionFactory.caFingerprint(root,SECRET);
+    var accessed=new AtomicReference<Path>();
+    assertThrows(IllegalStateException.class,()->testOpen(f,root,pin,
+      (url,props)->{
+        accessed.set(Path.of(URI.create(props.getProperty(
+          "trustCertificateKeyStoreUrl"))));
+        assertTrue(Files.exists(accessed.get()));
+        throw new SQLException("simulated TLS hostname mismatch");
+      }));
+    assertNotNull(accessed.get());
+    assertFalse(Files.exists(accessed.get()));
+    assertFalse(Files.exists(accessed.get().getParent()));
+    Files.write(root,new byte[2*1024*1024+1]);
+    assertThrows(IllegalStateException.class,()->testOpen(f,root,pin,
+      (url,props)->fail("Oversized truststore must not reach connector")));
+  }
+
+  @Test void noFollowPreventsSourceSymlinkOrMissingPinBeforeHandshake()
+      throws Exception{
+    var f=fixture();
+    var root=trustedRoot();
+    String pin=SemanticRelationRlsTlsConnectionFactory.caFingerprint(root,SECRET);
+    var symlink=directory.resolve("operator-truststore-symlink.p12");
+    Files.createSymbolicLink(symlink,root.getFileName());
+    assertThrows(RuntimeException.class,()->
+      SemanticRelationRlsTrustSnapshot.capture(symlink,SECRET,pin));
+    assertThrows(RuntimeException.class,()->
+      SemanticRelationRlsTrustSnapshot.capture(root,SECRET,"0".repeat(64)));
+    try(var temporary=SemanticRelationRlsTrustSnapshot.capture(root,SECRET,pin)){
+      var file=Path.of(URI.create(temporary.url()));
+      assertTrue(Files.exists(file));
+      assertEquals(pin,SemanticRelationRlsTlsConnectionFactory.caFingerprint(file,SECRET));
+      temporary.close();
+      assertFalse(Files.exists(file));
+      assertThrows(IllegalStateException.class,temporary::url);
+    }
+  }
+
 }

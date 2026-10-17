@@ -2,6 +2,8 @@ package com.insightbi.analysis;
 
 import com.insightbi.DatabaseStore;
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
@@ -106,8 +108,22 @@ final class SemanticRelationRlsTlsConnectionFactory {
        Files.isSymbolicLink(file)||!Files.isRegularFile(file)||
        !Files.isReadable(file))
       throw new IllegalStateException("TLS CA 信任库缺失或不是受信常规文件");
+    try(var in=Files.newInputStream(file,java.nio.file.LinkOption.NOFOLLOW_LINKS)){
+      return caFingerprint(in,password,at);
+    }
+  }
+  static String caFingerprint(byte[] data,char[] password,Date at)
+      throws IOException,GeneralSecurityException{
+    if(data==null||data.length==0||password==null||password.length==0||at==null)
+      throw new IllegalStateException("CA 快照内容或验证时间不合法");
+    try(var in=new ByteArrayInputStream(data)){
+      return caFingerprint(in,password,at);
+    }
+  }
+  private static String caFingerprint(InputStream in,char[] password,Date at)
+      throws IOException,GeneralSecurityException{
     var store=KeyStore.getInstance("PKCS12");
-    try(var in=Files.newInputStream(file)){store.load(in,password);}
+    store.load(in,password);
     var certs=new ArrayList<String>();
     for(var aliases=store.aliases();aliases.hasMoreElements();){
       String alias=aliases.nextElement();
@@ -169,13 +185,48 @@ final class SemanticRelationRlsTlsConnectionFactory {
     return preparePinned(current,store,caFile,caPassword,expectedCaHash);
   }
 
+  @FunctionalInterface interface TlsConnector {
+    Connection connect(String url,Properties properties)throws SQLException;
+  }
+
+  /**
+   * The pinned CA is read once into memory and copied to a private POSIX
+   * snapshot; Connector/J never uses the operator's mutable CA path.
+   * Connection is returned only after snapshot cleanup succeeds. This test
+   * seam is package-private and is not wired to any Reader route.
+   */
+  static Connection openApprovedWithConnector(JdbcTemplate db,DatabaseStore store,
+      SemanticRelationRlsApprovedSourceGate.VerifiedSource verified,
+      Path caFile,char[] caPassword,String expectedCaHash,TlsConnector connector)
+      throws IOException,GeneralSecurityException,SQLException{
+    if(connector==null)throw new IllegalArgumentException("TLS 连接驱动不能为空");
+    var prepared=prepareApproved(db,store,verified,caFile,caPassword,expectedCaHash);
+    Connection connected=null;
+    try(var snapshot=SemanticRelationRlsTrustSnapshot.capture(
+          caFile,caPassword,expectedCaHash)){
+      var properties=prepared.properties();
+      properties.setProperty("trustCertificateKeyStoreUrl",snapshot.url());
+      connected=connector.connect(prepared.url(),properties);
+      if(connected==null)
+        throw new IllegalStateException("TLS 驱动没有返回有效连接");
+      // Cleanup happens before the connection escapes the approved opener.
+      try{
+        snapshot.close();
+      }catch(IOException failure){
+        try{connected.close();}catch(SQLException close){failure.addSuppressed(close);}
+        throw failure;
+      }
+      return connected;
+    }
+  }
+
   /** Never pass an arbitrary connection map to this verified-opening path. */
   static Connection openApproved(JdbcTemplate db,DatabaseStore store,
       SemanticRelationRlsApprovedSourceGate.VerifiedSource verified,
       Path caFile,char[] caPassword,String expectedCaHash)
       throws IOException,GeneralSecurityException,SQLException{
-    var prepared=prepareApproved(db,store,verified,caFile,caPassword,expectedCaHash);
-    return DriverManager.getConnection(prepared.url(),prepared.properties());
+    return openApprovedWithConnector(db,store,verified,caFile,caPassword,
+      expectedCaHash,DriverManager::getConnection);
   }
 
   /** Future callers must obtain the approved row while holding its metadata lock. */

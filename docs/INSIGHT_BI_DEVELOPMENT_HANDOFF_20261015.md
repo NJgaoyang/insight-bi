@@ -388,3 +388,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 48. P1-SEMANTIC-RLS-TLS-APPROVAL-PIN-20：审批凭据与 CA 信任锚轮换防护（2026-10-17）
 
 新增内部 `prepareApproved/openApproved`：仅在锁定的 READ_COMMITTED 元数据事务内对比来源连接 host/port/catalog/username、连接 ID 和加密凭据版本摘要；凭据变动立即拒绝。TLS PKCS#12 CA 证书以 DER 内容固定 SHA-256 指纹，过期、非 CA 或与可信部署侧预期指纹不符均拒绝，CA 轮换须显式重新确认证书指纹。新增未对外映射的 `inspectVerifiedTls`，其来源连接只能由已审批的 TLS 工厂打开；旧 H2 接口仍限内部隔离模拟。新增定向 H2/离线 CA 验证，但尚未处理信任库校验到握手之间的文件 TOCTOU，也未验证真实 MySQL 证书或启动 Reader JOIN。未改 `DatabaseStore.open()`、无 DDL、不部署。详见 [P1_SEMANTIC_RLS_TLS_APPROVAL_PIN_20.md](P1_SEMANTIC_RLS_TLS_APPROVAL_PIN_20.md)。
+
+
+## 49. P1-SEMANTIC-RLS-TLS-TRUST-SNAPSHOT-21：握手期私有 CA 快照隔离（2026-10-17）
+
+新增 `SemanticRelationRlsTrustSnapshot`。内部 `openApproved` 不再将可轮换的原始 CA 文件直接交给 Connector/J，而是在文件签名、2 MiB 上限、证书有效期及部署 CA 固定指纹校验后，复制为每次连接独占的 POSIX 0700 私有目录/0400 信任库快照，再用 `sslMode=VERIFY_IDENTITY` 握手。连接成功或失败后销毁快照，销毁失败不得返回连接。定向 H2 模拟握手验证原 CA 在握手过程中被替换也不会影响已固定快照、异常和超限均清理或拒绝。**仅防原 CA 路径替换，不防同 UID/root 篡改，也未执行真实 MySQL TLS 握手**。Reader JOIN、发布和生产连接均保持关闭。详见 [P1_SEMANTIC_RLS_TLS_TRUST_SNAPSHOT_21.md](P1_SEMANTIC_RLS_TLS_TRUST_SNAPSHOT_21.md)。
