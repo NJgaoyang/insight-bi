@@ -25,6 +25,15 @@ const reviewReader=ref(''),reviewJoin=ref<'INNER'|'LEFT'>('LEFT')
 const reviewBusy=ref(false),reviewMessage=ref(''),reviewReady=ref(false)
 type Snapshot={releaseNo:number;relationRevision:number;status:'SEALED_ONLY'|'STALE'|'BLOCKED';reason:string}
 const snapshots=ref<Snapshot[]>([])
+type TargetWidget={id:string;title?:string;datasetId?:string;analysisV2?:Record<string,unknown>}
+type TargetDashboard={id:string;name:string;mode:string;revision:number;
+ content:{widgets:TargetWidget[];[key:string]:unknown}}
+type DashboardListing={id:string;name:string;kind:string;revision:number}
+const bindingRelease=ref(0),bindingBusy=ref(false),bindingMessage=ref('')
+const bindingDashboards=ref<DashboardListing[]>([]),bindingDashboardId=ref('')
+const bindingDashboard=ref<TargetDashboard|null>(null),bindingWidgetId=ref('')
+const bindingWidgets=computed(()=>bindingDashboard.value?.content.widgets.filter(w=>
+ w.datasetId===reviewRow.value?.sourceDatasetId&&!!w.analysisV2&&w.analysisV2.usePipeline!==true)||[])
 const targets=computed(()=>datasets.value.filter(d=>d.id!==source.value&&
  !!source.value&&d.connection_id===datasets.value.find(x=>x.id===source.value)?.connection_id))
 const left=computed(()=>fields.value[source.value]?.filter(f=>!f.calculated&&!f.hidden)||[])
@@ -117,7 +126,7 @@ async function inspectKeys(row:Draft){
 async function openAccessReview(row:Draft){
  if(busy.value||row.status!=='APPROVED')return
  reviewRow.value=row;reviewReader.value='';reviewJoin.value='LEFT';reviewMessage.value=''
- reviewReady.value=false;snapshots.value=[]
+ reviewReady.value=false;snapshots.value=[];clearBinding()
  reviewOpen.value=true
  try{
   const users=await api<Reader[]>('/governance/users')
@@ -133,8 +142,55 @@ async function loadReleaseSnapshots(){
   if(reviewRow.value?.id===row.id)snapshots.value=rows
  }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'候选版本读取失败'}
 }
-function onReaderChange(){reviewReady.value=false;reviewMessage.value='';snapshots.value=[];void loadReleaseSnapshots()}
-function onJoinChange(){reviewReady.value=false;reviewMessage.value=''}
+function clearBinding(){
+ bindingRelease.value=0;bindingMessage.value='';bindingDashboardId.value=''
+ bindingDashboard.value=null;bindingWidgetId.value='';bindingDashboards.value=[]
+}
+function onReaderChange(){reviewReady.value=false;reviewMessage.value='';snapshots.value=[];clearBinding();void loadReleaseSnapshots()}
+function onJoinChange(){reviewReady.value=false;reviewMessage.value='';clearBinding()}
+async function chooseBindingTarget(item:Snapshot){
+ if(item.status!=='SEALED_ONLY'||!reviewRow.value||!reviewReader.value)return
+ clearBinding();bindingRelease.value=item.releaseNo;bindingBusy.value=true
+ try{
+  const all=await api<DashboardListing[]>('/dashboards')
+  bindingDashboards.value=all.filter(d=>d.kind==='analysis')
+  if(!bindingDashboards.value.length)bindingMessage.value='尚无可绑定的分析主题草稿'
+ }catch(e:unknown){bindingMessage.value=e instanceof Error?e.message:'读取分析主题失败'}
+ finally{bindingBusy.value=false}
+}
+async function chooseBindingDashboard(id:string){
+ bindingDashboardId.value=id;bindingDashboard.value=null;bindingWidgetId.value=''
+ if(!id)return
+ bindingBusy.value=true;bindingMessage.value=''
+ try{
+  const dash=await api<TargetDashboard>('/dashboards/'+encodeURIComponent(id))
+  if(!dash.content||!Array.isArray(dash.content.widgets)||!Number.isInteger(dash.revision))
+   throw new Error('分析主题数据不合法')
+  bindingDashboard.value=dash
+  if(!dash.content.widgets.some(w=>w.datasetId===reviewRow.value?.sourceDatasetId&&
+    !!w.analysisV2&&w.analysisV2.usePipeline!==true))
+   bindingMessage.value='此主题没有使用当前主数据集的 V2 组件'
+ }catch(e:unknown){bindingMessage.value=e instanceof Error?e.message:'读取分析主题草稿失败'}
+ finally{bindingBusy.value=false}
+}
+async function bindToDashboardDraft(){
+ const relation=reviewRow.value,dash=bindingDashboard.value
+ if(!relation||!dash||!bindingWidgetId.value||!reviewReader.value||
+   !bindingRelease.value||bindingBusy.value)return
+ if(!bindingWidgets.value.some(w=>w.id===bindingWidgetId.value))return
+ bindingBusy.value=true;bindingMessage.value=''
+ try{
+  const refValue={relationId:relation.id,readerId:reviewReader.value,releaseNo:bindingRelease.value}
+  const widgets=dash.content.widgets.map(w=>w.id!==bindingWidgetId.value?w:{
+   ...w,analysisV2:{...w.analysisV2,semanticRelation:refValue}})
+  const result=await put<{revision:number}>('/dashboards/'+encodeURIComponent(dash.id),{
+   name:dash.name,mode:dash.mode,revision:dash.revision,content:{...dash.content,widgets}})
+  bindingMessage.value='已绑定分析主题草稿 v'+result.revision+'；禁止发布，也不执行多表查询'
+  bindingDashboard.value={...dash,revision:result.revision,
+   content:{...dash.content,widgets}}
+ }catch(e:unknown){bindingMessage.value=e instanceof Error?e.message:'草稿绑定失败'}
+ finally{bindingBusy.value=false}
+}
 async function sealReleaseSnapshot(){
  const row=reviewRow.value
  if(!row||!reviewReady.value||!reviewReader.value||reviewBusy.value)return
@@ -250,7 +306,25 @@ onMounted(load)
      <strong>候选版本（并非已发布）</strong>
      <p v-for="item in snapshots" :key="item.releaseNo">
       v{{item.releaseNo}} · 关系修订 {{item.relationRevision}} · {{item.status}} · {{item.reason}}
+      <button v-if="item.status==='SEALED_ONLY'" type="button" :disabled="bindingBusy"
+       @click="chooseBindingTarget(item)">绑定分析主题草稿</button>
      </p>
+    </div>
+    <div v-if="bindingRelease" class="semantic-draft-bind">
+     <strong>候选 v{{bindingRelease}} · 草稿组件绑定（不可发布）</strong>
+     <el-select :model-value="bindingDashboardId" placeholder="选择分析主题" filterable
+      @update:model-value="v=>chooseBindingDashboard(String(v))">
+      <el-option v-for="d in bindingDashboards" :key="d.id" :value="d.id" :label="d.name"/>
+     </el-select>
+     <el-select v-model="bindingWidgetId" placeholder="选择当前主数据集的 V2 组件"
+      :disabled="!bindingDashboard">
+      <el-option v-for="w in bindingWidgets" :key="w.id" :value="w.id"
+       :label="w.title||w.id"/>
+     </el-select>
+     <button type="button" :disabled="!bindingWidgetId||bindingBusy" @click="bindToDashboardDraft">
+      保存草稿绑定
+     </button>
+     <p v-if="bindingMessage" role="status">{{bindingMessage}}</p>
     </div>
    </div>
    <template #footer>

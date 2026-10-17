@@ -25,6 +25,8 @@ export interface AnalysisV2Bindings {
   /** Explicitly use a saved and revision-pinned data processing result. */
   usePipeline?:boolean
   pipelineRevision?:number
+  /** Non-executable metadata-only semantic candidate reference in a draft. */
+  semanticRelation?:{relationId:string;readerId:string;releaseNo:number}
   dimensions:DimensionV2[]
   measures:MeasureV2[]
   filters:{pre:FilterV2[];post:FilterV2[]}

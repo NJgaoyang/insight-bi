@@ -5,7 +5,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
  const browser=await chromium.launch({args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1480,height:960}})
-  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0,releaseVersions=[]
+  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0,releaseVersions=[],draftBound=null
   page.on('pageerror',e=>errors.push(e.stack||e.message))
   const send=(r,v,status=200)=>r.fulfill({status,contentType:'application/json',body:JSON.stringify(v)})
   await page.route('**/api/**',route=>{
@@ -15,6 +15,21 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     {id:'ds1',name:'订单',connection_id:'local',folder_id:null,fields:[]},
     {id:'ds2',name:'城市',connection_id:'local',folder_id:null,fields:[]},
     {id:'ds3',name:'其他连接',connection_id:'other',folder_id:null,fields:[]}])
+   if(p==='/api/dashboards'&&m==='GET')
+    return send(route,[{id:'dash1',name:'测试分析主题',kind:'analysis',revision:draftBound?2:1}])
+   if(p==='/api/dashboards/dash1'&&m==='GET')
+    return send(route,{id:'dash1',name:'测试分析主题',kind:'analysis',mode:'grid',
+     revision:draftBound?2:1,content:{mode:'grid',theme:'light',
+      widgets:[{id:'widget1',title:'订单图表',datasetId:'ds1',type:'bar',
+       analysisV2:{dimensions:[],measures:[],filters:{pre:[],post:[]},sort:[],limit:200}}]}})
+   if(p==='/api/dashboards/dash1'&&m==='PUT'){
+    const data=req.postDataJSON()
+    assert.equal(data.revision,1)
+    assert.deepEqual(data.content.widgets[0].analysisV2.semanticRelation,
+     {relationId:'draft1',readerId:'viewer1',releaseNo:1})
+    draftBound=data
+    return send(route,{revision:2})
+   }
    if(p==='/api/governance/users')return send(route,[
     {id:'viewer1',display_name:'测试读者',role:'VIEWER',enabled:true},
     {id:'disabled',display_name:'禁用账号',role:'VIEWER',enabled:false}])
@@ -164,6 +179,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await accessDialog.getByText(/候选版本 v1 已封存/).waitFor()
   await accessDialog.getByText(/SEALED_ONLY/).waitFor()
   assert.equal(releaseVersions.length,1)
+  await accessDialog.getByRole('button',{name:'绑定分析主题草稿'}).click()
+  const targetSelects=accessDialog.locator('.semantic-draft-bind .el-select')
+  await selectOption(targetSelects.nth(0),'测试分析主题')
+  await selectOption(targetSelects.nth(1),'订单图表')
+  await accessDialog.getByRole('button',{name:'保存草稿绑定'}).click()
+  await accessDialog.getByText(/已绑定分析主题草稿 v2/).waitFor()
+  assert.ok(draftBound)
   await accessDialog.getByRole('button',{name:'关闭'}).click()
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})

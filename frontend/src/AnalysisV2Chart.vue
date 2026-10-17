@@ -94,6 +94,11 @@ function dispose(){if(chart){chart.dispose();chart=null}}
 async function load(){
  const gen=++generation,config=bindings.value
  activeRequest?.abort();activeRequest=null
+ if(config?.semanticRelation){
+  result.value=null;rows.value=[];loading.value=false;dispose()
+  error.value='语义关系候选仅绑定草稿；多表 SQL 和读者权限尚未开放，禁止按单表执行'
+  return
+ }
  if(!props.widget.datasetId||!config||!config.measures.length){
   result.value=null;rows.value=[];error.value='请选择数据集并拖入至少一个指标';loading.value=false;dispose();return
  }
