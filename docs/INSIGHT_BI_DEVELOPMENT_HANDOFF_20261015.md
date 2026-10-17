@@ -308,3 +308,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 32. P1-SEMANTIC-RELATION-SOURCE-PIN-04：语义关系源快照保护（2026-10-17）
 
 关系确认现在必须同时绑定两侧数据集 SQL、连接和物理字段定义的 SHA-256 指纹。源数据变化后关系从已确认降为待重新确认且 SQL 编译预览拒绝；纯字段显示名更新不会使关系失效。历史批准但未留指纹的记录安全降级，须重新批准。新增元数据列必须在备份/恢复门禁通过后才能生产落地，不涉及多表实际执行。详见 [P1_SEMANTIC_RELATION_SOURCE_PIN_04.md](P1_SEMANTIC_RELATION_SOURCE_PIN_04.md)。
+
+
+## 33. P1-SEMANTIC-RELATION-CARDINALITY-05：语义关系右表样本基数诊断（2026-10-17）
+
+已确认且源指纹稳定的语义关系新增管理员按需诊断 API：明确同意后对右表最多 2,000 行样本执行只读聚合，统计 NULL 键、重复键组和放大风险，带进程限流及 8 秒 SQL 超时。无完整 JOIN 行数保证；没有读者查询、发布权限或生产部署。见 [P1_SEMANTIC_RELATION_CARDINALITY_05.md](P1_SEMANTIC_RELATION_CARDINALITY_05.md)。

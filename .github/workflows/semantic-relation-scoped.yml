@@ -8,8 +8,10 @@ on:
       - backend/src/main/java/com/insightbi/DatabaseStore.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationApi.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationSourceFingerprint.java
+      - backend/src/main/java/com/insightbi/analysis/SemanticRelationCardinalityProfile.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationSqlPreview.java
       - backend/src/test/java/com/insightbi/analysis/SemanticRelationApiTest.java
+      - backend/src/test/java/com/insightbi/analysis/SemanticRelationCardinalityProfileTest.java
       - frontend/src/SemanticRelationDrafts.vue
       - frontend/src/ModelRelations.vue
       - frontend/src/style.css
@@ -17,6 +19,7 @@ on:
       - docs/P1_SEMANTIC_RELATION_DRAFT_01.md
       - docs/P1_SEMANTIC_RELATION_COMPILE_03.md
       - docs/P1_SEMANTIC_RELATION_SOURCE_PIN_04.md
+      - docs/P1_SEMANTIC_RELATION_CARDINALITY_05.md
       - .github/workflows/semantic-relation-scoped.yml
 jobs:
   relationship-backend:
@@ -32,7 +35,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Bounded metadata draft CRUD and H2 compatibility
         working-directory: backend
-        run: mvn -q -B -Dtest=SemanticRelationApiTest,ModelRelationsApiTest test
+        run: mvn -q -B -Dtest=SemanticRelationApiTest,SemanticRelationCardinalityProfileTest,ModelRelationsApiTest test
   relationship-frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 16

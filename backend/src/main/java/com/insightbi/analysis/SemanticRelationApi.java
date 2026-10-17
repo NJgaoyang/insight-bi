@@ -20,6 +20,7 @@ public class SemanticRelationApi {
   private final DatabaseStore store;
   private final JdbcTemplate db;
   private final FieldCatalog catalog;
+  private static final AnalysisQueryLimiter CARDINALITY_LIMITER=new AnalysisQueryLimiter(2,250);
 
   public SemanticRelationApi(DatabaseStore store,JdbcTemplate db,FieldCatalog catalog){
     this.store=store;this.db=db;this.catalog=catalog;
@@ -145,6 +146,42 @@ public class SemanticRelationApi {
     return SemanticRelationSqlPreview.compile(
       store.dataset(leftId),store.dataset(rightId),leftId,rightId,pairs,
       physicalFields(leftId),physicalFields(rightId),expected,body);
+  }
+
+  /** Right-source SAMPLE only; not a JOIN execution, not reader data. */
+  @PostMapping("/{relationId}/join-key-profile")
+  public SemanticRelationCardinalityProfile.Result joinKeyProfile(
+      @PathVariable String relationId,@RequestBody Map<String,Object> body)throws Exception{
+    if(body==null||body.size()!=2||
+       !Set.of("revision","acknowledgeSourceScan").containsAll(body.keySet())||
+       !Boolean.TRUE.equals(body.get("acknowledgeSourceScan")))
+      throw new IllegalArgumentException("请明确同意本次右表只读抽样");
+    int expected=revision(body.get("revision"));
+    String relation=id(relationId);
+    var rows=db.queryForList(
+      "SELECT source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision,approved_source_hash "+
+      "FROM insight_semantic_relation WHERE id=?",relation);
+    if(rows.size()!=1)throw new IllegalArgumentException("关系草稿不存在");
+    var row=rows.get(0);
+    int actual=((Number)row.get("revision")).intValue();
+    int approved=row.get("approved_revision") instanceof Number n?n.intValue():0;
+    if(actual!=expected||approved!=expected)
+      throw new IllegalStateException("关系尚未确认或版本已变化");
+    String leftId=String.valueOf(row.get("source_dataset_id"));
+    String rightId=String.valueOf(row.get("target_dataset_id"));
+    var pairs=readPairs(String.valueOf(row.get("pairs_json")));
+    validate(leftId,rightId,pairs);
+    if(!sourceFingerprint(leftId,rightId).equals(row.get("approved_source_hash")))
+      throw new IllegalStateException("关系源数据已变化，请重新确认后再诊断");
+    var right=store.dataset(rightId);
+    var plan=SemanticRelationCardinalityProfile.plan(
+      String.valueOf(right.get("sql_body")),pairs,physicalFields(rightId));
+    // Admission before borrowing the external JDBC connection.
+    try(AnalysisQueryLimiter.Lease lease=CARDINALITY_LIMITER.acquire();
+        java.sql.Connection c=store.open(store.connection(String.valueOf(right.get("connection_id"))))){
+      ReadOnlyConnectionPolicy.require(c);
+      return SemanticRelationCardinalityProfile.run(c,plan);
+    }
   }
 
   @DeleteMapping("/{relationId}")

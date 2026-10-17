@@ -213,6 +213,23 @@ class SemanticRelationApiTest {
     String.class,draft.id()));
  }
 
+ @Test void profileRequiresConsentApprovedRevisionAndCurrentSource()throws Exception{
+  var f=fixture();
+  var draft=f.api().create(Map.of("name","风险诊断","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  var body=Map.<String,Object>of("revision",1,"acknowledgeSourceScan",true);
+  assertThrows(IllegalArgumentException.class,()->f.api().joinKeyProfile(
+    draft.id(),Map.of("revision",1)));
+  assertThrows(IllegalStateException.class,()->f.api().joinKeyProfile(draft.id(),body));
+  f.api().approve(draft.id(),Map.of("revision",1));
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "SELECT 'X' AS region","right");
+  assertThrows(IllegalStateException.class,()->f.api().joinKeyProfile(draft.id(),body));
+  f.api().approve(draft.id(),Map.of("revision",1));
+  f.api().update(draft.id(),Map.of("revision",1,"name","更新草稿",
+    "pairs",pairs("city","region")));
+  assertThrows(IllegalStateException.class,()->f.api().joinKeyProfile(draft.id(),body));
+ }
  @Test void rejectsBlankOrSpaceOnlyNames(){
   var f=fixture();
   assertThrows(IllegalArgumentException.class,()->
