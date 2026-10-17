@@ -19,6 +19,10 @@ type SampleProfile={sampledRows:number;nullKeyRows:number;keyGroups:number;
  hasDuplicateKeys:boolean;sampleCapReached:boolean;sampleLimit:number;
  exactSourceCount:boolean;exactJoinRowCount:boolean;scope:string;warning:string}
 const profiling=ref(false),profile=ref<{id:string;revision:number;data:SampleProfile}|null>(null)
+type Reader={id:string;display_name:string;role:string;enabled:boolean}
+const reviewOpen=ref(false),reviewRow=ref<Draft|null>(null),readers=ref<Reader[]>([])
+const reviewReader=ref(''),reviewJoin=ref<'INNER'|'LEFT'>('LEFT')
+const reviewBusy=ref(false),reviewMessage=ref('')
 const targets=computed(()=>datasets.value.filter(d=>d.id!==source.value&&
  !!source.value&&d.connection_id===datasets.value.find(x=>x.id===source.value)?.connection_id))
 const left=computed(()=>fields.value[source.value]?.filter(f=>!f.calculated&&!f.hidden)||[])
@@ -108,6 +112,43 @@ async function inspectKeys(row:Draft){
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关联风险诊断失败')}
  finally{profiling.value=false}
 }
+async function openAccessReview(row:Draft){
+ if(busy.value||row.status!=='APPROVED')return
+ reviewRow.value=row;reviewReader.value='';reviewJoin.value='LEFT';reviewMessage.value=''
+ reviewOpen.value=true
+ try{
+  const users=await api<Reader[]>('/governance/users')
+  readers.value=users.filter(u=>u.enabled&&['VIEWER','EDITOR'].includes(u.role))
+ }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'无法加载读者账号'}
+}
+async function submitAccessReview(){
+ const row=reviewRow.value
+ if(!row||!reviewReader.value||reviewBusy.value||row.status!=='APPROVED')return
+ reviewBusy.value=true;reviewMessage.value=''
+ try{
+  const response=await post<{status:string;reason:string}>(
+   '/model/semantic-relations/'+encodeURIComponent(row.id)+'/access-review',{
+    revision:row.revision,readerId:reviewReader.value,joinType:reviewJoin.value,
+    leftFieldIds:[...new Set(row.pairs.map(p=>p.leftFieldId))],
+    rightFieldIds:[...new Set(row.pairs.map(p=>p.rightFieldId))]})
+  reviewMessage.value=response.status==='READY_FOR_REVIEW'?
+    '已记录预发布审查；没有授予读者访问权，也没有发布模型。':
+    response.reason
+ }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'权限审查失败'}
+ finally{reviewBusy.value=false}
+}
+async function checkAccessReview(){
+ const row=reviewRow.value
+ if(!row||!reviewReader.value||reviewBusy.value)return
+ reviewBusy.value=true
+ try{
+  const report=await api<{status:string;reason:string}>(
+   '/model/semantic-relations/'+encodeURIComponent(row.id)+
+   '/access-review?readerId='+encodeURIComponent(reviewReader.value))
+  reviewMessage.value=report.status+' · '+report.reason
+ }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'审查状态查询失败'}
+ finally{reviewBusy.value=false}
+}
 async function erase(row:Draft){
  try{await ElMessageBox.confirm('删除关系草稿「'+row.name+'」？不会修改原有加工链。','删除草稿',{type:'warning'})}
  catch{return}
@@ -138,6 +179,7 @@ onMounted(load)
     </div>
     <div class="semantic-draft-actions">
      <button v-if="row.status==='DRAFT'" type="button" @click="approve(row)">确认版本</button>
+     <button v-if="row.status==='APPROVED'" type="button" :disabled="busy" @click="openAccessReview(row)">预发布访问审查</button>
      <button v-if="row.status==='APPROVED'" type="button" :disabled="profiling||busy" @click="inspectKeys(row)">
       {{profiling?'检查中…':'检查关联风险'}}
      </button>
@@ -154,6 +196,32 @@ onMounted(load)
    </div>
   </div>
   <p v-else-if="!busy" class="semantic-draft-empty">尚未创建语义关系草稿。</p>
+  <el-dialog v-model="reviewOpen" title="语义关系 · 预发布访问审查" width="min(520px,95%)" append-to-body>
+   <div class="semantic-access-review">
+    <p>仅审查当前已确认关系的关联键输出。此步骤不是报表发布、SQL 查询，也不会赋予读者权限。</p>
+    <label>选择已启用读者
+     <el-select v-model="reviewReader" placeholder="选择需要检查的账号" filterable>
+      <el-option v-for="u in readers" :key="u.id" :value="u.id"
+       :label="u.display_name+' · '+u.role"/>
+     </el-select>
+    </label>
+    <label>预期关联模式
+     <el-select v-model="reviewJoin">
+      <el-option label="左连接 LEFT" value="LEFT"/>
+      <el-option label="内连接 INNER" value="INNER"/>
+     </el-select>
+    </label>
+    <p v-if="reviewMessage" role="status">{{reviewMessage}}</p>
+    <p>若此读者对任何一侧数据集存在列拒绝或行过滤规则，审查必定拒绝。即使审查通过，仍需单独实现安全发布流程。</p>
+   </div>
+   <template #footer>
+    <button type="button" @click="reviewOpen=false">关闭</button>
+    <button type="button" :disabled="!reviewReader||reviewBusy" @click="checkAccessReview">检查已有状态</button>
+    <button type="button" :disabled="!reviewReader||reviewBusy" @click="submitAccessReview">
+     {{reviewBusy?'检查中…':'生成审查记录'}}
+    </button>
+   </template>
+  </el-dialog>
   <el-dialog v-model="formOpen" :title="editingId?'编辑语义关系草稿':'新建语义关系草稿'"
    width="min(700px, 95%)" append-to-body>
    <div class="semantic-draft-form">

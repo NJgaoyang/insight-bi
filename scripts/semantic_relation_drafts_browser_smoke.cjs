@@ -5,7 +5,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
  const browser=await chromium.launch({args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1480,height:960}})
-  let rows=[],requests=[],errors=[],profileRequests=0
+  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0
   page.on('pageerror',e=>errors.push(e.stack||e.message))
   const send=(r,v,status=200)=>r.fulfill({status,contentType:'application/json',body:JSON.stringify(v)})
   await page.route('**/api/**',route=>{
@@ -15,6 +15,9 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     {id:'ds1',name:'订单',connection_id:'local',folder_id:null,fields:[]},
     {id:'ds2',name:'城市',connection_id:'local',folder_id:null,fields:[]},
     {id:'ds3',name:'其他连接',connection_id:'other',folder_id:null,fields:[]}])
+   if(p==='/api/governance/users')return send(route,[
+    {id:'viewer1',display_name:'测试读者',role:'VIEWER',enabled:true},
+    {id:'disabled',display_name:'禁用账号',role:'VIEWER',enabled:false}])
    if(p==='/api/model/relations')return send(route,[])
    if(p==='/api/model/semantic-relations'&&m==='GET')return send(route,rows)
    if(p==='/api/model/semantic-relations'&&m==='POST'){
@@ -24,6 +27,16 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     assert.deepEqual(data.pairs,[{leftFieldId:'city',rightFieldId:'region'}])
     rows=[{id:'draft1',...data,revision:1,status:'DRAFT',reason:''}]
     return send(route,rows[0])
+   }
+   if(p==='/api/model/semantic-relations/draft1/access-review'&&m==='POST'){
+    accessReviews++
+    assert.deepEqual(req.postDataJSON(),{revision:1,readerId:'viewer1',joinType:'LEFT',
+     leftFieldIds:['city'],rightFieldIds:['region']})
+    return send(route,{status:'READY_FOR_REVIEW',reason:'仅元数据审查，不授予权限'})
+   }
+   if(p==='/api/model/semantic-relations/draft1/access-review'&&m==='GET'){
+    assert.equal(url.searchParams.get('readerId'),'viewer1')
+    return send(route,{status:'READY_FOR_REVIEW',reason:'未发布'})
    }
    if(p==='/api/model/semantic-relations/draft1/join-key-profile'&&m==='POST'){
     const data=req.postDataJSON();profileRequests++
@@ -122,6 +135,17 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await scanConfirm.locator('.el-message-box__btns .el-button--primary').click()
   await page.getByText(/右表样本行数：5/).waitFor()
   assert.equal(profileRequests,1)
+  await page.locator('.semantic-draft-item').getByRole('button',{name:'预发布访问审查'}).click()
+  const accessDialog=page.getByRole('dialog',{name:'语义关系 · 预发布访问审查'})
+  await accessDialog.waitFor()
+  const readerSelect=accessDialog.locator('.el-select').first()
+  await selectOption(readerSelect,'测试读者')
+  await accessDialog.getByRole('button',{name:'生成审查记录'}).click()
+  await accessDialog.getByText(/已记录预发布审查/).waitFor()
+  assert.equal(accessReviews,1)
+  await accessDialog.getByRole('button',{name:'检查已有状态'}).click()
+  await accessDialog.getByText(/READY_FOR_REVIEW/).waitFor()
+  await accessDialog.getByRole('button',{name:'关闭'}).click()
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})
   await edit.locator('input[maxlength="100"]').fill('城市映射更新')
@@ -130,6 +154,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   assert.match(await page.locator('.semantic-draft-item').innerText(),/v2/)
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'检查关联风险'}).count(),0)
+  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'预发布访问审查'}).count(),0)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'删除'}).click()
   const confirm=page.locator('.el-message-box').last()
   await confirm.waitFor()

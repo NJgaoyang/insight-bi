@@ -25,3 +25,7 @@ CI：P1 Semantic Relationship Drafts Scoped、P0 Changed-Area Checks；上线 DD
 ## 下一批
 
 正式的报表绑定还需不可变发布快照、左右表行级权限下推、权限策略变更触发失效、关键关联模式下的执行限制和权限场景测试。不得将预发布 READY_FOR_REVIEW 直接当作 JOIN 执行凭据。
+
+## 管理员 UI
+
+已确认的关系显示“预发布访问审查”，可选择已启用的 VIEWER/EDITOR 读者以及 LEFT/INNER 模式；界面本批仅允许选择关系关联键作为输出，并提示不会产生真实报表授权或发布行为。管理员可生成新审查记录或复查旧状态。浏览器 smoke 覆盖该对话框、字段绑定请求及编辑后入口隐藏。

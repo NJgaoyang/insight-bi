@@ -438,3 +438,7 @@ button:disabled{cursor:not-allowed;opacity:.42}.primary-button,.primary-soft,.su
 .semantic-draft-item:has(.semantic-draft-profile){flex-wrap:wrap}
 .semantic-draft-profile{display:flex;flex-direction:column;gap:4px;flex-basis:100%;padding:8px 10px;background:#f5f8fc;border:1px solid #d9e5f3;border-radius:5px;font-size:12px;color:#47607a}
 .semantic-draft-profile strong{font-size:12px}
+
+.semantic-access-review{display:flex;flex-direction:column;gap:12px;font-size:12px;color:#54657b}
+.semantic-access-review p{margin:0;line-height:1.65}
+.semantic-access-review label{display:flex;flex-direction:column;gap:6px}
