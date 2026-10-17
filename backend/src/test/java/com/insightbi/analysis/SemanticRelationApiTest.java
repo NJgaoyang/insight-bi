@@ -96,6 +96,58 @@ class SemanticRelationApiTest {
   assertThrows(RuntimeException.class,()->
    f.api().approve(created.id(),Map.of("revision",2)));
  }
+ @Test void approvedSemanticRelationOnlyCompilesBoundedJoinPreview(){
+  var f=fixture();
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "SELECT '北京' AS city, '2026-10-16' AS period","left");
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "SELECT '北京' AS region, 8 AS wrong","right");
+  var created=f.api().create(Map.of("name","安全关系","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  var input=Map.<String,Object>of("revision",1,"joinType","LEFT",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  assertThrows(IllegalStateException.class,()->f.api().compile(created.id(),input));
+  f.api().approve(created.id(),Map.of("revision",1));
+  var result=f.api().compile(created.id(),input);
+  assertEquals(1,result.revision());
+  assertEquals(2,result.columns().size());
+  assertEquals("LEFT",result.columns().get(0).side());
+  assertEquals("RIGHT",result.columns().get(1).side());
+  assertTrue(result.sqlPreview().contains("bi_left."+FormulaCompiler.quote("city")+
+    " = bi_right."+FormulaCompiler.quote("region")));
+  assertTrue(result.sqlPreview().endsWith(" LIMIT 200"));
+  assertEquals(1,f.db().queryForList(result.sqlPreview()).size());
+  assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),
+    Map.of("revision",1,"joinType","CROSS","leftFieldIds",List.of("city"),
+      "rightFieldIds",List.of("region"))));
+  assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),
+    Map.of("revision",1,"joinType","LEFT","leftFieldIds",List.of("city","city"),
+      "rightFieldIds",List.of("region"))));
+  assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),
+    Map.of("revision",1,"joinType","LEFT","leftFieldIds",List.of("sql;DROP"),
+      "rightFieldIds",List.of("region"))));
+  f.api().update(created.id(),Map.of("revision",1,"name","新版关系",
+    "pairs",pairs("city","region")));
+  assertThrows(IllegalStateException.class,()->f.api().compile(created.id(),input));
+  assertThrows(IllegalStateException.class,()->f.api().compile(created.id(),
+    Map.of("revision",2,"joinType","LEFT","leftFieldIds",List.of("city"),
+      "rightFieldIds",List.of("region"))));
+ }
+ @Test void compileFailsClosedWhenSourceOrConnectionChanges(){
+  var f=fixture();
+  var created=f.api().create(Map.of("name","源变化","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(created.id(),Map.of("revision",1));
+  var req=Map.<String,Object>of("revision",1,"joinType","INNER",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "DELETE FROM insight_dataset","right");
+  assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),req));
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?","SELECT 1","right");
+  f.db().update("UPDATE insight_dataset SET connection_id=? WHERE id=?","other","right");
+  assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),req));
+ }
+
  @Test void rejectsBlankOrSpaceOnlyNames(){
   var f=fixture();
   assertThrows(IllegalArgumentException.class,()->

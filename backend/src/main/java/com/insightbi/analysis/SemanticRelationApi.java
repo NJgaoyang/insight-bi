@@ -110,6 +110,33 @@ public class SemanticRelationApi {
       expected,"APPROVED","");
   }
 
+  /** Admin-only, compile-only preview. No source JDBC or reader query path. */
+  @PostMapping("/{relationId}/compile")
+  public SemanticRelationSqlPreview.Preview compile(@PathVariable String relationId,
+                                                     @RequestBody Map<String,Object> body){
+    if(body==null||body.size()!=4||
+       !Set.of("revision","joinType","leftFieldIds","rightFieldIds").containsAll(body.keySet()))
+      throw new IllegalArgumentException("关系编译参数不合法");
+    String relation=id(relationId);
+    int expected=revision(body.get("revision"));
+    var rows=db.queryForList(
+      "SELECT source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision "+
+      "FROM insight_semantic_relation WHERE id=?",relation);
+    if(rows.size()!=1)throw new IllegalArgumentException("关系草稿不存在");
+    var row=rows.get(0);
+    int actual=((Number)row.get("revision")).intValue();
+    int approved=row.get("approved_revision") instanceof Number n?n.intValue():0;
+    if(actual!=expected||approved!=expected)
+      throw new IllegalStateException("关系尚未确认或版本已变化，请确认当前修订");
+    String leftId=String.valueOf(row.get("source_dataset_id"));
+    String rightId=String.valueOf(row.get("target_dataset_id"));
+    var pairs=readPairs(String.valueOf(row.get("pairs_json")));
+    validate(leftId,rightId,pairs);
+    return SemanticRelationSqlPreview.compile(
+      store.dataset(leftId),store.dataset(rightId),leftId,rightId,pairs,
+      physicalFields(leftId),physicalFields(rightId),expected,body);
+  }
+
   @DeleteMapping("/{relationId}")
   @Transactional
   public Map<String,Object> delete(@PathVariable String relationId,@RequestParam int revision){

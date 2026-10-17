@@ -298,3 +298,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 30. P1-SEMANTIC-RELATION-APPROVAL-02：关系草稿修订确认（2026-10-16）
 
 语义关系元数据草稿新增独立的确认修订号和确认时间；管理员在关系字段合法、同连接且客户端版本准确时可以确认当前修订。编辑关系后批准标志清空；字段/源数据集失效后列表报告 INVALID，禁止确认。UI 明确提示“已确认版本仍未用于查询”。与现有 JOIN、SQL Planner、读者权限和发布快照完全隔离。详见 [P1_SEMANTIC_RELATION_APPROVAL_02.md](P1_SEMANTIC_RELATION_APPROVAL_02.md)。
+
+
+## 31. P1-SEMANTIC-RELATION-COMPILE-03：关系 SQL 编译预览（2026-10-17）
+
+管理员提交已批准修订号、INNER/LEFT 模式和双方稳定物理字段 ID，可编译受控 JOIN SQL 预览；服务端重新校验版本、同连接、类型、字段可见性及只读源 SQL，固定结果上限 200。不执行 SQL、不引入读者权限、不修改旧仪表板或线上环境。详见 [P1_SEMANTIC_RELATION_COMPILE_03.md](P1_SEMANTIC_RELATION_COMPILE_03.md)。
