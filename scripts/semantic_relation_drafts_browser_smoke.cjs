@@ -108,14 +108,6 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await approval.locator('.el-message-box__btns .el-button--primary').click()
   await page.getByText(/已确认 v1/).waitFor()
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),0)
-  // A changed SQL/field snapshot invalidates previous confirmation without changing revision.
-  rows=[{...rows[0],status:'DRAFT',reason:'源 SQL、连接或字段定义已变化，请重新确认当前版本'}]
-  await page.reload({waitUntil:'domcontentloaded'})
-  // App's current tab is ephemeral and resets to Public Data on reload.
-  await page.getByRole('button',{name:'模型关系'}).click()
-  await page.locator('.semantic-draft-item').waitFor()
-  await page.getByText(/源 SQL、连接或字段定义已变化/).waitFor()
-  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})
   await edit.locator('input[maxlength="100"]').fill('城市映射更新')
@@ -128,6 +120,17 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await confirm.waitFor()
   await confirm.locator('.el-message-box__btns .el-button--primary').click()
   await page.getByText('尚未创建语义关系草稿。').waitFor()
+  // Isolate the stale-approval UI contract from the original create/edit/delete flow.
+  rows=[{id:'stale2',name:'源变化后的关系',sourceDatasetId:'ds1',targetDatasetId:'ds2',
+   pairs:[{leftFieldId:'city',rightFieldId:'region'}],revision:3,status:'DRAFT',
+   reason:'源 SQL、连接或字段定义已变化，请重新确认当前版本'}]
+  await page.reload({waitUntil:'domcontentloaded'})
+  // App tab state is ephemeral; reopen Model Relations after a hard reload.
+  await page.getByRole('button',{name:'模型关系'}).click()
+  await page.locator('.semantic-draft-item').waitFor()
+  await page.getByText(/源 SQL、连接或字段定义已变化/).waitFor()
+  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
+
   assert.deepEqual(errors,[])
   console.log('PASS semantic relationship draft: create/edit/CAS/delete, scoped fields, no SQL')
  }finally{await browser.close()}
