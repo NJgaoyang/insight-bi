@@ -76,7 +76,8 @@ final class SemanticRelationRlsApprovedSourceGate {
     if(!hash.equals(relation.get("approved_source_hash")))
       throw new IllegalStateException("批准时的 SQL、字段或连接配置已变化，须重新审批");
 
-    var lf=active(lCatalog),rf=active(rCatalog);
+    var lf=active(lCatalog);
+    var rf=active(rCatalog);
     var pairs=readPairs(store,relation.get("pairs_json"));
     List<String> lOut=new ArrayList<>(),rOut=new ArrayList<>();
     if(requested.columns()==null||requested.columns().size()<2||
