@@ -384,6 +384,44 @@ public class SemanticRelationApi {
     return List.copyOf(result);
   }
 
+  /** Exact, non-paginated candidate validation for a draft widget. Not a grant. */
+  public void requireSealedCandidate(String relationId,String readerId,int releaseNo,
+                                     String expectedPrimaryDatasetId){
+    String relation=id(relationId),reader=id(readerId);
+    if(releaseNo<1||releaseNo>1000)throw new IllegalArgumentException("候选版本号无效");
+    var rows=db.queryForList(
+      "SELECT relation_revision,source_hash,policy_hash,binding_json,snapshot_hash "+
+      "FROM insight_semantic_release_snapshot WHERE relation_id=? AND reader_id=? AND release_no=?",
+      relation,reader,releaseNo);
+    if(rows.size()!=1)throw new IllegalStateException("语义候选版本不存在");
+    try{
+      var row=rows.get(0);
+      int rev=((Number)row.get("relation_revision")).intValue();
+      String source=String.valueOf(row.get("source_hash"));
+      String policyHash=String.valueOf(row.get("policy_hash"));
+      String json=String.valueOf(row.get("binding_json"));
+      if(json.length()>4000||!releaseDigest(relation,reader,releaseNo,
+          rev,source,policyHash,json).equals(row.get("snapshot_hash")))
+        throw new IllegalStateException("候选版本完整性校验失败");
+      CheckedRelation checked=checkedForReview(relation,rev);
+      if(!checked.leftId().equals(expectedPrimaryDatasetId)||
+         !checked.sourceHash().equals(source))
+        throw new IllegalStateException("候选版本来源不匹配");
+      var binding=store.map(json);
+      if(binding.size()!=3||
+         !Set.of("joinType","leftFieldIds","rightFieldIds").equals(binding.keySet()))
+        throw new IllegalStateException("候选字段绑定无效");
+      SemanticRelationSqlPreview.compile(store.dataset(checked.leftId()),
+        store.dataset(checked.rightId()),checked.leftId(),checked.rightId(),checked.pairs(),
+        physicalFields(checked.leftId()),physicalFields(checked.rightId()),rev,binding);
+      var policy=SemanticRelationAccessReview.evaluate(db,reader,checked.leftId(),checked.rightId());
+      if(!policy.eligible()||!policy.fingerprint().equals(policyHash))
+        throw new IllegalStateException("读者权限已变化");
+    }catch(RuntimeException stale){
+      throw new IllegalStateException("候选版本已失效，请重新审查并封存",stale);
+    }
+  }
+
   private static String releaseDigest(String relation,String reader,int release,int revision,
                                       String source,String policy,String binding){
     try{

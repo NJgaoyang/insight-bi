@@ -7,6 +7,11 @@ on:
     paths:
       - backend/src/main/java/com/insightbi/DatabaseStore.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationApi.java
+      - backend/src/main/java/com/insightbi/analysis/SemanticDashboardDraftBindingGuard.java
+      - backend/src/main/java/com/insightbi/BiApi.java
+      - backend/src/main/java/com/insightbi/ReaderColumnGuard.java
+      - backend/src/main/java/com/insightbi/analysis/AnalysisApi.java
+      - backend/src/test/java/com/insightbi/SemanticDashboardDraftBindingTest.java
       - backend/src/main/java/com/insightbi/GovernanceApi.java
       - backend/src/test/java/com/insightbi/GovernanceApiTest.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationAccessReview.java
@@ -25,6 +30,7 @@ on:
       - docs/P1_SEMANTIC_RELATION_CARDINALITY_05.md
       - docs/P1_SEMANTIC_RELATION_ACCESS_REVIEW_06.md
       - docs/P1_SEMANTIC_RELATION_SNAPSHOT_07.md
+      - docs/P1_SEMANTIC_DASHBOARD_DRAFT_BINDING_08.md
       - .github/workflows/semantic-relation-scoped.yml
 jobs:
   relationship-backend:
@@ -40,7 +46,7 @@ jobs:
           cache-dependency-path: backend/pom.xml
       - name: Bounded metadata draft CRUD and H2 compatibility
         working-directory: backend
-        run: mvn -q -B -Dtest=SemanticRelationApiTest,SemanticRelationCardinalityProfileTest,ModelRelationsApiTest,GovernanceApiTest test
+        run: mvn -q -B -Dtest=SemanticRelationApiTest,SemanticRelationCardinalityProfileTest,ModelRelationsApiTest,GovernanceApiTest,SemanticDashboardDraftBindingTest test
   relationship-frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 16

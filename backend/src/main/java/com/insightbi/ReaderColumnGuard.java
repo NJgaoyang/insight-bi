@@ -28,6 +28,9 @@ final class ReaderColumnGuard {
          !(widget.get("analysisV2") instanceof Map<?,?> config)||
          !(widget.get("datasetId") instanceof String datasetId)||datasetId.isBlank())
         return false;
+      // Even a tampered published snapshot cannot downgrade a JOIN to V2 single-source.
+      if(widget.containsKey("semanticRelation")||config.containsKey("semanticRelation"))
+        return false;
       Set<String> denied=governance.deniedFieldIds(readerId,datasetId);
       if(denied.isEmpty())continue;
       if(Boolean.TRUE.equals(config.get("usePipeline")))return false;

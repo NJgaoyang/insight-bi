@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.insightbi.analysis.DatasetSchemaGuard;
 import com.insightbi.analysis.DatasetSqlChangePolicy;
 import com.insightbi.analysis.AnalysisResourceGraph;
+import com.insightbi.analysis.SemanticDashboardDraftBindingGuard;
 import com.insightbi.analysis.AnalysisPipelineApi;
 import com.insightbi.analysis.FieldCatalog;
 import com.insightbi.analysis.AnalysisPipelineDependencyGuard;
@@ -310,6 +311,7 @@ class BiApi {
     var graph=AnalysisResourceGraph.of(content);
     AnalysisResourceGraph.requireExistingDatasets(graph,db);
     AnalysisResourceGraph.requirePinnedPipelines(content,pipeline());
+    SemanticDashboardDraftBindingGuard.requireDraftBindings(content,s,db);
     content=AnalysisResourceGraph.indexedContent(content);
   }
   String json=s.json(content);if(json.length()>2_000_000)throw new IllegalArgumentException("内容过大");
@@ -411,8 +413,9 @@ class BiApi {
   if(list.isEmpty())throw new NoSuchElementException("仪表板不存在");
   var row=list.get(0);
   String kind=db.queryForObject("SELECT kind FROM insight_dashboard WHERE id=?",String.class,id);
+  Map<String,Object> content=s.map(String.valueOf(row.get("content_json")));
+  SemanticDashboardDraftBindingGuard.rejectPublishedBindings(content);
   if("analysis".equals(kind)){
-    Map<String,Object> content=s.map(String.valueOf(row.get("content_json")));
     AnalysisResourceGraph.requireExistingDatasets(AnalysisResourceGraph.of(content),db);
     AnalysisResourceGraph.requirePinnedPipelines(content,pipeline());
   }

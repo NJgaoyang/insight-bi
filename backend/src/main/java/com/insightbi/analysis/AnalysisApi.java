@@ -116,6 +116,8 @@ public class AnalysisApi {
    * precede semantic WHERE/HAVING and outer LIMIT placeholders.
    */
   private ResolvedPlan resolvePlan(Map<String,Object> request){
+    if(request.containsKey("semanticRelation"))
+      throw new IllegalStateException("语义候选不是可执行源，读者 JOIN 和双侧权限尚未实现");
     String datasetId=AnalysisQueryPlanner.required(request,"datasetId");
     Map<String,Object> ds=store.dataset(datasetId);
     Object mode=request.get("usePipeline");

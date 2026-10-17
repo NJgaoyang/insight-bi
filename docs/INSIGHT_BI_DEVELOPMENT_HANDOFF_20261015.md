@@ -323,3 +323,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 35. P1-SEMANTIC-RELATION-SNAPSHOT-07：独立候选快照版本绑定与权限失效（2026-10-17）
 
 管理员仅可把已批准关系与指定读者有效预发布审查冻结成不可变候选快照，记录独立递增 release_no、关系修订、双方源指纹、策略指纹及受控输出绑定校验码；动态状态 SEALED_ONLY/STALE/BLOCKED。治理接口修改角色/列拒绝/行限制时自动递增读者 auth_version，避免 ACL 增删后旧审查恢复有效。此候选版本**未**绑定报表发布或 Reader API，亦不构成实际多表查询授权。详见 [P1_SEMANTIC_RELATION_SNAPSHOT_07.md](P1_SEMANTIC_RELATION_SNAPSHOT_07.md)。生产未部署。
+
+
+## 36. P1-SEMANTIC-DASHBOARD-DRAFT-BINDING-08：分析主题草稿显式候选绑定与发布安全门禁（2026-10-17）
+
+分析 V2 组件草稿可显式绑定一个不可变语义候选 releaseNo、relationId、readerId，保存前复核左侧 datasetId、关系版本与源/权限指纹。所有带此绑定的内容**禁止正式发布**；读者已发布快照及管理员 V2 查询均拒绝把候选当成单表源执行。无 DDL、无读者 JOIN 开放、不部署。详见 [P1_SEMANTIC_DASHBOARD_DRAFT_BINDING_08.md](P1_SEMANTIC_DASHBOARD_DRAFT_BINDING_08.md)。
