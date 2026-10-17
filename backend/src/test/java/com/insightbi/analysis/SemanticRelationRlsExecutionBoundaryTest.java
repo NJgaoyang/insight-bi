@@ -3,6 +3,9 @@ package com.insightbi.analysis;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insightbi.DatabaseStore;
 import java.sql.Connection;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.sql.PreparedStatement;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -72,12 +75,34 @@ class SemanticRelationRlsExecutionBoundaryTest {
     return new Fixture(db,plan,binds);
   }
 
+  /**
+   * H2 intentionally ignores the JDBC readOnly hint. Only the test harness
+   * simulates a driver truthfully reporting the hint, so it can exercise the
+   * downstream statement setup and LEFT JOIN behavior without weakening the
+   * production fail-closed requirement.
+   */
+  private static Connection readOnlyHintDriverStub(Connection delegate){
+    AtomicBoolean readonly=new AtomicBoolean();
+    return (Connection)Proxy.newProxyInstance(
+      Connection.class.getClassLoader(),new Class<?>[]{Connection.class},
+      (proxy,method,args)->{
+        if(method.getName().equals("setReadOnly")){
+          readonly.set((Boolean)args[0]);
+          return null;
+        }
+        if(method.getName().equals("isReadOnly"))return readonly.get();
+        try{return method.invoke(delegate,args);}
+        catch(InvocationTargetException e){throw e.getCause();}
+      });
+  }
+
   @Test void isolatedH2ProbeAppliesLimitsAndPreservesUnmatchedLeftRows()throws Exception{
     var f=fixture(true);
     // Reserve before opening JDBC; no user endpoint ever calls this sequence.
     try(var reservation=SemanticRelationRlsExecutionBoundary.reserve(
           f.plan(),f.bindings());
-        Connection source=Objects.requireNonNull(f.db().getDataSource()).getConnection()){
+        Connection source=readOnlyHintDriverStub(
+          Objects.requireNonNull(f.db().getDataSource()).getConnection())){
       source.setAutoCommit(false);
       try(PreparedStatement statement=SemanticRelationRlsExecutionBoundary.prepare(
           source,f.plan(),f.bindings(),reservation)){
@@ -106,6 +131,17 @@ class SemanticRelationRlsExecutionBoundaryTest {
     try(var reserve=SemanticRelationRlsExecutionBoundary.reserve(f.plan(),f.bindings());
         var source=Objects.requireNonNull(f.db().getDataSource()).getConnection()){
       assertTrue(source.getAutoCommit());
+      assertThrows(IllegalStateException.class,()->
+        SemanticRelationRlsExecutionBoundary.prepare(
+          source,f.plan(),f.bindings(),reserve));
+    }
+  }
+
+  @Test void nativeH2ReadOnlyHintIgnoredSoBoundaryFailsClosed()throws Exception{
+    var f=fixture(false);
+    try(var reserve=SemanticRelationRlsExecutionBoundary.reserve(f.plan(),f.bindings());
+        var source=Objects.requireNonNull(f.db().getDataSource()).getConnection()){
+      source.setAutoCommit(false);
       assertThrows(IllegalStateException.class,()->
         SemanticRelationRlsExecutionBoundary.prepare(
           source,f.plan(),f.bindings(),reserve));
