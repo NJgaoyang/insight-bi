@@ -7,6 +7,7 @@ on:
     paths:
       - backend/src/main/java/com/insightbi/DatabaseStore.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationApi.java
+      - backend/src/main/java/com/insightbi/analysis/SemanticRelationAccessReview.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationSourceFingerprint.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationCardinalityProfile.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationSqlPreview.java
@@ -20,6 +21,7 @@ on:
       - docs/P1_SEMANTIC_RELATION_COMPILE_03.md
       - docs/P1_SEMANTIC_RELATION_SOURCE_PIN_04.md
       - docs/P1_SEMANTIC_RELATION_CARDINALITY_05.md
+      - docs/P1_SEMANTIC_RELATION_ACCESS_REVIEW_06.md
       - .github/workflows/semantic-relation-scoped.yml
 jobs:
   relationship-backend:

@@ -230,6 +230,84 @@ class SemanticRelationApiTest {
     "pairs",pairs("city","region")));
   assertThrows(IllegalStateException.class,()->f.api().joinKeyProfile(draft.id(),body));
  }
+
+ @Test void accessReviewPinsApprovedRelationReaderAndSafeProjection(){
+  var f=fixture();
+  f.db().update("INSERT INTO insight_governance_user "+
+    "(id,username,display_name,role,enabled) VALUES(?,?,?,?,?)",
+    "readerA","reader_a","Reader A","VIEWER",true);
+  var created=f.api().create(Map.of("name","审查测试","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  var review=Map.<String,Object>of("revision",1,"readerId","readerA","joinType","LEFT",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  assertThrows(IllegalStateException.class,()->f.api().reviewAccess(created.id(),review));
+  f.api().approve(created.id(),Map.of("revision",1));
+  assertEquals("MISSING",f.api().reviewStatus(created.id(),"readerA").get("status"));
+  assertEquals("READY_FOR_REVIEW",f.api().reviewAccess(created.id(),review).get("status"));
+  assertEquals("READY_FOR_REVIEW",f.api().reviewStatus(created.id(),"readerA").get("status"));
+  assertEquals(1,f.db().queryForObject("SELECT COUNT(*) FROM insight_semantic_access_review",
+    Integer.class));
+  assertThrows(IllegalArgumentException.class,()->f.api().reviewAccess(created.id(),
+    Map.of("revision",1,"readerId","readerA","joinType","CROSS",
+      "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"))));
+  // A second identical check updates metadata rather than growing a grant table.
+  f.api().reviewAccess(created.id(),review);
+  assertEquals(1,f.db().queryForObject("SELECT COUNT(*) FROM insight_semantic_access_review",
+    Integer.class));
+  assertEquals(0,f.db().queryForObject("SELECT COUNT(*) FROM insight_dashboard_grant",
+    Integer.class)); // no grant or publication
+ }
+ @Test void rowOrColumnRestrictionBlocksEvenUnselectedPhysicalColumns(){
+  var f=fixture();
+  f.db().update("INSERT INTO insight_governance_user "+
+    "(id,username,display_name,role,enabled) VALUES(?,?,?,?,?)",
+    "readerB","reader_b","Reader B","EDITOR",true);
+  var created=f.api().create(Map.of("name","权限测试","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(created.id(),Map.of("revision",1));
+  var review=Map.<String,Object>of("revision",1,"readerId","readerB","joinType","LEFT",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  f.api().reviewAccess(created.id(),review);
+  f.db().update("INSERT INTO insight_reader_column_deny(user_id,dataset_id,field_id) "+
+    "VALUES(?,?,?)","readerB","right","wrong");
+  assertEquals("BLOCKED",f.api().reviewStatus(created.id(),"readerB").get("status"));
+  assertThrows(IllegalStateException.class,()->f.api().reviewAccess(created.id(),review));
+  f.db().update("DELETE FROM insight_reader_column_deny WHERE user_id=?","readerB");
+  f.db().update("INSERT INTO insight_reader_row_policy(user_id,dataset_id,field_id,allowed_value) "+
+    "VALUES(?,?,?,?)","readerB","left","city","Beijing");
+  assertEquals("BLOCKED",f.api().reviewStatus(created.id(),"readerB").get("status"));
+  assertThrows(IllegalStateException.class,()->f.api().reviewAccess(created.id(),review));
+  f.db().update("DELETE FROM insight_reader_row_policy WHERE user_id=?","readerB");
+  f.db().update("UPDATE insight_governance_user SET enabled=FALSE WHERE id=?","readerB");
+  assertEquals("BLOCKED",f.api().reviewStatus(created.id(),"readerB").get("status"));
+ }
+ @Test void accessReviewStalesAfterSourceChangesReaderVersionAndRelationEdit(){
+  var f=fixture();
+  f.db().update("INSERT INTO insight_governance_user "+
+    "(id,username,display_name,role,enabled) VALUES(?,?,?,?,?)",
+    "readerC","reader_c","Reader C","VIEWER",true);
+  var created=f.api().create(Map.of("name","版本审查","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(created.id(),Map.of("revision",1));
+  var review=Map.<String,Object>of("revision",1,"readerId","readerC","joinType","INNER",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  f.api().reviewAccess(created.id(),review);
+  f.db().update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",
+    "readerC");
+  assertEquals("STALE",f.api().reviewStatus(created.id(),"readerC").get("status"));
+  f.api().reviewAccess(created.id(),review);
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "SELECT 'B' AS city","left");
+  assertEquals("STALE",f.api().reviewStatus(created.id(),"readerC").get("status"));
+  assertThrows(IllegalStateException.class,()->f.api().reviewAccess(created.id(),review));
+  f.api().approve(created.id(),Map.of("revision",1));
+  f.api().reviewAccess(created.id(),review);
+  f.api().update(created.id(),Map.of("revision",1,"name","新版",
+    "pairs",pairs("city","region")));
+  assertEquals("STALE",f.api().reviewStatus(created.id(),"readerC").get("status"));
+  f.store().schema();f.store().schema(); // idempotent additive review table
+ }
+
  @Test void rejectsBlankOrSpaceOnlyNames(){
   var f=fixture();
   assertThrows(IllegalArgumentException.class,()->

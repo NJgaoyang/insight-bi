@@ -184,6 +184,109 @@ public class SemanticRelationApi {
     }
   }
 
+  /**
+   * Review-only metadata binding. This does NOT publish a dashboard, expose
+   * model SQL to a reader or grant any reader access.
+   */
+  @PostMapping("/{relationId}/access-review")
+  @Transactional
+  public Map<String,Object> reviewAccess(@PathVariable String relationId,
+                                          @RequestBody Map<String,Object> body){
+    if(body==null||body.size()!=5||
+       !Set.of("revision","readerId","joinType","leftFieldIds","rightFieldIds")
+         .containsAll(body.keySet()))
+      throw new IllegalArgumentException("预发布审查参数不合法");
+    int revision=revision(body.get("revision"));
+    String readerId=id(body.get("readerId"));
+    String relation=id(relationId);
+    var checked=checkedForReview(relation,revision);
+    var projection=Map.<String,Object>of("joinType",body.get("joinType"),
+      "leftFieldIds",body.get("leftFieldIds"),"rightFieldIds",body.get("rightFieldIds"));
+    // Reuse the exact physical-field and read-only SELECT compiler. It only
+    // compiles SQL locally; the generated SQL is never stored or executed.
+    SemanticRelationSqlPreview.compile(store.dataset(checked.leftId()),
+      store.dataset(checked.rightId()),checked.leftId(),checked.rightId(),
+      checked.pairs(),physicalFields(checked.leftId()),
+      physicalFields(checked.rightId()),revision,projection);
+    var allowed=SemanticRelationAccessReview.evaluate(db,readerId,checked.leftId(),checked.rightId());
+    if(!allowed.eligible())throw new IllegalStateException(allowed.reason());
+    String binding=store.json(projection);
+    if(binding.length()>4000)throw new IllegalArgumentException("预发布字段绑定过长");
+    // Metadata-only upsert. Concurrent reviewers cannot accidentally overwrite
+    // another reader's row due to the (relation_id,reader_id) composite key.
+    int written=db.update("UPDATE insight_semantic_access_review SET "+
+      "relation_revision=?,source_hash=?,policy_hash=?,binding_json=?,reviewed_at=CURRENT_TIMESTAMP "+
+      "WHERE relation_id=? AND reader_id=?",
+      revision,checked.sourceHash(),allowed.fingerprint(),binding,relation,readerId);
+    if(written==0)db.update("INSERT INTO insight_semantic_access_review "+
+      "(relation_id,reader_id,relation_revision,source_hash,policy_hash,binding_json) "+
+      "VALUES(?,?,?,?,?,?)",relation,readerId,revision,checked.sourceHash(),
+      allowed.fingerprint(),binding);
+    return Map.of("relationId",relation,"readerId",readerId,"revision",revision,
+      "status","READY_FOR_REVIEW","reason","仅审查元数据；未授予读者或报表发布权限");
+  }
+
+  @GetMapping("/{relationId}/access-review")
+  public Map<String,Object> reviewStatus(@PathVariable String relationId,
+                                          @RequestParam String readerId){
+    String relation=id(relationId),reader=id(readerId);
+    var review=db.queryForList(
+      "SELECT relation_revision,source_hash,policy_hash,binding_json "+
+      "FROM insight_semantic_access_review WHERE relation_id=? AND reader_id=?",
+      relation,reader);
+    if(review.isEmpty())return reviewResult(relation,reader,0,"MISSING","尚无审查记录");
+    if(review.size()!=1)throw new IllegalStateException("预发布审查记录重复");
+    var row=review.get(0);
+    int revision=((Number)row.get("relation_revision")).intValue();
+    try{
+      var checked=checkedForReview(relation,revision);
+      if(!checked.sourceHash().equals(row.get("source_hash")))
+        return reviewResult(relation,reader,revision,"STALE","来源已变化，需重新审查");
+      var binding=store.map(String.valueOf(row.get("binding_json")));
+      if(binding.size()!=3||
+         !Set.of("joinType","leftFieldIds","rightFieldIds").equals(binding.keySet()))
+        return reviewResult(relation,reader,revision,"STALE","已保存的字段绑定无效");
+      SemanticRelationSqlPreview.compile(store.dataset(checked.leftId()),
+        store.dataset(checked.rightId()),checked.leftId(),checked.rightId(),checked.pairs(),
+        physicalFields(checked.leftId()),physicalFields(checked.rightId()),revision,binding);
+      var policy=SemanticRelationAccessReview.evaluate(db,reader,checked.leftId(),checked.rightId());
+      if(!policy.eligible())
+        return reviewResult(relation,reader,revision,"BLOCKED",policy.reason());
+      if(!policy.fingerprint().equals(row.get("policy_hash")))
+        return reviewResult(relation,reader,revision,"STALE","读者授权状态已改变，需重新审查");
+      return reviewResult(relation,reader,revision,"READY_FOR_REVIEW",
+        "仍需独立完成真实报表授权、双侧行列权限及发布绑定");
+    }catch(RuntimeException outdated){
+      return reviewResult(relation,reader,revision,"STALE","关系修订、字段或源快照已失效");
+    }
+  }
+
+  private record CheckedRelation(String leftId,String rightId,List<Pair> pairs,String sourceHash){}
+  private CheckedRelation checkedForReview(String relationId,int expected){
+    var rows=db.queryForList(
+      "SELECT source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision,approved_source_hash "+
+      "FROM insight_semantic_relation WHERE id=?",relationId);
+    if(rows.size()!=1)throw new IllegalStateException("关系不存在或已删除");
+    var row=rows.get(0);
+    int actual=((Number)row.get("revision")).intValue();
+    int approved=row.get("approved_revision") instanceof Number n?n.intValue():0;
+    if(actual!=expected||approved!=expected)
+      throw new IllegalStateException("关系未确认或修订已变化");
+    String left=String.valueOf(row.get("source_dataset_id"));
+    String right=String.valueOf(row.get("target_dataset_id"));
+    var pairs=readPairs(String.valueOf(row.get("pairs_json")));
+    validate(left,right,pairs);
+    String source=sourceFingerprint(left,right);
+    if(!source.equals(row.get("approved_source_hash")))
+      throw new IllegalStateException("关系源数据变化，需重新确认");
+    return new CheckedRelation(left,right,pairs,source);
+  }
+  private static Map<String,Object> reviewResult(String relation,String reader,int revision,
+                                                 String status,String reason){
+    return Map.of("relationId",relation,"readerId",reader,"revision",revision,
+      "status",status,"reason",reason);
+  }
+
   @DeleteMapping("/{relationId}")
   @Transactional
   public Map<String,Object> delete(@PathVariable String relationId,@RequestParam int revision){

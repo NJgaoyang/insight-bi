@@ -86,6 +86,11 @@ public class DatabaseStore {
   // Historical approved rows have a NULL fingerprint until explicitly reapproved.
   if(!columnExists("insight_semantic_relation","approved_source_hash"))
     jdbc.execute("ALTER TABLE insight_semantic_relation ADD COLUMN approved_source_hash VARCHAR(64)");
+  // Prepublication review is NOT a publish grant; pinned to one reader/revision.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_semantic_access_review ("+
+    "relation_id VARCHAR(36) NOT NULL, reader_id VARCHAR(36) NOT NULL, relation_revision INT NOT NULL, "+
+    "source_hash VARCHAR(64) NOT NULL, policy_hash VARCHAR(64) NOT NULL, binding_json LONGTEXT NOT NULL, "+
+    "reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(relation_id,reader_id))");
 
 
 

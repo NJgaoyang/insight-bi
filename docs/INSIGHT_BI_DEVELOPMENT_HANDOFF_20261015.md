@@ -313,3 +313,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 33. P1-SEMANTIC-RELATION-CARDINALITY-05：语义关系右表样本基数诊断（2026-10-17）
 
 已确认且源指纹稳定的语义关系新增管理员按需诊断 API：明确同意后对右表最多 2,000 行样本执行只读聚合，统计 NULL 键、重复键组和放大风险，带进程限流及 8 秒 SQL 超时。无完整 JOIN 行数保证；没有读者查询、发布权限或生产部署。见 [P1_SEMANTIC_RELATION_CARDINALITY_05.md](P1_SEMANTIC_RELATION_CARDINALITY_05.md)。
+
+
+## 34. P1-SEMANTIC-RELATION-ACCESS-REVIEW-06：读者侧预发布权限门禁（2026-10-17）
+
+新增独立预发布审查元数据表与管理员审查接口，绑定关系修订、两侧源指纹、受控字段投影及单个读者账号权限指纹。任一表存在该读者列拒绝或行级限制时一律阻断，因为实际语义 JOIN 尚不支持双侧权限下推；账号禁用、auth_version、源 SQL 或关系修订变化后动态失效。READY_FOR_REVIEW 不等于发布/授权，不涉及 ReaderApi、SQL 执行或线上服务，详见 [P1_SEMANTIC_RELATION_ACCESS_REVIEW_06.md](P1_SEMANTIC_RELATION_ACCESS_REVIEW_06.md)。
