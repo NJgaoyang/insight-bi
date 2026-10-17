@@ -348,3 +348,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 40. P1-SEMANTIC-RLS-PLAN-SNAPSHOT-12：双侧权限计划短期加密票据及重新核验（2026-10-17）
 
 新增只供管理员核验的 600 秒 AES-GCM 加密编译计划票据：绑定关系版本、双源指纹、JOIN/输出字段绑定、SQL 形状及双侧读者身份和行列策略证据；核验时重新读取账号 auth_version、实际行策略多值和列拒绝，并重新执行仅本地 SQL 编译，返回 CURRENT / STALE，始终 executable=false。定向 H2 覆盖后台绕过认证版本的 allowed_value 变更、禁用账号、源漂移、过期/篡改票据；不开放 JOIN 查询/发布，不新增 DDL。详见 [P1_SEMANTIC_RLS_PLAN_SNAPSHOT_12.md](P1_SEMANTIC_RLS_PLAN_SNAPSHOT_12.md)。
+
+
+## 41. P1-SEMANTIC-RLS-BIND-PREFLIGHT-13：双侧权限参数与同事务预检（2026-10-17）
+
+在 P1-12 管理员计划票据的生成/核验调用中加入只限服务端使用的双侧策略绑定检查：从当前元数据事务中重读身份、列拒绝、LEFT/RIGHT 行策略值，核验各侧绑定数量和 SQL 占位符一致性，拒绝孤立策略值；把含字段 ID 和有序原始值的摘要放进 AES-GCM 票据（v2，旧 v1 拒绝），没有明文值返回或实际业务 SQL 执行。仍不开放 Reader JOIN 或发布，不新增 DDL；只以 `SemanticRelationRlsPlanPreviewTest` 验收。详见 [P1_SEMANTIC_RLS_BIND_PREFLIGHT_13.md](P1_SEMANTIC_RLS_BIND_PREFLIGHT_13.md)。

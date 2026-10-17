@@ -227,6 +227,9 @@ public class SemanticRelationApi {
     String before=SemanticRelationRlsPlanSnapshot.policyEvidence(
       db,store,reader,checked.leftId(),checked.rightId());
     var plan=rlsPlanPreview(relation,body);
+    var binds=SemanticRelationRlsBindPreflight.inspect(db,reader,
+      checked.leftId(),checked.rightId(),physicalFields(checked.leftId()),
+      physicalFields(checked.rightId()),plan);
     CheckedRelation after=checkedForReview(relation,version);
     String policy=SemanticRelationRlsPlanSnapshot.policyEvidence(
       db,store,reader,after.leftId(),after.rightId());
@@ -236,7 +239,7 @@ public class SemanticRelationApi {
     for(String key:List.of("joinType","leftFieldIds","rightFieldIds"))
       binding.put(key,body.get(key));
     String ticket=SemanticRelationRlsPlanSnapshot.seal(store,relation,reader,version,
-      checked.sourceHash(),policy,binding,plan);
+      checked.sourceHash(),policy,binds.bindingHash(),binding,plan);
     return Map.of("status","CAPTURED_ONLY","executable",false,
       "ttlSeconds",SemanticRelationRlsPlanSnapshot.TTL_SECONDS,"ticket",ticket);
   }
@@ -275,11 +278,17 @@ public class SemanticRelationApi {
       request.put("readerId",reader);
       request.put("revision",version);
       var compiled=rlsPlanPreview(relation,request);
+      // Single request/metadata transaction: validate actual left-before-right
+      // bindings against the compiled '?' slots without returning their values.
+      var binds=SemanticRelationRlsBindPreflight.inspect(db,reader,
+        checked.leftId(),checked.rightId(),physicalFields(checked.leftId()),
+        physicalFields(checked.rightId()),compiled);
       var again=checkedForReview(relation,version);
       var policyAgain=SemanticRelationRlsPlanSnapshot.policyEvidence(
         db,store,reader,again.leftId(),again.rightId());
       if(!again.sourceHash().equals(checked.sourceHash())||
          !before.equals(policyAgain)||
+         !binds.bindingHash().equals(snapshot.get("bindingsHash"))||
          !SemanticRelationRlsPlanSnapshot.hash(compiled.sqlPreview())
            .equals(snapshot.get("planHash")))
         return new SemanticRelationRlsPlanSnapshot.Verification(

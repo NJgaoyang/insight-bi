@@ -336,6 +336,70 @@ class SemanticRelationRlsPlanPreviewTest {
       f.api().rlsPlanSnapshot(f.id(),nonReader));
   }
 
+  @Test void internalPreflightCommitsToOrderedBindsButNeverReturnsValues(){
+    var f=fixture();
+    policy(f,"left",f.leftTenant(),"A");
+    policy(f,"right",f.rightTenant(),"B","C");
+    var plan=f.api().rlsPlanPreview(f.id(),body(f,"LEFT"));
+    var one=SemanticRelationRlsBindPreflight.inspect(f.db(),READER,"left","right",
+      FieldCatalog.index(f.catalog().fields("left")),
+      FieldCatalog.index(f.catalog().fields("right")),plan);
+    assertEquals(1,one.leftCount());
+    assertEquals(2,one.rightCount());
+    assertTrue(one.bindingHash().matches("[0-9a-f]{64}"));
+    assertFalse(one.toString().contains("B"));
+    assertFalse(one.toString().contains("C"));
+    f.db().update("UPDATE insight_reader_row_policy_value SET allowed_value=? "+
+      "WHERE user_id=? AND dataset_id=? AND allowed_value=?","D",READER,"right","C");
+    var changed=SemanticRelationRlsBindPreflight.inspect(f.db(),READER,"left","right",
+      FieldCatalog.index(f.catalog().fields("left")),
+      FieldCatalog.index(f.catalog().fields("right")),plan);
+    assertNotEquals(one.bindingHash(),changed.bindingHash());
+    assertEquals(one.leftCount(),changed.leftCount());
+    assertEquals(one.rightCount(),changed.rightCount());
+  }
+
+  @Test void preflightFailsOnPlaceholderDriftOrOrphanPolicies(){
+    var f=fixture();
+    var plan=f.api().rlsPlanPreview(f.id(),body(f,"LEFT"));
+    assertEquals(0,SemanticRelationRlsBindPreflight.inspect(f.db(),READER,"left","right",
+      FieldCatalog.index(f.catalog().fields("left")),
+      FieldCatalog.index(f.catalog().fields("right")),plan).rightCount());
+    f.db().update("INSERT INTO insight_reader_row_policy_value VALUES(?,?,?)",
+      READER,"right","orphan");
+    assertThrows(IllegalStateException.class,()->
+      SemanticRelationRlsBindPreflight.inspect(f.db(),READER,"left","right",
+        FieldCatalog.index(f.catalog().fields("left")),
+        FieldCatalog.index(f.catalog().fields("right")),plan));
+    f.db().update("DELETE FROM insight_reader_row_policy_value WHERE user_id=?",READER);
+    var mismatch=new SemanticRelationRlsPlanPreview.Preview(
+      plan.revision(),plan.joinType(),plan.sqlPreview()+" ?",
+      plan.columns(),plan.leftBindCount(),plan.rightBindCount(),
+      plan.totalBindCount(),plan.leftPolicyApplied(),plan.rightPolicyApplied(),
+      plan.readerAuthVersion(),plan.scope(),plan.warnings());
+    assertThrows(IllegalStateException.class,()->
+      SemanticRelationRlsBindPreflight.inspect(f.db(),READER,"left","right",
+        FieldCatalog.index(f.catalog().fields("left")),
+        FieldCatalog.index(f.catalog().fields("right")),mismatch));
+  }
+
+  @Test void encryptedReceiptRejectsChangedOrderedBindingsAndOldVersion(){
+    var f=fixture();
+    policy(f,"right",f.rightTenant(),"B","C");
+    var receipt=f.api().rlsPlanSnapshot(f.id(),body(f,"LEFT"));
+    var ticket=(String)receipt.get("ticket");
+    assertEquals("CURRENT",f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket)).status());
+    var decoded=f.store().map(f.store().decrypt(ticket));
+    assertTrue(decoded.containsKey("bindingsHash"));
+    decoded.put("bindingsHash","0".repeat(64));
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),
+      Map.of("ticket",f.store().encrypt(f.store().json(decoded)))).status());
+    decoded.put("version",1);
+    assertThrows(IllegalArgumentException.class,()->
+      f.api().rlsPlanVerify(f.id(),
+        Map.of("ticket",f.store().encrypt(f.store().json(decoded)))));
+  }
+
   @Test void forgedParametersInvalidJoinAndNonSelectSourceFailClosed(){
     var f=fixture();
     var forged=new LinkedHashMap<>(body(f,"LEFT"));

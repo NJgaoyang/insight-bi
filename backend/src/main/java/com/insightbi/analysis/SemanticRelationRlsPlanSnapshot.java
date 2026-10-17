@@ -48,17 +48,19 @@ public final class SemanticRelationRlsPlanSnapshot {
   }
 
   public static String seal(DatabaseStore store,String relation,String reader,int revision,
-                            String sourceHash,String policyHash,Map<String,Object> binding,
+                            String sourceHash,String policyHash,String bindingsHash,
+                            Map<String,Object> binding,
                             SemanticRelationRlsPlanPreview.Preview plan){
     // Keep the exact binding inside AEAD. Never send raw permissions, SQL hash
     // or a low-entropy policy digest as a separately guessable public field.
     var canonical=new LinkedHashMap<String,Object>();
-    canonical.put("version",1);
+    canonical.put("version",2);
     canonical.put("relation",relation);
     canonical.put("reader",reader);
     canonical.put("revision",revision);
     canonical.put("sourceHash",sourceHash);
     canonical.put("policyHash",policyHash);
+    canonical.put("bindingsHash",bindingsHash);
     canonical.put("planHash",hash(plan.sqlPreview()));
     canonical.put("binding",binding);
     canonical.put("issuedAt",Instant.now().getEpochSecond());
@@ -71,13 +73,14 @@ public final class SemanticRelationRlsPlanSnapshot {
     try{
       Map<String,Object> data=store.map(store.decrypt(ticket));
       if(!data.keySet().equals(Set.of("version","relation","reader","revision","sourceHash",
-          "policyHash","planHash","binding","issuedAt"))||
-         !(data.get("version") instanceof Number n)||n.intValue()!=1||
+          "policyHash","bindingsHash","planHash","binding","issuedAt"))||
+         !(data.get("version") instanceof Number n)||n.intValue()!=2||
          !(data.get("relation") instanceof String)||
          !(data.get("reader") instanceof String)||
          !(data.get("revision") instanceof Integer version)||version<1||
          !(data.get("sourceHash") instanceof String s)||!s.matches("[0-9a-f]{64}")||
          !(data.get("policyHash") instanceof String p)||!p.matches("[0-9a-f]{64}")||
+         !(data.get("bindingsHash") instanceof String b)||!b.matches("[0-9a-f]{64}")||
          !(data.get("planHash") instanceof String q)||!q.matches("[0-9a-f]{64}")||
          !(data.get("binding") instanceof Map<?,?> binding)||
          !binding.keySet().equals(Set.of("joinType","leftFieldIds","rightFieldIds"))||
