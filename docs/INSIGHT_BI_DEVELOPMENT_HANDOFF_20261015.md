@@ -333,3 +333,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 37. P1-SEMANTIC-RELATION-DUAL-RLS-PLAN-09：双侧行级权限 JOIN 编译预览（2026-10-17）
 
 新增仅管理员可用的双侧行规则编译预览：左/右数据源分别在 JOIN 前用非隐藏物理 STRING 字段和 JDBC `?` 参数占位符过滤，LEFT JOIN 的右侧限制不外置；单值和最多 20 值规则均校验，无列权限血缘时拒绝任意 deny。只返回 SQL 结构和参数数量，不返回读者行规则值、不执行 SQL/外部 JDBC，且不改变既有保守 access-review、候选封存和读者/报表发布禁止逻辑。详见 [P1_SEMANTIC_RELATION_DUAL_RLS_PLAN_09.md](P1_SEMANTIC_RELATION_DUAL_RLS_PLAN_09.md)。
+
+
+## 38. P1-SEMANTIC-RELATION-SOURCE-LINEAGE-10：RLS 源 SQL 直投影与预聚合阻断（2026-10-17）
+
+双侧 RLS 管理员编译预览现在要求两侧 SQL 均为可证明字段血缘的单表直接物理列投影；复用 SELECT AST，并严格拒绝预聚合、CTE、UNION、复杂过滤、关联、子查询、改名及缺失物理列。这只收紧 RLS 预览，不放开审查、候选正式发布或读者 SQL。只验改动范围的 Java/H2 专项，无 DDL 或线上部署。详见 [P1_SEMANTIC_RELATION_SOURCE_LINEAGE_10.md](P1_SEMANTIC_RELATION_SOURCE_LINEAGE_10.md)。

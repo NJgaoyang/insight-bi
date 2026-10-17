@@ -162,6 +162,54 @@ class SemanticRelationRlsPlanPreviewTest {
     assertThrows(IllegalStateException.class,()->
       f.api().rlsPlanPreview(f.id(),body(f,"LEFT")));
   }
+  @Test void onlyDirectPhysicalSingleTableProjectionQualifiesForDualRls(){
+    var f=fixture();
+    policy(f,"left",f.leftTenant(),"A");
+    var plan=f.api().rlsPlanPreview(f.id(),body(f,"LEFT"));
+    assertEquals(1,plan.leftBindCount());
+    assertTrue(plan.sqlPreview().contains("bi_rls_left"));
+    // Once the model explicitly re-approves its source fingerprint, still
+    // disallow every form where filtering AFTER source SQL is not provable.
+    List<String> risky=List.of(
+      "SELECT city, COUNT(*) AS tenant FROM rls_orders GROUP BY city",
+      "SELECT DISTINCT city,tenant FROM rls_orders",
+      "SELECT city, tenant FROM rls_orders WHERE tenant='A'",
+      "SELECT city, tenant FROM rls_orders ORDER BY city",
+      "SELECT city, tenant FROM rls_orders LIMIT 5",
+      "SELECT city, tenant FROM rls_orders UNION ALL SELECT city,tenant FROM rls_orders",
+      "SELECT o.city,o.tenant FROM rls_orders o JOIN rls_cities c ON o.city=c.city",
+      "SELECT city,tenant FROM (SELECT city,tenant FROM rls_orders) x",
+      "WITH v AS (SELECT city,tenant FROM rls_orders) SELECT city,tenant FROM v",
+      "SELECT city, CONCAT(tenant,'x') AS tenant FROM rls_orders",
+      "SELECT city AS tenant,tenant AS city FROM rls_orders",
+      "SELECT * FROM rls_orders"
+    );
+    for(String source:risky){
+      f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",source,"left");
+      assertThrows(IllegalStateException.class,()->
+        SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(source,
+          FieldCatalog.index(f.catalog().fields("left"))),source);
+    }
+  }
+
+  @Test void mismatchedProjectionAndQualifierCannotMasqueradeAsPolicyColumn(){
+    var f=fixture();
+    var fields=FieldCatalog.index(f.catalog().fields("left"));
+    for(String sql:List.of(
+        "SELECT city FROM rls_orders",
+        "SELECT tenant FROM rls_orders",
+        "SELECT x.city,x.tenant FROM rls_orders o",
+        "SELECT city, city FROM rls_orders",
+        "SELECT city,tenant FROM rls_orders; DROP TABLE rls_orders",
+        "SELECT 'Paris' AS city, tenant FROM rls_orders"))
+      assertThrows(RuntimeException.class,()->
+        SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(sql,fields),sql);
+    assertDoesNotThrow(()->SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
+      "SELECT o.city,o.tenant FROM rls_orders o",fields));
+    assertDoesNotThrow(()->SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
+      "SELECT city,tenant FROM rls_orders",fields));
+  }
+
   @Test void forgedParametersInvalidJoinAndNonSelectSourceFailClosed(){
     var f=fixture();
     var forged=new LinkedHashMap<>(body(f,"LEFT"));

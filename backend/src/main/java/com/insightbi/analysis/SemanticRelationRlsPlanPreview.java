@@ -41,8 +41,14 @@ public final class SemanticRelationRlsPlanPreview {
     if(denies==null||denies!=0)
       throw new IllegalStateException("任一侧存在列拒绝，尚不能保证安全的源字段血缘");
 
-    // The established compiler checks the approved physical projection,
-    // JOIN-key compatibility and both SELECT-only source ASTs.
+    // Reject sources whose output cannot be traced back to direct physical
+    // columns BEFORE compiling RLS outside the source SELECT. This prevents
+    // filtering pre-aggregated rows or computed/renamed tenant identifiers.
+    SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
+      String.valueOf(leftDataset.get("sql_body")),leftFields);
+    SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(
+      String.valueOf(rightDataset.get("sql_body")),rightFields);
+
     var base=SemanticRelationSqlPreview.compile(leftDataset,rightDataset,leftId,rightId,
       pairs,leftFields,rightFields,revision,selection);
     Policy left=policy(db,readerId,leftId,leftFields,"bi_rls_left");
