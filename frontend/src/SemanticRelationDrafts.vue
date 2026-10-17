@@ -14,13 +14,18 @@ const source=ref(''),target=ref(''),name=ref('')
 const editingId=ref(''),revision=ref(0),pairs=ref<Pair[]>([{leftFieldId:'',rightFieldId:''}])
 const fields=ref<Record<string,Field[]>>({})
 const busy=ref(false),error=ref(''),formOpen=ref(false)
+type SampleProfile={sampledRows:number;nullKeyRows:number;keyGroups:number;
+ duplicateGroups:number;extraRightRows:number;maxRightMultiplicity:number;
+ hasDuplicateKeys:boolean;sampleCapReached:boolean;sampleLimit:number;
+ exactSourceCount:boolean;exactJoinRowCount:boolean;scope:string;warning:string}
+const profiling=ref(false),profile=ref<{id:string;revision:number;data:SampleProfile}|null>(null)
 const targets=computed(()=>datasets.value.filter(d=>d.id!==source.value&&
  !!source.value&&d.connection_id===datasets.value.find(x=>x.id===source.value)?.connection_id))
 const left=computed(()=>fields.value[source.value]?.filter(f=>!f.calculated&&!f.hidden)||[])
 const right=computed(()=>fields.value[target.value]?.filter(f=>!f.calculated&&!f.hidden)||[])
 const normalized=(s:string)=>s.trim()
 async function load(){
- busy.value=true;error.value=''
+ busy.value=true;error.value='';profile.value=null
  try{
   const [list,sources]=await Promise.all([
    api<Draft[]>('/model/semantic-relations'),api<Dataset[]>('/datasets')])
@@ -88,6 +93,21 @@ async function approve(row:Draft){
   await load()
  }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关系确认失败');busy.value=false}
 }
+async function inspectKeys(row:Draft){
+ if(busy.value||profiling.value||row.status!=='APPROVED')return
+ try{await ElMessageBox.confirm(
+  '会对右侧数据集执行最多 2000 行的只读样本扫描；复杂源 SQL 仍可能进行较大扫描。结果不保证全表唯一性，也不是 JOIN 最终行数。继续？',
+  '检查关联风险',{type:'warning',confirmButtonText:'同意只读抽样',cancelButtonText:'取消'})}
+ catch{return}
+ profiling.value=true;profile.value=null
+ try{
+  const data=await post<SampleProfile>('/model/semantic-relations/'+encodeURIComponent(row.id)+
+   '/join-key-profile',{revision:row.revision,acknowledgeSourceScan:true})
+  if(drafts.value.some(d=>d.id===row.id&&d.revision===row.revision&&d.status==='APPROVED'))
+   profile.value={id:row.id,revision:row.revision,data}
+ }catch(e:unknown){ElMessage.error(e instanceof Error?e.message:'关联风险诊断失败')}
+ finally{profiling.value=false}
+}
 async function erase(row:Draft){
  try{await ElMessageBox.confirm('删除关系草稿「'+row.name+'」？不会修改原有加工链。','删除草稿',{type:'warning'})}
  catch{return}
@@ -118,8 +138,18 @@ onMounted(load)
     </div>
     <div class="semantic-draft-actions">
      <button v-if="row.status==='DRAFT'" type="button" @click="approve(row)">确认版本</button>
+     <button v-if="row.status==='APPROVED'" type="button" :disabled="profiling||busy" @click="inspectKeys(row)">
+      {{profiling?'检查中…':'检查关联风险'}}
+     </button>
      <button type="button" @click="edit(row)">编辑</button>
      <button type="button" @click="erase(row)">删除</button>
+    </div>
+    <div v-if="profile&&profile.id===row.id&&profile.revision===row.revision" class="semantic-draft-profile" role="status">
+     <strong>右表样本行数：{{profile.data.sampledRows}} / {{profile.data.sampleLimit}}</strong>
+     <span>空值关联键：{{profile.data.nullKeyRows}} · 有效键组：{{profile.data.keyGroups}} · 重复键组：{{profile.data.duplicateGroups}}</span>
+     <span>额外右表行：{{profile.data.extraRightRows}} · 最大单键行数：{{profile.data.maxRightMultiplicity}}</span>
+     <span v-if="profile.data.sampleCapReached">已达到样本上限，不能推断全表完整性。</span>
+     <span>{{profile.data.warning}}</span>
     </div>
    </div>
   </div>

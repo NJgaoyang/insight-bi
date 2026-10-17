@@ -5,7 +5,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
  const browser=await chromium.launch({args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1480,height:960}})
-  let rows=[],requests=[],errors=[]
+  let rows=[],requests=[],errors=[],profileRequests=0
   page.on('pageerror',e=>errors.push(e.stack||e.message))
   const send=(r,v,status=200)=>r.fulfill({status,contentType:'application/json',body:JSON.stringify(v)})
   await page.route('**/api/**',route=>{
@@ -24,6 +24,14 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     assert.deepEqual(data.pairs,[{leftFieldId:'city',rightFieldId:'region'}])
     rows=[{id:'draft1',...data,revision:1,status:'DRAFT',reason:''}]
     return send(route,rows[0])
+   }
+   if(p==='/api/model/semantic-relations/draft1/join-key-profile'&&m==='POST'){
+    const data=req.postDataJSON();profileRequests++
+    assert.deepEqual(data,{revision:1,acknowledgeSourceScan:true})
+    return send(route,{sampledRows:5,nullKeyRows:1,keyGroups:2,duplicateGroups:1,
+     extraRightRows:1,maxRightMultiplicity:2,hasDuplicateKeys:true,
+     sampleCapReached:false,sampleLimit:2000,scope:'RIGHT_SOURCE_SAMPLE',
+     exactSourceCount:false,exactJoinRowCount:false,warning:'仅代表右表样本'})
    }
    if(p==='/api/model/semantic-relations/draft1/approve'&&m==='POST'){
     assert.equal(req.postDataJSON().revision,1)
@@ -108,6 +116,12 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await approval.locator('.el-message-box__btns .el-button--primary').click()
   await page.getByText(/已确认 v1/).waitFor()
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),0)
+  await page.locator('.semantic-draft-item').getByRole('button',{name:'检查关联风险'}).click()
+  const scanConfirm=page.locator('.el-message-box').last()
+  await scanConfirm.waitFor()
+  await scanConfirm.locator('.el-message-box__btns .el-button--primary').click()
+  await page.getByText(/右表样本行数：5/).waitFor()
+  assert.equal(profileRequests,1)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})
   await edit.locator('input[maxlength="100"]').fill('城市映射更新')
@@ -115,6 +129,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await page.getByText('城市映射更新').waitFor()
   assert.match(await page.locator('.semantic-draft-item').innerText(),/v2/)
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
+  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'检查关联风险'}).count(),0)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'删除'}).click()
   const confirm=page.locator('.el-message-box').last()
   await confirm.waitFor()

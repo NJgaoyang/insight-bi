@@ -14,3 +14,7 @@ NULL 键不可经 SQL '=' 命中，不计入重复可关联键组。不执行 JO
 
 定向测试：`cd backend && mvn -q -B -Dtest=SemanticRelationApiTest,SemanticRelationCardinalityProfileTest,ModelRelationsApiTest test`。
 下一批完善 UI 展示、风险承认、行/列权限及发布版本绑定。
+
+## UI 验收补充
+
+已确认版本的行展示“检查关联风险”，管理员必须先确认有代价的只读抽样才提交诊断请求；结果只呈现 2,000 行内的统计及完整性风险，不返回业务明细。草稿/失效关系不显示入口，CRUD 刷新清空旧统计。Chromium 定向验收新增诊断弹窗、请求体以及状态变化测试。
