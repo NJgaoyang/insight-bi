@@ -5,8 +5,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.KeyStore;
 import java.security.cert.X509Certificate;
+import java.util.Date;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -43,6 +48,12 @@ final class SemanticRelationRlsTlsConnectionFactory {
   static Settings prepare(Map<String,Object> approved,DatabaseStore store,
                           Path trustStore,char[] trustPassword)
       throws IOException,GeneralSecurityException{
+    return preparePinned(approved,store,trustStore,trustPassword,null);
+  }
+
+  private static Settings preparePinned(Map<String,Object> approved,DatabaseStore store,
+                          Path trustStore,char[] trustPassword,String expectedCaHash)
+      throws IOException,GeneralSecurityException{
     if(approved==null||store==null)throw new IllegalArgumentException("来源连接缺失");
     if(!"mysql".equals(approved.get("engine")))
       throw new IllegalStateException("隔离 TLS 工厂仅支持 MySQL");
@@ -55,26 +66,12 @@ final class SemanticRelationRlsTlsConnectionFactory {
        !(approved.get("port") instanceof Number number)||
        number.intValue()<1||number.intValue()>65535)
       throw new IllegalStateException("连接主机、端口或账户标识不合法");
-    if(trustStore==null||trustPassword==null||trustPassword.length==0||
-       Files.isSymbolicLink(trustStore)||!Files.isRegularFile(trustStore)||
-       !Files.isReadable(trustStore))
-      throw new IllegalStateException("TLS CA 信任库不存在或不安全");
+    String currentCa=caFingerprint(trustStore,trustPassword,new Date());
+    if(expectedCaHash!=null&&
+       (!expectedCaHash.matches("[0-9a-f]{64}")||
+        !expectedCaHash.equals(currentCa)))
+      throw new IllegalStateException("证书信任锚已变更，必须重新确认部署 CA 指纹");
     Path path=trustStore.toRealPath();
-    var roots=KeyStore.getInstance("PKCS12");
-    try(var in=Files.newInputStream(path)){
-      roots.load(in,trustPassword);
-    }
-    boolean trusted=false;
-    for(var aliases=roots.aliases();aliases.hasMoreElements();){
-      String alias=aliases.nextElement();
-      if(roots.isCertificateEntry(alias) &&
-         roots.getCertificate(alias) instanceof X509Certificate cert &&
-         cert.getBasicConstraints()>=0){
-        cert.checkValidity();
-        trusted=true;
-      }
-    }
-    if(!trusted)throw new IllegalStateException("TLS 信任库必须包含有效 CA 证书");
     String secret=store.decrypt(string(approved,"credential"));
     if(secret.isEmpty())throw new IllegalStateException("连接密码为空");
     int port=((Number)approved.get("port")).intValue();
@@ -92,6 +89,93 @@ final class SemanticRelationRlsTlsConnectionFactory {
     props.setProperty("fallbackToSystemTrustStore","false");
     props.setProperty("allowPublicKeyRetrieval","false");
     return new Settings(url,props);
+  }
+
+  /**
+   * Trust pin is configured outside of the reader request, by the operator.
+   * The digest is over sorted DER CA certificates (not filename/PKCS12 salt).
+   * Any removed, expired, replaced or added root changes the approved pin.
+   */
+  static String caFingerprint(Path file,char[] password)
+      throws IOException,GeneralSecurityException{
+    return caFingerprint(file,password,new Date());
+  }
+  static String caFingerprint(Path file,char[] password,Date at)
+      throws IOException,GeneralSecurityException{
+    if(file==null||password==null||password.length==0||at==null||
+       Files.isSymbolicLink(file)||!Files.isRegularFile(file)||
+       !Files.isReadable(file))
+      throw new IllegalStateException("TLS CA 信任库缺失或不是受信常规文件");
+    var store=KeyStore.getInstance("PKCS12");
+    try(var in=Files.newInputStream(file)){store.load(in,password);}
+    var certs=new ArrayList<String>();
+    for(var aliases=store.aliases();aliases.hasMoreElements();){
+      String alias=aliases.nextElement();
+      if(!store.isCertificateEntry(alias)||
+         !(store.getCertificate(alias) instanceof X509Certificate ca)||
+         ca.getBasicConstraints()<0)
+        throw new IllegalStateException("信任库包含非 CA 证书或私钥条目");
+      ca.checkValidity(at);
+      certs.add(Base64.getEncoder().encodeToString(ca.getEncoded()));
+    }
+    if(certs.isEmpty()||certs.size()>16)
+      throw new IllegalStateException("CA 信任库证书数量不合法");
+    Collections.sort(certs);
+    try{
+      var digest=MessageDigest.getInstance("SHA-256");
+      for(String cert:certs){
+        byte[] der=Base64.getDecoder().decode(cert);
+        digest.update(java.nio.ByteBuffer.allocate(4).putInt(der.length).array());
+        digest.update(der);
+      }
+      return HexFormat.of().formatHex(digest.digest());
+    }catch(NoSuchAlgorithmException unavailable){
+      throw new IllegalStateException("SHA-256 不可用",unavailable);
+    }
+  }
+
+  /**
+   * Bind the TLS settings to the CURRENT LOCKED connection definition,
+   * including the exact encrypted credential version. A trust anchor hash
+   * supplied by trusted deployment configuration is mandatory.
+   *
+   * This is still a preparation step; it makes no remote source request.
+   */
+  static Settings prepareApproved(JdbcTemplate db,DatabaseStore store,
+      SemanticRelationRlsApprovedSourceGate.VerifiedSource verified,
+      Path caFile,char[] caPassword,String expectedCaHash)
+      throws IOException,GeneralSecurityException{
+    if(db==null||store==null||verified==null||
+       !TransactionSynchronizationManager.isActualTransactionActive()||
+       TransactionSynchronizationManager.isCurrentTransactionReadOnly()||
+       !Integer.valueOf(java.sql.Connection.TRANSACTION_READ_COMMITTED).equals(
+          TransactionSynchronizationManager.getCurrentTransactionIsolationLevel())||
+       expectedCaHash==null||!expectedCaHash.matches("[0-9a-f]{64}"))
+      throw new IllegalStateException("必须在受控元数据写事务中使用已配置的 CA 指纹");
+    var rows=db.queryForList(
+      "SELECT id,engine,host,port,db_name,username,credential "+
+      "FROM insight_connection WHERE id=? FOR UPDATE",verified.connectionId());
+    if(rows.size()!=1)throw new IllegalStateException("已批准数据库连接被删除");
+    var current=rows.get(0);
+    if(!Objects.equals(current.get("id"),verified.connectionId())||
+       !Objects.equals(current.get("engine"),verified.engine())||
+       !Objects.equals(current.get("host"),verified.host())||
+       !Objects.equals(current.get("db_name"),verified.catalog())||
+       !Objects.equals(current.get("username"),verified.username())||
+       !(current.get("port") instanceof Number n)||n.intValue()!=verified.port()||
+       !(current.get("credential") instanceof String encrypted)||
+       !SemanticRelationRlsPlanSnapshot.hash(encrypted).equals(verified.credentialHash()))
+      throw new IllegalStateException("审批连接账号或加密凭据在 TLS 准备前已变化");
+    return preparePinned(current,store,caFile,caPassword,expectedCaHash);
+  }
+
+  /** Never pass an arbitrary connection map to this verified-opening path. */
+  static Connection openApproved(JdbcTemplate db,DatabaseStore store,
+      SemanticRelationRlsApprovedSourceGate.VerifiedSource verified,
+      Path caFile,char[] caPassword,String expectedCaHash)
+      throws IOException,GeneralSecurityException,SQLException{
+    var prepared=prepareApproved(db,store,verified,caFile,caPassword,expectedCaHash);
+    return DriverManager.getConnection(prepared.url(),prepared.properties());
   }
 
   /** Future callers must obtain the approved row while holding its metadata lock. */

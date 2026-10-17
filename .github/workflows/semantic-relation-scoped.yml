@@ -55,6 +55,7 @@ on:
       - docs/P1_SEMANTIC_RLS_SOURCE_APPROVAL_BINDING_17.md
       - docs/P1_SEMANTIC_RLS_JDBC_IDENTITY_18.md
       - docs/P1_SEMANTIC_RLS_TLS_CONNECTION_19.md
+      - docs/P1_SEMANTIC_RLS_TLS_APPROVAL_PIN_20.md
       - .github/workflows/semantic-relation-scoped.yml
 jobs:
   relationship-backend:

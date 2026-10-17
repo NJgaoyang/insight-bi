@@ -11,7 +11,17 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * external source connection is opened.
  */
 final class SemanticRelationRlsApprovedSourceGate {
-  record VerifiedSource(String engine,String catalog,String host,int port,String username){}
+  /**
+   * Internal approval proof. Fingerprint is of randomized encrypted metadata,
+   * not a password; never show it to callers. The effective approval hash has
+   * already been validated against connection_id + the encrypted credential.
+   */
+  record VerifiedSource(String engine,String catalog,String host,int port,
+                        String username,String connectionId,String credentialHash) {
+    @Override public String toString(){
+      return "VerifiedSource[approval=REDACTED]";
+    }
+  }
   private SemanticRelationRlsApprovedSourceGate(){}
 
   static VerifiedSource require(JdbcTemplate db,DatabaseStore store,
@@ -115,7 +125,11 @@ final class SemanticRelationRlsApprovedSourceGate {
        !(connection.get("port") instanceof Number port)||
        port.intValue()<1||port.intValue()>65535)
       throw new IllegalStateException("当前来源引擎或连接配置不具备只读证明");
-    return new VerifiedSource(engine,dbName,host,port.intValue(),username);
+    String credential=String.valueOf(connection.get("credential"));
+    if(credential.isBlank()||credential.equals("null"))
+      throw new IllegalStateException("已批准连接缺少有效凭据");
+    return new VerifiedSource(engine,dbName,host,port.intValue(),username,
+      connectionId,SemanticRelationRlsPlanSnapshot.hash(credential));
   }
 
   private static Map<String,FieldCatalog.Field> active(List<FieldCatalog.Field> list){

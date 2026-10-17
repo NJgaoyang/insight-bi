@@ -383,3 +383,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 47. P1-SEMANTIC-RLS-TLS-CONNECTION-19：独立连接工厂的强制 TLS 校验（2026-10-17）
 
 新增包内、未接入生产的 `SemanticRelationRlsTlsConnectionFactory`，要求可读且含有效 CA 证书的 PKCS#12 信任库，并以 `sslMode=VERIFY_IDENTITY`、禁止 fallback 和公钥获取、严格 URL 白名单构造 MySQL JDBC Properties；凭据不入 URL 或调试字符串。P1-18 身份门禁再增加同连接 `Ssl_cipher` 非空校验及驱动 URL TLS 不能降级的判定。仅用自建测试 CA 与 H2/JDBC 代理专项验证；未进行真实 MySQL 证书握手，不触碰现有 `DatabaseStore.open` 的 `useSSL=false` 生产路径、不开放 JOIN 或发布，无 DDL/部署。见 [P1_SEMANTIC_RLS_TLS_CONNECTION_19.md](P1_SEMANTIC_RLS_TLS_CONNECTION_19.md)。
+
+
+## 48. P1-SEMANTIC-RLS-TLS-APPROVAL-PIN-20：审批凭据与 CA 信任锚轮换防护（2026-10-17）
+
+新增内部 `prepareApproved/openApproved`：仅在锁定的 READ_COMMITTED 元数据事务内对比来源连接 host/port/catalog/username、连接 ID 和加密凭据版本摘要；凭据变动立即拒绝。TLS PKCS#12 CA 证书以 DER 内容固定 SHA-256 指纹，过期、非 CA 或与可信部署侧预期指纹不符均拒绝，CA 轮换须显式重新确认证书指纹。新增未对外映射的 `inspectVerifiedTls`，其来源连接只能由已审批的 TLS 工厂打开；旧 H2 接口仍限内部隔离模拟。新增定向 H2/离线 CA 验证，但尚未处理信任库校验到握手之间的文件 TOCTOU，也未验证真实 MySQL 证书或启动 Reader JOIN。未改 `DatabaseStore.open()`、无 DDL、不部署。详见 [P1_SEMANTIC_RLS_TLS_APPROVAL_PIN_20.md](P1_SEMANTIC_RLS_TLS_APPROVAL_PIN_20.md)。

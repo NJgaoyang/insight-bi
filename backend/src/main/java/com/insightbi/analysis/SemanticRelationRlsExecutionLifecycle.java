@@ -5,6 +5,9 @@ import com.insightbi.DatabaseStore;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -25,8 +28,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * actual remote host/credential, so this never authorizes reader execution.
  */
 final class SemanticRelationRlsExecutionLifecycle {
+  /** Legacy H2 probe interface, NOT a production source-opening credential. */
   @FunctionalInterface interface SourceConnection {
     Connection open() throws SQLException;
+  }
+  @FunctionalInterface private interface ApprovedConnection {
+    Connection open(SemanticRelationRlsApprovedSourceGate.VerifiedSource approved)
+      throws SQLException;
   }
   @FunctionalInterface interface StatementProbe {
     void inspect(PreparedStatement prepared) throws SQLException;
@@ -41,6 +49,46 @@ final class SemanticRelationRlsExecutionLifecycle {
                       SemanticRelationRlsPlanPreview.Preview plan,
                       SemanticRelationRlsBindPreflight.Attestation expected,
                       SourceConnection source,StatementProbe probe){
+    if(source==null)throw new IllegalArgumentException("H2 测试来源为空");
+    inspectInternal(metadata,transactions,store,catalog,relationId,reader,leftId,
+      rightId,leftFields,rightFields,plan,expected,approved->source.open(),probe);
+  }
+
+  /**
+   * Approved-source path: can only open a verified TLS connection assembled
+   * from the connection row locked by the approval gate. No HTTP/Reader route
+   * is mapped to this method, and no SQL executes except a test callback.
+   */
+  static void inspectVerifiedTls(JdbcTemplate metadata,
+                      DataSourceTransactionManager transactions,
+                      DatabaseStore store,FieldCatalog catalog,String relationId,
+                      String reader,String leftId,String rightId,
+                      Map<String,FieldCatalog.Field> leftFields,
+                      Map<String,FieldCatalog.Field> rightFields,
+                      SemanticRelationRlsPlanPreview.Preview plan,
+                      SemanticRelationRlsBindPreflight.Attestation expected,
+                      Path caFile,char[] caPassword,String expectedCaHash,
+                      StatementProbe probe){
+    inspectInternal(metadata,transactions,store,catalog,relationId,reader,leftId,
+      rightId,leftFields,rightFields,plan,expected,approved->{
+        try{
+          return SemanticRelationRlsTlsConnectionFactory.openApproved(
+            metadata,store,approved,caFile,caPassword,expectedCaHash);
+        }catch(IOException|GeneralSecurityException failure){
+          throw new SQLException("已批准来源 TLS CA 检查失败",failure);
+        }
+      },probe);
+  }
+
+  private static void inspectInternal(JdbcTemplate metadata,
+                      DataSourceTransactionManager transactions,
+                      DatabaseStore store,FieldCatalog catalog,String relationId,
+                      String reader,String leftId,String rightId,
+                      Map<String,FieldCatalog.Field> leftFields,
+                      Map<String,FieldCatalog.Field> rightFields,
+                      SemanticRelationRlsPlanPreview.Preview plan,
+                      SemanticRelationRlsBindPreflight.Attestation expected,
+                      ApprovedConnection source,StatementProbe probe){
     if(TransactionSynchronizationManager.isActualTransactionActive())
       throw new IllegalStateException("不能在不确定的外部事务中嵌套 JOIN 生命周期");
     if(metadata==null||transactions==null||store==null||catalog==null||
@@ -60,7 +108,7 @@ final class SemanticRelationRlsExecutionLifecycle {
         // may supply the engine/catalog. Callers must not choose them.
         var verified=SemanticRelationRlsApprovedSourceGate.require(
           metadata,store,catalog,relationId,reader,leftId,rightId,plan,expected);
-        try(Connection connection=source.open()){
+        try(Connection connection=source.open(verified)){
           connection.setAutoCommit(false);
           try{
             // Verify the driver endpoint AND the server-side effective

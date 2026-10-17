@@ -13,6 +13,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SemanticRelationRlsTlsConnectionFactoryTest {
@@ -44,6 +47,41 @@ class SemanticRelationRlsTlsConnectionFactoryTest {
     -----END CERTIFICATE-----
     """;
 
+  private static final String ROTATED_CA="""
+    -----BEGIN CERTIFICATE-----
+    MIIDdTCCAl2gAwIBAgIUXKoRW/oClGc1Eedw5S3nu8zfrHQwDQYJKoZIhvcNAQEL
+    BQAwQjEjMCEGA1UEAwwaaXNvbGF0ZWQtcm90YXRlZC10ZXN0LXJvb3QxGzAZBgNV
+    BAoMEkluc2lnaHQgQkkgRml4dHVyZTAeFw0yNjEwMTcxMDQ3MDFaFw0zNjEwMTQx
+    MDQ3MDFaMEIxIzAhBgNVBAMMGmlzb2xhdGVkLXJvdGF0ZWQtdGVzdC1yb290MRsw
+    GQYDVQQKDBJJbnNpZ2h0IEJJIEZpeHR1cmUwggEiMA0GCSqGSIb3DQEBAQUAA4IB
+    DwAwggEKAoIBAQC55WtV2OZh3wNrCVppmJlcmnkDugCojBHDAK4jNwjbN3pLFkXk
+    6X6dUZV1lzPakr/JZp2Rfxm5tAMGF0z3DECvZzNr34oKXLrLu6c0VVqPk0361Hgt
+    1fcWoeWkVlFrIJA9X+6LoGuL+T8RFqAOXe0BdX9vsZ4k2eJj+u9qgBW4GCaja1O8
+    DpwTcRWmJU1hAxekLKMj72OZx4CTzyKha4EQepv0BrPdp0dwJ6o+pyK+1h+LUtoM
+    oDXlbVpDQ8Rntk2Y+7uYd2J0SgSLleEP5fdKioJx+qhgZXxrR58TX8kB+HBrDmcY
+    CjwacSmQAQay0EwrNz2yTq7/CtxbGMBM897tAgMBAAGjYzBhMB0GA1UdDgQWBBSG
+    ZYhrIZLQdDJGm4v1i+v73fLZRjAfBgNVHSMEGDAWgBSGZYhrIZLQdDJGm4v1i+v7
+    3fLZRjAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjANBgkqhkiG9w0B
+    AQsFAAOCAQEAPbtpqjwB5lzkcMZ5cX+1sxWYdKIBe/iLzL9Jq0CXcfozllqCRRRB
+    yoMJiLnVjiixjiqXPP0PRTF7UzLF4F74iRqLnAiyIR13fBaSzp04WlNp6EzMkzYD
+    HM0y5rvb3MQljCB+skVuEG20EkmdO9ry88O826aY91D786x2BMpNCbsATxQtckA6
+    I3CcZeBLKuVfX4rHG2FxMf+PLh0joMYF5J4xCiwBpEduL5+N+mswb7NlZ1bUC/Ns
+    0Mc/TJ+0HqTr8CVpk4XQtp+B9oxJ+fwO3X+GuxJfmtrFxtx0nUKOviRwFNHRYFF6
+    aEqpNudEOmxyozNwBMDSLKIoOcJBBNC0LA==
+    -----END CERTIFICATE-----
+    """;
+
+  private Path rotatedRoot()throws Exception{
+    var root=CertificateFactory.getInstance("X.509").generateCertificate(
+      new ByteArrayInputStream(ROTATED_CA.getBytes(StandardCharsets.UTF_8)));
+    var ks=KeyStore.getInstance("PKCS12");
+    ks.load(null,SECRET);
+    ks.setCertificateEntry("new-approved-root",root);
+    var file=directory.resolve("rotated-ca.p12");
+    try(var out=Files.newOutputStream(file)){ks.store(out,SECRET);}
+    return file;
+  }
+
   private Path trustedRoot()throws Exception{
     var root=CertificateFactory.getInstance("X.509").generateCertificate(
       new ByteArrayInputStream(CA.getBytes(StandardCharsets.UTF_8)));
@@ -54,12 +92,16 @@ class SemanticRelationRlsTlsConnectionFactoryTest {
     try(var out=Files.newOutputStream(file)){ks.store(out,SECRET);}
     return file;
   }
-  private record Fixture(DatabaseStore store,Map<String,Object> config){}
+  private record Fixture(DatabaseStore store,JdbcTemplate db,
+                         DataSourceTransactionManager transactions,
+                         Map<String,Object> config){}
   private Fixture fixture(){
     var data=new DriverManagerDataSource(
       "jdbc:h2:mem:tls_"+UUID.randomUUID()+";DB_CLOSE_DELAY=-1","sa","");
-    var store=new DatabaseStore(new JdbcTemplate(data),new ObjectMapper(),
+    var db=new JdbcTemplate(data);
+    var store=new DatabaseStore(db,new ObjectMapper(),
       Base64.getEncoder().encodeToString(new byte[32]));
+    store.schema();
     var config=new HashMap<String,Object>();
     config.put("engine","mysql");
     config.put("host","db.isolated.invalid");
@@ -67,7 +109,12 @@ class SemanticRelationRlsTlsConnectionFactoryTest {
     config.put("db_name","analytics");
     config.put("username","readonly");
     config.put("credential",store.encrypt("isolated-db-password"));
-    return new Fixture(store,config);
+    db.update("INSERT INTO insight_connection"+
+      "(id,name,engine,host,port,db_name,username,credential)"+
+      " VALUES(?,?,?,?,?,?,?,?)",
+      "approved-conn","Pinned","mysql","db.isolated.invalid",3306,
+      "analytics","readonly",config.get("credential"));
+    return new Fixture(store,db,new DataSourceTransactionManager(data),config);
   }
 
   @Test void secureConfigRequiresIdentityVerificationAndKeepsSecretsOutOfUrl()
@@ -151,5 +198,83 @@ class SemanticRelationRlsTlsConnectionFactoryTest {
       safe+"#spoof",safe.replace("jdbc:mysql://","jdbc:mysql:replication://")))
       assertThrows(IllegalStateException.class,()->
         SemanticRelationRlsTlsConnectionFactory.requireVerifiedUrl(invalid),invalid);
+  }
+
+  private static SemanticRelationRlsApprovedSourceGate.VerifiedSource approved(Fixture f){
+    return new SemanticRelationRlsApprovedSourceGate.VerifiedSource(
+      "mysql","analytics","db.isolated.invalid",3306,"readonly","approved-conn",
+      SemanticRelationRlsPlanSnapshot.hash((String)f.config().get("credential")));
+  }
+
+  private SemanticRelationRlsTlsConnectionFactory.Settings pinned(Fixture f,
+      SemanticRelationRlsApprovedSourceGate.VerifiedSource approved,
+      Path storeFile,String expectedCaDigest){
+    var tx=new TransactionTemplate(f.transactions());
+    tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+    return tx.execute(state->{
+      try{
+        return SemanticRelationRlsTlsConnectionFactory.prepareApproved(
+          f.db(),f.store(),approved,storeFile,SECRET,expectedCaDigest);
+      }catch(Exception checked){
+        throw new IllegalStateException("测试用的已审批 TLS 设置未通过安全检查",checked);
+      }
+    });
+  }
+
+  @Test void boundSourceCredentialAndEndpointMustMatchLockedApprovedRow()throws Exception{
+    var f=fixture();
+    var root=trustedRoot();
+    String ca=SemanticRelationRlsTlsConnectionFactory.caFingerprint(root,SECRET);
+    var verified=approved(f);
+    var settings=pinned(f,verified,root,ca);
+    assertEquals("readonly",settings.properties().getProperty("user"));
+    assertEquals("isolated-db-password",settings.properties().getProperty("password"));
+    assertFalse(settings.toString().contains(verified.credentialHash()));
+    // A changed encrypted credential invalidates the existing approval
+    // even when host, user and other metadata stay identical.
+    f.db().update("UPDATE insight_connection SET credential=? WHERE id=?",
+      f.store().encrypt("new-password"),"approved-conn");
+    assertThrows(IllegalStateException.class,()->pinned(f,verified,root,ca));
+    f.db().update("UPDATE insight_connection SET credential=? WHERE id=?",
+      f.config().get("credential"),"approved-conn");
+    f.db().update("UPDATE insight_connection SET username=? WHERE id=?",
+      "other-user","approved-conn");
+    assertThrows(IllegalStateException.class,()->pinned(f,verified,root,ca));
+    f.db().update("UPDATE insight_connection SET username=? WHERE id=?",
+      "readonly","approved-conn");
+    f.db().update("UPDATE insight_connection SET host=? WHERE id=?",
+      "other.invalid","approved-conn");
+    assertThrows(IllegalStateException.class,()->pinned(f,verified,root,ca));
+  }
+
+  @Test void rotatedCaCannotSilentlyReplaceTrustAnchorAndExpiryFailsClosed()
+      throws Exception{
+    var f=fixture();
+    var root=trustedRoot();
+    String previous=SemanticRelationRlsTlsConnectionFactory.caFingerprint(root,SECRET);
+    var verified=approved(f);
+    var newRoot=rotatedRoot();
+    String rotated=SemanticRelationRlsTlsConnectionFactory.caFingerprint(newRoot,SECRET);
+    assertNotEquals(previous,rotated);
+    assertThrows(IllegalStateException.class,()->pinned(f,verified,newRoot,previous));
+    // A trusted operator must explicitly update the deployment's expected CA.
+    assertEquals("readonly",pinned(f,verified,newRoot,rotated)
+      .properties().getProperty("user"));
+    assertThrows(java.security.cert.CertificateExpiredException.class,()->
+      SemanticRelationRlsTlsConnectionFactory.caFingerprint(root,SECRET,
+        java.util.Date.from(java.time.Instant.parse("2041-01-01T00:00:00Z"))));
+    assertThrows(IllegalStateException.class,()->pinned(f,verified,root,"f".repeat(64)));
+    assertThrows(IllegalStateException.class,()->pinned(f,verified,root,"bad-pin"));
+  }
+
+  @Test void pinnedPreparationFailsClosedOutsideApprovedMetadataTransaction()throws Exception{
+    var f=fixture();
+    var caFile=trustedRoot();
+    String ca=SemanticRelationRlsTlsConnectionFactory.caFingerprint(caFile,SECRET);
+    assertThrows(IllegalStateException.class,()->
+      SemanticRelationRlsTlsConnectionFactory.prepareApproved(
+        f.db(),f.store(),approved(f),caFile,SECRET,ca));
+    assertThrows(IllegalStateException.class,()->
+      pinned(f,approved(f),caFile,null));
   }
 }
