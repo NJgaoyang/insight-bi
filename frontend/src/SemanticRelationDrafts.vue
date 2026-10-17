@@ -23,6 +23,10 @@ type Reader={id:string;display_name:string;role:string;enabled:boolean}
 const reviewOpen=ref(false),reviewRow=ref<Draft|null>(null),readers=ref<Reader[]>([])
 const reviewReader=ref(''),reviewJoin=ref<'INNER'|'LEFT'>('LEFT')
 const reviewBusy=ref(false),reviewMessage=ref(''),reviewReady=ref(false)
+type DualRlsPlan={sqlPreview:string;scope:string;joinType:string;leftBindCount:number;
+ rightBindCount:number;totalBindCount:number;readerAuthVersion:number;
+ leftPolicyApplied:boolean;rightPolicyApplied:boolean;warnings:string[]}
+const rlsBusy=ref(false),rlsPreview=ref<DualRlsPlan|null>(null)
 type Snapshot={releaseNo:number;relationRevision:number;status:'SEALED_ONLY'|'STALE'|'BLOCKED';reason:string}
 const snapshots=ref<Snapshot[]>([])
 type TargetWidget={id:string;title?:string;datasetId?:string;analysisV2?:Record<string,unknown>}
@@ -126,7 +130,7 @@ async function inspectKeys(row:Draft){
 async function openAccessReview(row:Draft){
  if(busy.value||row.status!=='APPROVED')return
  reviewRow.value=row;reviewReader.value='';reviewJoin.value='LEFT';reviewMessage.value=''
- reviewReady.value=false;snapshots.value=[];clearBinding()
+ reviewReady.value=false;snapshots.value=[];rlsPreview.value=null;clearBinding()
  reviewOpen.value=true
  try{
   const users=await api<Reader[]>('/governance/users')
@@ -146,8 +150,8 @@ function clearBinding(){
  bindingRelease.value=0;bindingMessage.value='';bindingDashboardId.value=''
  bindingDashboard.value=null;bindingWidgetId.value='';bindingDashboards.value=[]
 }
-function onReaderChange(){reviewReady.value=false;reviewMessage.value='';snapshots.value=[];clearBinding();void loadReleaseSnapshots()}
-function onJoinChange(){reviewReady.value=false;reviewMessage.value='';clearBinding()}
+function onReaderChange(){reviewReady.value=false;reviewMessage.value='';rlsPreview.value=null;snapshots.value=[];clearBinding();void loadReleaseSnapshots()}
+function onJoinChange(){reviewReady.value=false;reviewMessage.value='';rlsPreview.value=null;clearBinding()}
 async function chooseBindingTarget(item:Snapshot){
  if(item.status!=='SEALED_ONLY'||!reviewRow.value||!reviewReader.value)return
  clearBinding();bindingRelease.value=item.releaseNo;bindingBusy.value=true
@@ -207,6 +211,21 @@ async function sealReleaseSnapshot(){
   await loadReleaseSnapshots()
  }catch(e:unknown){reviewReady.value=false;reviewMessage.value=e instanceof Error?e.message:'候选版本封存失败'}
  finally{reviewBusy.value=false}
+}
+async function previewRowSecurity(){
+ const relation=reviewRow.value,reader=reviewReader.value
+ if(!relation||!reader||relation.status!=='APPROVED'||rlsBusy.value)return
+ rlsBusy.value=true;rlsPreview.value=null
+ try{
+  const plan=await post<DualRlsPlan>(
+   '/model/semantic-relations/'+encodeURIComponent(relation.id)+'/rls-plan-preview',{
+    revision:relation.revision,readerId:reader,joinType:reviewJoin.value,
+    leftFieldIds:[...new Set(relation.pairs.map(x=>x.leftFieldId))],
+    rightFieldIds:[...new Set(relation.pairs.map(x=>x.rightFieldId))]})
+  if(reviewRow.value?.id===relation.id&&reviewReader.value===reader)
+   rlsPreview.value=plan
+ }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'双侧行权限编译预览失败'}
+ finally{rlsBusy.value=false}
 }
 async function submitAccessReview(){
  const row=reviewRow.value
@@ -301,6 +320,12 @@ onMounted(load)
      </el-select>
     </label>
     <p v-if="reviewMessage" role="status">{{reviewMessage}}</p>
+    <div v-if="rlsPreview" class="semantic-rls-plan" role="status">
+     <strong>双侧 RLS 编译预览 · 不可执行</strong>
+     <p>左侧绑定数 {{rlsPreview.leftBindCount}} · 右侧绑定数 {{rlsPreview.rightBindCount}} · 总计 {{rlsPreview.totalBindCount}} · 身份版本 {{rlsPreview.readerAuthVersion}}</p>
+     <pre>{{rlsPreview.sqlPreview}}</pre>
+     <p v-for="(warning,index) in rlsPreview.warnings" :key="index">{{warning}}</p>
+    </div>
     <p>若此读者对任何一侧数据集存在列拒绝或行过滤规则，审查必定拒绝。候选版本是不可执行的元数据，不能作为读者发布凭据。</p>
     <div v-if="snapshots.length" class="semantic-review-snapshots">
      <strong>候选版本（并非已发布）</strong>
@@ -329,6 +354,9 @@ onMounted(load)
    </div>
    <template #footer>
     <button type="button" @click="reviewOpen=false">关闭</button>
+    <button type="button" :disabled="!reviewReader||reviewBusy||rlsBusy" @click="previewRowSecurity">
+     {{rlsBusy?'编译中…':'预览双侧行权限 SQL'}}
+    </button>
     <button type="button" :disabled="!reviewReader||reviewBusy" @click="checkAccessReview">检查已有状态</button>
     <button type="button" :disabled="!reviewReady||reviewBusy" @click="sealReleaseSnapshot">封存候选版本</button>
     <button type="button" :disabled="!reviewReader||reviewBusy" @click="submitAccessReview">

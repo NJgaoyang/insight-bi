@@ -5,7 +5,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
  const browser=await chromium.launch({args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1480,height:960}})
-  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0,releaseVersions=[],draftBound=null
+  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0,rlsPreviews=0,releaseVersions=[],draftBound=null
   page.on('pageerror',e=>errors.push(e.stack||e.message))
   const send=(r,v,status=200)=>r.fulfill({status,contentType:'application/json',body:JSON.stringify(v)})
   await page.route('**/api/**',route=>{
@@ -42,6 +42,16 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
     assert.deepEqual(data.pairs,[{leftFieldId:'city',rightFieldId:'region'}])
     rows=[{id:'draft1',...data,revision:1,status:'DRAFT',reason:''}]
     return send(route,rows[0])
+   }
+   if(p==='/api/model/semantic-relations/draft1/rls-plan-preview'&&m==='POST'){
+    rlsPreviews++
+    assert.deepEqual(req.postDataJSON(),{revision:1,readerId:'viewer1',joinType:'LEFT',
+     leftFieldIds:['city'],rightFieldIds:['region']})
+    return send(route,{revision:1,scope:'COMPILE_ONLY_DUAL_SOURCE_RLS',joinType:'LEFT',
+      sqlPreview:'SELECT bi_left.city FROM (...) bi_left LEFT JOIN (...) bi_right ON ... LIMIT 200',
+      leftBindCount:1,rightBindCount:2,totalBindCount:3,readerAuthVersion:5,
+      leftPolicyApplied:true,rightPolicyApplied:true,
+      warnings:['仅编译预览，未执行 JOIN、未下发权限参数或授权读者']})
    }
    if(p==='/api/model/semantic-relations/draft1/access-review'&&m==='POST'){
     accessReviews++
@@ -167,6 +177,10 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await accessDialog.waitFor()
   const readerSelect=accessDialog.locator('.el-select').first()
   await selectOption(readerSelect,'测试读者')
+  await accessDialog.getByRole('button',{name:'预览双侧行权限 SQL'}).click()
+  await accessDialog.getByText(/左侧绑定数 1.*右侧绑定数 2/).waitFor()
+  await accessDialog.getByText(/未执行 JOIN、未下发权限参数/).waitFor()
+  assert.equal(rlsPreviews,1)
   await accessDialog.getByRole('button',{name:'生成审查记录'}).click()
   await accessDialog.getByText(/已记录预发布审查/).waitFor()
   assert.equal(accessReviews,1)
