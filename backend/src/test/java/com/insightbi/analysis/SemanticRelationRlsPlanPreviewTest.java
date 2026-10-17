@@ -267,6 +267,75 @@ class SemanticRelationRlsPlanPreviewTest {
         SemanticRelationSourceLineageGuard.requireDirectPhysicalSource(sql,fields),sql);
   }
 
+  @Test void encryptedPlanSnapshotRevalidatesAllMetadataWithoutExecution(){
+    var f=fixture();
+    policy(f,"left",f.leftTenant(),"A");
+    policy(f,"right",f.rightTenant(),"B","C");
+    var snap=f.api().rlsPlanSnapshot(f.id(),body(f,"LEFT"));
+    assertEquals("CAPTURED_ONLY",snap.get("status"));
+    assertEquals(false,snap.get("executable"));
+    assertEquals(600,snap.get("ttlSeconds"));
+    String ticket=(String)snap.get("ticket");
+    assertTrue(ticket.length()>50);
+    assertFalse(ticket.contains("Paris"));
+    assertFalse(ticket.contains("rls_reader"));
+    var current=f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket));
+    assertEquals("CURRENT",current.status());
+    assertFalse(current.executable());
+    // The policy list changes without a proper governance auth_version bump.
+    // Snapshot checks actual policy rows and MUST catch it.
+    f.db().update("UPDATE insight_reader_row_policy_value SET allowed_value=? "+
+      "WHERE user_id=? AND dataset_id=? AND allowed_value=?",
+      "D",READER,"right","C");
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket)).status());
+    // After removing the mutation, an auth_version change STILL invalidates.
+    f.db().update("UPDATE insight_reader_row_policy_value SET allowed_value=? "+
+      "WHERE user_id=? AND dataset_id=? AND allowed_value=?",
+      "C",READER,"right","D");
+    f.db().update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",
+      READER);
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket)).status());
+  }
+
+  @Test void compiledSnapshotRejectsSourceDriftRevocationTamperAndExpiry(){
+    var f=fixture();
+    var snap=f.api().rlsPlanSnapshot(f.id(),body(f,"INNER"));
+    String ticket=(String)snap.get("ticket");
+    assertEquals("CURRENT",f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket)).status());
+    assertThrows(IllegalArgumentException.class,()->
+      f.api().rlsPlanVerify("another",Map.of("ticket",ticket)));
+    assertThrows(IllegalArgumentException.class,()->
+      f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket.substring(0,40)+"bad")));
+    assertThrows(IllegalArgumentException.class,()->
+      f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket,"readerId",READER)));
+    var decoded=f.store().map(f.store().decrypt(ticket));
+    decoded.put("issuedAt",0L);
+    String expired=f.store().encrypt(f.store().json(decoded));
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),Map.of("ticket",expired)).status());
+    f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+      "SELECT city FROM rls_orders","left");
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket)).status());
+    f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+      "SELECT city,tenant FROM rls_orders","left");
+    f.db().update("UPDATE insight_governance_user SET enabled=FALSE WHERE id=?",READER);
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),Map.of("ticket",ticket)).status());
+  }
+
+  @Test void snapshotBindingAndSqlShapeCannotBeForged(){
+    var f=fixture();
+    var captured=f.api().rlsPlanSnapshot(f.id(),body(f,"LEFT"));
+    var decoded=f.store().map(f.store().decrypt((String)captured.get("ticket")));
+    @SuppressWarnings("unchecked")
+    var binding=(Map<String,Object>)decoded.get("binding");
+    binding.put("joinType","INNER");
+    String forged=f.store().encrypt(f.store().json(decoded));
+    assertEquals("STALE",f.api().rlsPlanVerify(f.id(),Map.of("ticket",forged)).status());
+    var nonReader=new HashMap<>(body(f,"LEFT"));
+    nonReader.put("policyValue","A");
+    assertThrows(IllegalArgumentException.class,()->
+      f.api().rlsPlanSnapshot(f.id(),nonReader));
+  }
+
   @Test void forgedParametersInvalidJoinAndNonSelectSourceFailClosed(){
     var f=fixture();
     var forged=new LinkedHashMap<>(body(f,"LEFT"));

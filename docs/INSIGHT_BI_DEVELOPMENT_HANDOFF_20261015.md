@@ -343,3 +343,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 39. P1-SEMANTIC-RELATION-SOURCE-LINEAGE-11：受限 WHERE 与字段别名安全血缘（2026-10-17）
 
 双侧 RLS **管理员编译预览**允许已确认单表源使用直接物理字段的显式 `AS` 别名及最多四个 `AND` 的列等值字面量 WHERE；完整子语法匹配 + JSQLParser AST 双重校验物理列、输出别名、限定符和字段目录映射，保留聚合/OR/子查询/函数/注释/运行时占位符全部拒绝。仅测试 `SemanticRelationRlsPlanPreviewTest`，不放行读者 JOIN、正式模型发布、权限审查或真实 StarRocks；无 DDL/线上部署。见 [P1_SEMANTIC_RELATION_SOURCE_LINEAGE_11.md](P1_SEMANTIC_RELATION_SOURCE_LINEAGE_11.md)。
+
+
+## 40. P1-SEMANTIC-RLS-PLAN-SNAPSHOT-12：双侧权限计划短期加密票据及重新核验（2026-10-17）
+
+新增只供管理员核验的 600 秒 AES-GCM 加密编译计划票据：绑定关系版本、双源指纹、JOIN/输出字段绑定、SQL 形状及双侧读者身份和行列策略证据；核验时重新读取账号 auth_version、实际行策略多值和列拒绝，并重新执行仅本地 SQL 编译，返回 CURRENT / STALE，始终 executable=false。定向 H2 覆盖后台绕过认证版本的 allowed_value 变更、禁用账号、源漂移、过期/篡改票据；不开放 JOIN 查询/发布，不新增 DDL。详见 [P1_SEMANTIC_RLS_PLAN_SNAPSHOT_12.md](P1_SEMANTIC_RLS_PLAN_SNAPSHOT_12.md)。

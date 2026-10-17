@@ -209,6 +209,90 @@ public class SemanticRelationApi {
   }
 
   /**
+   * Short-lived encrypted compile-only receipt. Identity, source revision,
+   * SQL shape and all effective row/column ACL metadata must be rechecked.
+   * No source JDBC, grants, publish state or executable SQL are created.
+   */
+  @PostMapping("/{relationId}/rls-plan-snapshot")
+  @Transactional(readOnly=true,
+    isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+  public Map<String,Object> rlsPlanSnapshot(@PathVariable String relationId,
+                                            @RequestBody Map<String,Object> body){
+    if(body==null||!body.keySet().equals(
+        Set.of("revision","readerId","joinType","leftFieldIds","rightFieldIds")))
+      throw new IllegalArgumentException("计划快照参数不合法");
+    String relation=id(relationId),reader=id(body.get("readerId"));
+    int version=revision(body.get("revision"));
+    CheckedRelation checked=checkedForReview(relation,version);
+    String before=SemanticRelationRlsPlanSnapshot.policyEvidence(
+      db,store,reader,checked.leftId(),checked.rightId());
+    var plan=rlsPlanPreview(relation,body);
+    CheckedRelation after=checkedForReview(relation,version);
+    String policy=SemanticRelationRlsPlanSnapshot.policyEvidence(
+      db,store,reader,after.leftId(),after.rightId());
+    if(!after.sourceHash().equals(checked.sourceHash())||!before.equals(policy))
+      throw new IllegalStateException("编译期间来源或读者策略发生变化，请重新检查");
+    var binding=new LinkedHashMap<String,Object>();
+    for(String key:List.of("joinType","leftFieldIds","rightFieldIds"))
+      binding.put(key,body.get(key));
+    String ticket=SemanticRelationRlsPlanSnapshot.seal(store,relation,reader,version,
+      checked.sourceHash(),policy,binding,plan);
+    return Map.of("status","CAPTURED_ONLY","executable",false,
+      "ttlSeconds",SemanticRelationRlsPlanSnapshot.TTL_SECONDS,"ticket",ticket);
+  }
+
+  /** Revalidate the metadata receipt against CURRENT source and ACL state. */
+  @PostMapping("/{relationId}/rls-plan-verify")
+  @Transactional(readOnly=true,
+    isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+  public SemanticRelationRlsPlanSnapshot.Verification rlsPlanVerify(
+      @PathVariable String relationId,@RequestBody Map<String,Object> body){
+    if(body==null||!body.keySet().equals(Set.of("ticket"))||
+       !(body.get("ticket") instanceof String ticket))
+      throw new IllegalArgumentException("计划核验参数不合法");
+    String relation=id(relationId);
+    var snapshot=SemanticRelationRlsPlanSnapshot.open(store,ticket);
+    if(!relation.equals(snapshot.get("relation")))
+      throw new IllegalArgumentException("票据与关系标识不匹配");
+    if(SemanticRelationRlsPlanSnapshot.expired(snapshot))
+      return new SemanticRelationRlsPlanSnapshot.Verification(
+        "STALE","计划票据已过期，请重新生成",false);
+    try{
+      String reader=id(snapshot.get("reader"));
+      int version=revision(snapshot.get("revision"));
+      var checked=checkedForReview(relation,version);
+      if(!checked.sourceHash().equals(snapshot.get("sourceHash")))
+        return new SemanticRelationRlsPlanSnapshot.Verification(
+          "STALE","关系数据来源已变化",false);
+      String before=SemanticRelationRlsPlanSnapshot.policyEvidence(
+        db,store,reader,checked.leftId(),checked.rightId());
+      if(!before.equals(snapshot.get("policyHash")))
+        return new SemanticRelationRlsPlanSnapshot.Verification(
+          "STALE","读者权限配置已变化",false);
+      @SuppressWarnings("unchecked")
+      Map<String,Object> binding=(Map<String,Object>)snapshot.get("binding");
+      var request=new LinkedHashMap<String,Object>(binding);
+      request.put("readerId",reader);
+      request.put("revision",version);
+      var compiled=rlsPlanPreview(relation,request);
+      var again=checkedForReview(relation,version);
+      var policyAgain=SemanticRelationRlsPlanSnapshot.policyEvidence(
+        db,store,reader,again.leftId(),again.rightId());
+      if(!again.sourceHash().equals(checked.sourceHash())||
+         !before.equals(policyAgain)||
+         !SemanticRelationRlsPlanSnapshot.hash(compiled.sqlPreview())
+           .equals(snapshot.get("planHash")))
+        return new SemanticRelationRlsPlanSnapshot.Verification(
+          "STALE","源数据、权限或编译形状已变化",false);
+      return new SemanticRelationRlsPlanSnapshot.Verification(
+        "CURRENT","当前仅证明元数据计划一致；仍禁止读者 JOIN 执行及发布",false);
+    }catch(RuntimeException invalid){
+      return new SemanticRelationRlsPlanSnapshot.Verification(
+        "STALE","关系修订、字段、读者策略或计划已失效",false);
+    }
+  }
+
+  /**
    * Review-only metadata binding. This does NOT publish a dashboard, expose
    * model SQL to a reader or grant any reader access.
    */
