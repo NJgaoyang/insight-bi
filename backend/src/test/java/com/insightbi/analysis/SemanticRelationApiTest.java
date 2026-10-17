@@ -142,7 +142,8 @@ class SemanticRelationApiTest {
     "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
   f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
     "DELETE FROM insight_dataset","right");
-  assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),req));
+  // Approved fingerprint mismatch is rejected before parsing the changed SQL.
+  assertThrows(IllegalStateException.class,()->f.api().compile(created.id(),req));
   f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?","SELECT 1","right");
   f.db().update("UPDATE insight_dataset SET connection_id=? WHERE id=?","other","right");
   assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),req));
