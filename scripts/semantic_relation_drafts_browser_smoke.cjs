@@ -111,6 +111,8 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   // A changed SQL/field snapshot invalidates previous confirmation without changing revision.
   rows=[{...rows[0],status:'DRAFT',reason:'源 SQL、连接或字段定义已变化，请重新确认当前版本'}]
   await page.reload({waitUntil:'domcontentloaded'})
+  // App's current tab is ephemeral and resets to Public Data on reload.
+  await page.getByRole('button',{name:'模型关系'}).click()
   await page.locator('.semantic-draft-item').waitFor()
   await page.getByText(/源 SQL、连接或字段定义已变化/).waitFor()
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
