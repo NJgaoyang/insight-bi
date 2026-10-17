@@ -92,39 +92,70 @@ class SemanticRelationRlsExecutionLifecycleTest {
     tx.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     return tx;
   }
-  /** H2 is the only database. Proxy simulates a MySQL grant response and a
-      truthful JDBC read-only hint strictly inside this isolated test fixture. */
+  /**
+   * Test ONLY: simulate MySQL driver metadata, a server-side CURRENT_USER()
+   * result and SHOW GRANTS, while forwarding the business prepared SELECT to
+   * isolated H2. No real JDBC host is contacted.
+   */
   private static Connection simulatedSource(Connection jdbc,boolean allow,
-                                            AtomicBoolean closed,boolean wrongCatalog){
+                                             AtomicBoolean closed,String mismatch){
     AtomicBoolean readOnly=new AtomicBoolean();
     return (Connection)Proxy.newProxyInstance(Connection.class.getClassLoader(),
       new Class<?>[]{Connection.class},(proxy,method,args)->{
         String op=method.getName();
-        if(op.equals("getCatalog"))return wrongCatalog?"unapproved":"analytics";
+        if(op.equals("getCatalog"))return "catalog".equals(mismatch)
+          ?"otherdb":"analytics";
+        if(op.equals("getMetaData")){
+          return Proxy.newProxyInstance(
+            java.sql.DatabaseMetaData.class.getClassLoader(),
+            new Class<?>[]{java.sql.DatabaseMetaData.class},(p,m,a)->{
+              if(m.getName().equals("getUserName"))
+                return "username".equals(mismatch)?"wrong":"reader";
+              if(m.getName().equals("getURL")){
+                if("missing-url".equals(mismatch))return null;
+                if("replication".equals(mismatch))
+                  return "jdbc:mysql:replication://source.invalid:3306/analytics";
+                String host="host".equals(mismatch)?"wrong.invalid":"source.invalid";
+                int port="port".equals(mismatch)?3307:3306;
+                String database="database".equals(mismatch)?"otherdb":"analytics";
+                return "jdbc:mysql://"+host+":"+port+"/"+database+
+                  ("fragment".equals(mismatch)?"#spoof":"?useSSL=false");
+              }
+              throw new IllegalStateException("Unexpected driver metadata access");
+            });
+        }
         if(op.equals("setReadOnly")){
           readOnly.set((Boolean)args[0]);return null;
         }
         if(op.equals("isReadOnly"))return readOnly.get();
         if(op.equals("createStatement")){
-          var grants=allow?List.of(
-              "GRANT USAGE ON *.* TO 'reader'@'%'",
-              "GRANT SELECT ON analytics.* TO 'reader'@'%'"):
-            List.of("GRANT SELECT, UPDATE ON analytics.* TO 'reader'@'%'");
-          AtomicInteger index=new AtomicInteger();
-          ResultSet result=(ResultSet)Proxy.newProxyInstance(
-            ResultSet.class.getClassLoader(),new Class<?>[]{ResultSet.class},
-            (p,m,a)->switch(m.getName()){
-              case "next" -> index.getAndIncrement()<grants.size();
-              case "getString" -> grants.get(index.get()-1);
-              case "close" -> null;
-              default -> throw new IllegalStateException("Unexpected grants cursor call");
-            });
           return Proxy.newProxyInstance(Statement.class.getClassLoader(),
             new Class<?>[]{Statement.class},(p,m,a)->{
-              if(m.getName().equals("executeQuery")&&"SHOW GRANTS".equals(a[0]))
-                return result;
-              if(m.getName().equals("close"))return null;
-              throw new IllegalStateException("Unexpected grant statement operation");
+              if(m.getName().equals("executeQuery")){
+                String sql=(String)a[0];
+                List<String> values;
+                if("SELECT CURRENT_USER()".equals(sql))
+                  values=List.of("principal".equals(mismatch)?"other@%":"reader@%");
+                else if("SHOW GRANTS".equals(sql))
+                  values=allow?List.of(
+                    "GRANT USAGE ON *.* TO 'reader'@'%'",
+                    "GRANT SELECT ON analytics.* TO 'reader'@'%'"):
+                    List.of("GRANT SELECT, UPDATE ON analytics.* TO 'reader'@'%'");
+                else throw new IllegalStateException("Unexpected authorization SQL");
+                AtomicInteger index=new AtomicInteger();
+                return Proxy.newProxyInstance(ResultSet.class.getClassLoader(),
+                  new Class<?>[]{ResultSet.class},(rp,rm,ra)->{
+                    if(rm.getName().equals("next"))
+                      return index.getAndIncrement()<values.size();
+                    if(rm.getName().equals("getString"))
+                      return values.get(index.get()-1);
+                    if(rm.getName().equals("close"))return null;
+                    throw new IllegalStateException("Unexpected identity cursor call");
+                  });
+              }
+              if(Set.of("close","setQueryTimeout","setMaxRows").contains(m.getName()))
+                return null;
+              throw new IllegalStateException("Unexpected source statement operation");
             });
         }
         if(op.equals("close")){
@@ -136,13 +167,16 @@ class SemanticRelationRlsExecutionLifecycleTest {
         catch(InvocationTargetException e){throw e.getCause();}
       });
   }
-  private static void inspect(F f,String engine,boolean grants,
+  private static void inspect(F f,String kind,boolean grants,
+      AtomicBoolean closed,SemanticRelationRlsExecutionLifecycle.StatementProbe probe){
+    inspectMismatched(f,"starrocks".equals(kind)?"catalog":"none",grants,closed,probe);
+  }
+  private static void inspectMismatched(F f,String mismatch,boolean grants,
       AtomicBoolean closed,SemanticRelationRlsExecutionLifecycle.StatementProbe probe){
     SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),
       f.store(),f.catalog(),f.relationId(),READER,
       "left","right",f.left(),f.right(),f.plan(),f.binds(),
-      ()->simulatedSource(f.source().getConnection(),grants,closed,
-        "starrocks".equals(engine)),probe);
+      ()->simulatedSource(f.source().getConnection(),grants,closed,mismatch),probe);
   }
 
   @Test void joinStatementAndSourceClosedBeforeRevocationRowLockReleased()throws Exception{
@@ -217,6 +251,23 @@ class SemanticRelationRlsExecutionLifecycleTest {
     assertDoesNotThrow(()->inspect(f,"mysql",true,new AtomicBoolean(),stmt->{
       assertEquals(200,stmt.getMaxRows());
     }));
+  }
+
+  @Test void endpointAndEffectiveIdentityMismatchNeverPrepareJoin(){
+    var f=fixture();
+    for(String mismatch:List.of("host","port","database","username","principal",
+        "catalog","replication","missing-url","fragment")){
+      var closed=new AtomicBoolean();
+      var callback=new AtomicInteger();
+      assertThrows(RuntimeException.class,()->
+        inspectMismatched(f,mismatch,true,closed,
+          statement->callback.incrementAndGet()),mismatch);
+      assertTrue(closed.get(),mismatch);
+      assertEquals(0,callback.get(),mismatch);
+    }
+    // All rejected sessions must release locks and admission permits.
+    assertDoesNotThrow(()->inspect(f,"mysql",true,new AtomicBoolean(),
+      statement->assertEquals(200,statement.getMaxRows())));
   }
 
   @Test void callbackFailureRollsBackSourceAndReleasesMetadataLock(){

@@ -373,3 +373,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 45. P1-SEMANTIC-RLS-SOURCE-APPROVAL-BINDING-17：审批来源与连接配置指纹闭环（2026-10-17）
 
 对登记的真实连接新审批指纹增加 engine/host/port/db_name/username/credential 配置，变更后需要重新确认；无登记连接的历史草稿保留原元数据行为，但隔离来源门禁一律拒绝。新增 `SemanticRelationRlsApprovedSourceGate` 在现有持有读者行锁的事务内锁关系、双侧数据集、字段及连接记录，重验审批哈希，按关联键与输出字段重新生成 RLS SQL，并比对 SQL/字段与权限绑定证明。P1-16 内部生命周期不再接受调用者自行指定的来源引擎与 catalog；相关 H2 测试覆盖连接、源 SQL、字段、关联版本失效时借源前拒绝。没有新 DDL、不连接生产、不开放 Reader JOIN 或发布。详见 [P1_SEMANTIC_RLS_SOURCE_APPROVAL_BINDING_17.md](P1_SEMANTIC_RLS_SOURCE_APPROVAL_BINDING_17.md)。
+
+
+## 46. P1-SEMANTIC-RLS-JDBC-IDENTITY-18：实际 JDBC 与服务端授权身份校验（2026-10-17）
+
+内部隔离执行链路新增 `SemanticRelationRlsSourceIdentityGate`：从已审批并锁定的连接取 host/port/db/username，比对同一 JDBC 连接的驱动 URL、驱动账号、catalog，并查询服务端 `CURRENT_USER()`；严格的 `SHOW GRANTS` 检查进一步要求授权对象与当前生效账号一致。H2 测试代理覆盖主机、端口、库名、账号、有效身份及非法 URL，身份错误时一律在 JOIN 准备之前拒绝且释放资源。**未连接真实数据库、未验证 TLS 服务端身份，现有连接工厂仍有 useSSL=false；不能视为生产查询安全证明。** Reader JOIN、正式发布继续禁用，未部署或新增 DDL。见 [P1_SEMANTIC_RLS_JDBC_IDENTITY_18.md](P1_SEMANTIC_RLS_JDBC_IDENTITY_18.md)。

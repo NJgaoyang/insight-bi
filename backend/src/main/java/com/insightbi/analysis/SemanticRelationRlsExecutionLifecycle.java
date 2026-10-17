@@ -63,9 +63,13 @@ final class SemanticRelationRlsExecutionLifecycle {
         try(Connection connection=source.open()){
           connection.setAutoCommit(false);
           try{
-            // Must use the ACTUAL source connection for SHOW GRANTS.
+            // Verify the driver endpoint AND the server-side effective
+            // principal before accepting SHOW GRANTS on this same connection.
+            String principal=SemanticRelationRlsSourceIdentityGate.require(
+              connection,verified.host(),verified.port(),
+              verified.catalog(),verified.username());
             SemanticRelationRlsSourceGrantGate.require(
-              connection,verified.engine(),verified.catalog());
+              connection,verified.engine(),verified.catalog(),principal);
             try(PreparedStatement prepared=SemanticRelationRlsExecutionBoundary.prepare(
                 connection,plan,expected,reservation)){
               probe.inspect(prepared); // Test-only; this class executes no SQL itself.

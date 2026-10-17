@@ -11,7 +11,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * external source connection is opened.
  */
 final class SemanticRelationRlsApprovedSourceGate {
-  record VerifiedSource(String engine,String catalog){}
+  record VerifiedSource(String engine,String catalog,String host,int port,String username){}
   private SemanticRelationRlsApprovedSourceGate(){}
 
   static VerifiedSource require(JdbcTemplate db,DatabaseStore store,
@@ -108,9 +108,14 @@ final class SemanticRelationRlsApprovedSourceGate {
       throw new IllegalStateException("重新编译的 RLS 绑定与预期不一致");
     String engine=String.valueOf(connection.get("engine"));
     String dbName=String.valueOf(connection.get("db_name"));
-    if(!"mysql".equals(engine)||dbName.isBlank())
-      throw new IllegalStateException("当前来源引擎尚未具备经验证的只读账户证明");
-    return new VerifiedSource(engine,dbName);
+    String host=String.valueOf(connection.get("host"));
+    String username=String.valueOf(connection.get("username"));
+    if(!"mysql".equals(engine)||dbName.isBlank()||
+       host.isBlank()||username.isBlank()||
+       !(connection.get("port") instanceof Number port)||
+       port.intValue()<1||port.intValue()>65535)
+      throw new IllegalStateException("当前来源引擎或连接配置不具备只读证明");
+    return new VerifiedSource(engine,dbName,host,port.intValue(),username);
   }
 
   private static Map<String,FieldCatalog.Field> active(List<FieldCatalog.Field> list){

@@ -126,6 +126,16 @@ class SemanticRelationRlsRevocationGateTest {
     var rows=List.of("GRANT USAGE ON *.* TO 'report'@'%'",
       "GRANT SELECT ON analytics.* TO 'report'@'%'");
     assertDoesNotThrow(()->SemanticRelationRlsSourceGrantGate.validate("analytics",rows));
+    assertDoesNotThrow(()->SemanticRelationRlsSourceGrantGate.validate(
+      "analytics",rows,"report@%"));
+    assertThrows(IllegalStateException.class,()->
+      SemanticRelationRlsSourceGrantGate.validate(
+        "analytics",rows,"other@%"));
+    assertDoesNotThrow(()->SemanticRelationRlsSourceGrantGate.validate(
+      "analytics",List.of("GRANT USAGE ON *.* TO " +
+        "\u0060report\u0060@\u0060%\u0060",
+        "GRANT SELECT ON \u0060analytics\u0060.* TO " +
+        "\u0060report\u0060@\u0060%\u0060"),"report@%"));
     for(var bad:List.of("GRANT SELECT ON *.* TO 'report'@'%'",
        "GRANT INSERT ON analytics.* TO 'report'@'%'",
        "GRANT SELECT, UPDATE ON analytics.* TO 'report'@'%'",
@@ -168,10 +178,12 @@ class SemanticRelationRlsRevocationGateTest {
         default -> throw new IllegalStateException("Unexpected connection call");
       });
     assertDoesNotThrow(()->SemanticRelationRlsSourceGrantGate.require(
-      connection,"mysql","analytics"));
+      connection,"mysql","analytics","report@%"));
     assertThrows(IllegalStateException.class,()->
-      SemanticRelationRlsSourceGrantGate.require(connection,"starrocks","analytics"));
+      SemanticRelationRlsSourceGrantGate.require(connection,"starrocks","analytics","report@%"));
     assertThrows(IllegalStateException.class,()->
-      SemanticRelationRlsSourceGrantGate.require(connection,"mysql","other"));
+      SemanticRelationRlsSourceGrantGate.require(connection,"mysql","other","report@%"));
+    assertThrows(IllegalStateException.class,()->
+      SemanticRelationRlsSourceGrantGate.require(connection,"mysql","analytics","wrong@%"));
   }
 }

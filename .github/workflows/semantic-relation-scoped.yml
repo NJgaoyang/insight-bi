@@ -24,6 +24,7 @@ on:
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationRlsExecutionBoundary.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationRlsRevocationGate.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationRlsSourceGrantGate.java
+      - backend/src/main/java/com/insightbi/analysis/SemanticRelationRlsSourceIdentityGate.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationRlsExecutionLifecycle.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationRlsApprovedSourceGate.java
       - backend/src/test/java/com/insightbi/analysis/SemanticRelationRlsExecutionLifecycleTest.java
@@ -50,6 +51,7 @@ on:
       - docs/P1_SEMANTIC_RLS_PREEXEC_AUTH_15.md
       - docs/P1_SEMANTIC_RLS_EXECUTION_LIFECYCLE_16.md
       - docs/P1_SEMANTIC_RLS_SOURCE_APPROVAL_BINDING_17.md
+      - docs/P1_SEMANTIC_RLS_JDBC_IDENTITY_18.md
       - .github/workflows/semantic-relation-scoped.yml
 jobs:
   relationship-backend:
