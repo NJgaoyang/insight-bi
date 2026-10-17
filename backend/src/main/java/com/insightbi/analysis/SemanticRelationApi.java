@@ -287,6 +287,124 @@ public class SemanticRelationApi {
       "status",status,"reason",reason);
   }
 
+  /**
+   * Immutable model release CANDIDATE bound to one reviewed reader. This has
+   * no dashboard version or Reader API execution binding; "sealed" is not "published".
+   */
+  @PostMapping("/{relationId}/release-snapshots")
+  @Transactional
+  public Map<String,Object> sealSnapshot(@PathVariable String relationId,
+                                          @RequestBody Map<String,Object> body){
+    if(body==null||body.size()!=3||
+       !Set.of("revision","readerId","acknowledgeNotPublished").equals(body.keySet())||
+       !Boolean.TRUE.equals(body.get("acknowledgeNotPublished")))
+      throw new IllegalArgumentException("必须确认仅封存版本，不对读者发布");
+    String relation=id(relationId),reader=id(body.get("readerId"));
+    int expected=revision(body.get("revision"));
+    // Serialize release_no generation and concurrent relation edits.
+    var lock=db.queryForList("SELECT id FROM insight_semantic_relation WHERE id=? FOR UPDATE",relation);
+    if(lock.size()!=1)throw new IllegalStateException("关系草稿已删除");
+    CheckedRelation checked=checkedForReview(relation,expected);
+    var status=reviewStatus(relation,reader);
+    if(!"READY_FOR_REVIEW".equals(status.get("status"))||
+       !Objects.equals(status.get("revision"),expected))
+      throw new IllegalStateException("当前读者的权限审查已失效，请重新审查");
+    var reviewed=db.queryForList(
+      "SELECT relation_revision,source_hash,policy_hash,binding_json "+
+      "FROM insight_semantic_access_review WHERE relation_id=? AND reader_id=?",
+      relation,reader);
+    if(reviewed.size()!=1)throw new IllegalStateException("读者审查记录不存在");
+    var reviewedRow=reviewed.get(0);
+    if(!Objects.equals(reviewedRow.get("source_hash"),checked.sourceHash())||
+       !Objects.equals(reviewedRow.get("relation_revision"),expected))
+      throw new IllegalStateException("审查版本已变化");
+    String binding=String.valueOf(reviewedRow.get("binding_json"));
+    String policy=String.valueOf(reviewedRow.get("policy_hash"));
+    if(binding.length()>4000||policy.length()!=64)
+      throw new IllegalStateException("审查快照格式不合法");
+    // reviewStatus already recompiled trusted field IDs, checked source hash,
+    // and checked this reader's deny/row policy and auth_version.
+    Integer next=db.queryForObject(
+      "SELECT COALESCE(MAX(release_no),0)+1 FROM insight_semantic_release_snapshot "+
+      "WHERE relation_id=? AND reader_id=?",Integer.class,relation,reader);
+    if(next==null||next<1||next>1000)throw new IllegalStateException("模型快照版本数量超限");
+    String hash=releaseDigest(relation,reader,next,expected,checked.sourceHash(),policy,binding);
+    db.update("INSERT INTO insight_semantic_release_snapshot "+
+      "(id,relation_id,reader_id,release_no,relation_revision,source_hash,policy_hash,binding_json,snapshot_hash) "+
+      "VALUES(?,?,?,?,?,?,?,?,?)",
+      UUID.randomUUID().toString(),relation,reader,next,expected,checked.sourceHash(),
+      policy,binding,hash);
+    return snapshotResult(next,expected,"SEALED_ONLY",
+      "不可变候选版本已封存；未绑定报表发布，未开放读者执行");
+  }
+
+  @GetMapping("/{relationId}/release-snapshots")
+  public List<Map<String,Object>> releaseSnapshots(@PathVariable String relationId,
+                                                     @RequestParam String readerId){
+    String relation=id(relationId),reader=id(readerId);
+    var rows=db.queryForList(
+      "SELECT release_no,relation_revision,source_hash,policy_hash,binding_json,snapshot_hash "+
+      "FROM insight_semantic_release_snapshot WHERE relation_id=? AND reader_id=? "+
+      "ORDER BY release_no DESC LIMIT 51",relation,reader);
+    if(rows.size()>50)throw new IllegalStateException("模型候选版本较多，已超过单次展示上限");
+    List<Map<String,Object>> result=new ArrayList<>();
+    for(var row:rows){
+      int release=((Number)row.get("release_no")).intValue();
+      int revision=((Number)row.get("relation_revision")).intValue();
+      String status="SEALED_ONLY",reason="仅为候选封存版本，不授予访问权";
+      try{
+        String source=String.valueOf(row.get("source_hash"));
+        String policyHash=String.valueOf(row.get("policy_hash"));
+        String json=String.valueOf(row.get("binding_json"));
+        if(!releaseDigest(relation,reader,release,revision,source,policyHash,json)
+          .equals(row.get("snapshot_hash")))
+          throw new IllegalStateException("候选版本完整性校验失败");
+        CheckedRelation checked=checkedForReview(relation,revision);
+        if(!checked.sourceHash().equals(source))
+          throw new IllegalStateException("两侧数据集元数据变化");
+        var binding=store.map(json);
+        if(binding.size()!=3||
+           !Set.of("joinType","leftFieldIds","rightFieldIds").equals(binding.keySet()))
+          throw new IllegalStateException("候选字段映射不合法");
+        SemanticRelationSqlPreview.compile(store.dataset(checked.leftId()),
+          store.dataset(checked.rightId()),checked.leftId(),checked.rightId(),
+          checked.pairs(),physicalFields(checked.leftId()),physicalFields(checked.rightId()),
+          revision,binding);
+        var policy=SemanticRelationAccessReview.evaluate(db,reader,checked.leftId(),checked.rightId());
+        if(!policy.eligible()){
+          status="BLOCKED";reason=policy.reason();
+        }else if(!policy.fingerprint().equals(policyHash)){
+          status="STALE";reason="读者权限版本变化，须重新审查并封存新版本";
+        }
+      }catch(RuntimeException stale){
+        status="STALE";reason="关系、来源或候选版本已变化，须重新封存";
+      }
+      result.add(snapshotResult(release,revision,status,reason));
+    }
+    return List.copyOf(result);
+  }
+
+  private static String releaseDigest(String relation,String reader,int release,int revision,
+                                      String source,String policy,String binding){
+    try{
+      var digest=java.security.MessageDigest.getInstance("SHA-256");
+      for(String part:List.of("semantic-release-v1",relation,reader,
+          Integer.toString(release),Integer.toString(revision),source,policy,binding)){
+        byte[] bytes=part.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.length).array());
+        digest.update(bytes);
+      }
+      return java.util.HexFormat.of().formatHex(digest.digest());
+    }catch(java.security.NoSuchAlgorithmException e){
+      throw new IllegalStateException("SHA-256 不可用",e);
+    }
+  }
+  private static Map<String,Object> snapshotResult(int release,int revision,
+                                                   String status,String reason){
+    return Map.of("releaseNo",release,"relationRevision",revision,
+      "status",status,"reason",reason);
+  }
+
   @DeleteMapping("/{relationId}")
   @Transactional
   public Map<String,Object> delete(@PathVariable String relationId,@RequestParam int revision){

@@ -315,12 +315,13 @@ class GovernanceApi {
   }
 
   @PutMapping("/users/{id}/role")
+  @Transactional
   Map<String,Object> setRole(@PathVariable String id,@RequestBody Map<String,Object> body){
     if(body.size()!=1||!body.containsKey("role"))
       throw new IllegalArgumentException("只允许修改角色");
     String role=text(body.get("role"),"角色",16);
     if(!ROLES.contains(role))throw new IllegalArgumentException("角色不在允许范围");
-    if(db.update("UPDATE insight_governance_user SET role=? WHERE id=?",role,id)!=1)
+    if(db.update("UPDATE insight_governance_user SET role=?,auth_version=auth_version+1 WHERE id=?",role,id)!=1)
       throw new NoSuchElementException("用户不存在");
     return Map.of("id",id,"role",role);
   }
@@ -401,13 +402,17 @@ class GovernanceApi {
     for(String fieldId:ids)
       db.update("INSERT INTO insight_reader_column_deny(user_id,dataset_id,field_id) "+
         "VALUES(?,?,?)",id,datasetId,fieldId);
+    // Also invalidates active reader sessions and all pinned review snapshots.
+    db.update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",id);
     return Map.of("datasetId",datasetId,"fieldIds",List.copyOf(ids));
   }
 
   @DeleteMapping("/users/{id}/denied-columns/{datasetId}")
+  @Transactional
   Map<String,Object> clearDeniedColumns(@PathVariable String id,@PathVariable String datasetId){
     requireUser(id);
     db.update("DELETE FROM insight_reader_column_deny WHERE user_id=? AND dataset_id=?",id,datasetId);
+    db.update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",id);
     return Map.of("ok",true);
   }
 
@@ -472,6 +477,7 @@ class GovernanceApi {
       db.update("INSERT INTO insight_reader_row_policy_value(user_id,dataset_id,allowed_value) "+
         "VALUES(?,?,?)",id,datasetId,value);
     }
+    db.update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",id);
     return Map.of("datasetId",datasetId,"fieldId",fieldId,
       "allowedValue",allowedValues.get(0),"allowedValues",List.copyOf(allowedValues));
   }
@@ -482,6 +488,7 @@ class GovernanceApi {
     requireUser(id);
     db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=? AND dataset_id=?",id,datasetId);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",id,datasetId);
+    db.update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",id);
     return Map.of("ok",true);
   }
 

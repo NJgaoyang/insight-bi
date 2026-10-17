@@ -318,3 +318,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 34. P1-SEMANTIC-RELATION-ACCESS-REVIEW-06：读者侧预发布权限门禁（2026-10-17）
 
 新增独立预发布审查元数据表与管理员审查接口，绑定关系修订、两侧源指纹、受控字段投影及单个读者账号权限指纹。任一表存在该读者列拒绝或行级限制时一律阻断，因为实际语义 JOIN 尚不支持双侧权限下推；账号禁用、auth_version、源 SQL 或关系修订变化后动态失效。READY_FOR_REVIEW 不等于发布/授权，不涉及 ReaderApi、SQL 执行或线上服务，详见 [P1_SEMANTIC_RELATION_ACCESS_REVIEW_06.md](P1_SEMANTIC_RELATION_ACCESS_REVIEW_06.md)。
+
+
+## 35. P1-SEMANTIC-RELATION-SNAPSHOT-07：独立候选快照版本绑定与权限失效（2026-10-17）
+
+管理员仅可把已批准关系与指定读者有效预发布审查冻结成不可变候选快照，记录独立递增 release_no、关系修订、双方源指纹、策略指纹及受控输出绑定校验码；动态状态 SEALED_ONLY/STALE/BLOCKED。治理接口修改角色/列拒绝/行限制时自动递增读者 auth_version，避免 ACL 增删后旧审查恢复有效。此候选版本**未**绑定报表发布或 Reader API，亦不构成实际多表查询授权。详见 [P1_SEMANTIC_RELATION_SNAPSHOT_07.md](P1_SEMANTIC_RELATION_SNAPSHOT_07.md)。生产未部署。

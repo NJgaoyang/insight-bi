@@ -279,6 +279,31 @@ class GovernanceApiTest {
     assertFalse(governance.canReadPublished(bob,report));
   }
 
+
+  @Test void readerPolicyMutationsAdvanceMonotonicAuthVersion(){
+    String user=(String)governance.createUser(Map.of("username","policy_user",
+      "displayName","Policy User","role","VIEWER")).get("id");
+    db.update("INSERT INTO insight_dataset(id,name,connection_id,sql_body,fields_json) "+
+      "VALUES(?,?,?,?,?)","policy_ds","Policy Dataset","connection","SELECT 1","[]");
+    db.update("INSERT INTO insight_dataset_field "+
+      "(id,dataset_id,source_name,display_name,logical_type,role,ordinal) "+
+      "VALUES(?,?,?,?,?,?,?)",
+      "policy_field","policy_ds","region","Region","STRING","DIMENSION",0);
+    int version=db.queryForObject(
+      "SELECT auth_version FROM insight_governance_user WHERE id=?",Integer.class,user);
+    governance.setDeniedColumns(user,"policy_ds",
+      Map.of("fieldIds",List.of("policy_field")));
+    governance.clearDeniedColumns(user,"policy_ds");
+    governance.setRowPolicy(user,"policy_ds",
+      Map.of("fieldId","policy_field","allowedValue","Shanghai"));
+    governance.deleteRowPolicy(user,"policy_ds");
+    governance.setRole(user,Map.of("role","EDITOR"));
+    assertEquals(version+5,db.queryForObject(
+      "SELECT auth_version FROM insight_governance_user WHERE id=?",Integer.class,user));
+    assertTrue(governance.deniedColumns(user).isEmpty());
+    assertTrue(governance.rowPolicies(user).isEmpty());
+  }
+
   @Test void folderDeleteAndUserDeleteCleanupAclMetadata(){
     String folder=(String)reports.createFolder(Map.of("name","临时目录")).get("id");
     String alice=(String)governance.createUser(Map.of(

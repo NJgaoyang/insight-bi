@@ -308,6 +308,79 @@ class SemanticRelationApiTest {
   f.store().schema();f.store().schema(); // idempotent additive review table
  }
 
+
+ @Test void candidateSnapshotsRequireFreshReaderReviewAndNeverCreateDashboardGrant(){
+  var f=fixture();
+  f.db().update("INSERT INTO insight_governance_user "+
+    "(id,username,display_name,role,enabled) VALUES(?,?,?,?,?)",
+    "readerSeal","reader_seal","Seal Reader","VIEWER",true);
+  var rel=f.api().create(Map.of("name","候选版本","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  var freeze=Map.<String,Object>of("revision",1,"readerId","readerSeal",
+    "acknowledgeNotPublished",true);
+  var binding=Map.<String,Object>of("revision",1,"readerId","readerSeal","joinType","LEFT",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  assertThrows(IllegalStateException.class,()->f.api().sealSnapshot(rel.id(),freeze));
+  f.api().approve(rel.id(),Map.of("revision",1));
+  assertThrows(IllegalStateException.class,()->f.api().sealSnapshot(rel.id(),freeze));
+  f.api().reviewAccess(rel.id(),binding);
+  assertThrows(IllegalArgumentException.class,()->f.api().sealSnapshot(rel.id(),
+    Map.of("revision",1,"readerId","readerSeal")));
+  var sealed=f.api().sealSnapshot(rel.id(),freeze);
+  assertEquals("SEALED_ONLY",sealed.get("status"));
+  assertEquals(1,sealed.get("releaseNo"));
+  assertEquals("SEALED_ONLY",f.api().releaseSnapshots(rel.id(),"readerSeal").get(0).get("status"));
+  var second=f.api().sealSnapshot(rel.id(),freeze);
+  assertEquals(2,second.get("releaseNo"));
+  assertEquals(2,f.db().queryForObject(
+    "SELECT COUNT(*) FROM insight_semantic_release_snapshot",Integer.class));
+  assertEquals(0,f.db().queryForObject(
+    "SELECT COUNT(*) FROM insight_dashboard_grant",Integer.class));
+  assertEquals(0,f.db().queryForObject(
+    "SELECT COUNT(*) FROM insight_dashboard_version",Integer.class));
+  f.store().schema();f.store().schema();
+ }
+
+ @Test void sealedSnapshotsFailClosedForPoliciesAndSourceAndIntegrity(){
+  var f=fixture();
+  f.db().update("INSERT INTO insight_governance_user "+
+    "(id,username,display_name,role,enabled) VALUES(?,?,?,?,?)",
+    "readerSeal2","reader_seal2","Seal Reader 2","EDITOR",true);
+  var rel=f.api().create(Map.of("name","权限版本候选","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(rel.id(),Map.of("revision",1));
+  var review=Map.<String,Object>of("revision",1,"readerId","readerSeal2","joinType","INNER",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  var freeze=Map.<String,Object>of("revision",1,"readerId","readerSeal2",
+    "acknowledgeNotPublished",true);
+  f.api().reviewAccess(rel.id(),review);
+  f.api().sealSnapshot(rel.id(),freeze);
+  f.db().update("INSERT INTO insight_reader_column_deny(user_id,dataset_id,field_id) "+
+    "VALUES(?,?,?)","readerSeal2","right","wrong");
+  assertEquals("BLOCKED",f.api().releaseSnapshots(rel.id(),"readerSeal2").get(0).get("status"));
+  assertThrows(IllegalStateException.class,()->f.api().sealSnapshot(rel.id(),freeze));
+  f.db().update("DELETE FROM insight_reader_column_deny WHERE user_id=?","readerSeal2");
+  f.db().update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",
+    "readerSeal2");
+  assertEquals("STALE",f.api().releaseSnapshots(rel.id(),"readerSeal2").get(0).get("status"));
+  f.api().reviewAccess(rel.id(),review);
+  f.api().sealSnapshot(rel.id(),freeze);
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "SELECT 'Shanghai' AS city","left");
+  assertEquals("STALE",f.api().releaseSnapshots(rel.id(),"readerSeal2").get(0).get("status"));
+  f.api().approve(rel.id(),Map.of("revision",1));
+  f.api().reviewAccess(rel.id(),review);
+  f.api().sealSnapshot(rel.id(),freeze);
+  f.db().update("UPDATE insight_semantic_release_snapshot SET binding_json=? "+
+    "WHERE relation_id=? AND release_no=3",
+    "{\"joinType\":\"CROSS\"}",rel.id());
+  assertEquals("STALE",f.api().releaseSnapshots(rel.id(),"readerSeal2").get(0).get("status"));
+  f.api().update(rel.id(),Map.of("revision",1,"name","变更关系",
+    "pairs",pairs("city","region")));
+  assertTrue(f.api().releaseSnapshots(rel.id(),"readerSeal2").stream()
+    .allMatch(s->"STALE".equals(s.get("status"))));
+ }
+
  @Test void rejectsBlankOrSpaceOnlyNames(){
   var f=fixture();
   assertThrows(IllegalArgumentException.class,()->

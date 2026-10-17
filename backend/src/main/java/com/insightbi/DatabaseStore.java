@@ -91,6 +91,12 @@ public class DatabaseStore {
     "relation_id VARCHAR(36) NOT NULL, reader_id VARCHAR(36) NOT NULL, relation_revision INT NOT NULL, "+
     "source_hash VARCHAR(64) NOT NULL, policy_hash VARCHAR(64) NOT NULL, binding_json LONGTEXT NOT NULL, "+
     "reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(relation_id,reader_id))");
+  // Immutable model release CANDIDATES only: never plugged into the Reader API.
+  jdbc.execute("CREATE TABLE IF NOT EXISTS insight_semantic_release_snapshot ("+
+    "id VARCHAR(36) PRIMARY KEY, relation_id VARCHAR(36) NOT NULL, reader_id VARCHAR(36) NOT NULL, "+
+    "release_no INT NOT NULL, relation_revision INT NOT NULL, source_hash VARCHAR(64) NOT NULL, "+
+    "policy_hash VARCHAR(64) NOT NULL, binding_json LONGTEXT NOT NULL, snapshot_hash VARCHAR(64) NOT NULL, "+
+    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(relation_id,reader_id,release_no))");
 
 
 
