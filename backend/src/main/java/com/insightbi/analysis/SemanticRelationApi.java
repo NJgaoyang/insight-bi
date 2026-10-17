@@ -185,6 +185,30 @@ public class SemanticRelationApi {
   }
 
   /**
+   * Administrator-only dual-sided row-policy plan preview. This is not the
+   * prior conservative access review, not a release credential or a query API.
+   * Neither JDBC source connections nor permission values leave this endpoint.
+   */
+  @PostMapping("/{relationId}/rls-plan-preview")
+  public SemanticRelationRlsPlanPreview.Preview rlsPlanPreview(
+      @PathVariable String relationId,@RequestBody Map<String,Object> body){
+    if(body==null||body.size()!=5||
+       !Set.of("revision","readerId","joinType","leftFieldIds","rightFieldIds")
+         .equals(body.keySet()))
+      throw new IllegalArgumentException("双侧行权限预览参数不合法");
+    String relation=id(relationId),reader=id(body.get("readerId"));
+    int version=revision(body.get("revision"));
+    CheckedRelation checked=checkedForReview(relation,version);
+    Map<String,Object> projection=new LinkedHashMap<>(body);
+    projection.remove("revision");
+    projection.remove("readerId");
+    return SemanticRelationRlsPlanPreview.compile(db,reader,
+      store.dataset(checked.leftId()),store.dataset(checked.rightId()),
+      checked.leftId(),checked.rightId(),checked.pairs(),
+      physicalFields(checked.leftId()),physicalFields(checked.rightId()),version,projection);
+  }
+
+  /**
    * Review-only metadata binding. This does NOT publish a dashboard, expose
    * model SQL to a reader or grant any reader access.
    */

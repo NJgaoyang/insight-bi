@@ -328,3 +328,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 36. P1-SEMANTIC-DASHBOARD-DRAFT-BINDING-08：分析主题草稿显式候选绑定与发布安全门禁（2026-10-17）
 
 分析 V2 组件草稿可显式绑定一个不可变语义候选 releaseNo、relationId、readerId，保存前复核左侧 datasetId、关系版本与源/权限指纹。所有带此绑定的内容**禁止正式发布**；读者已发布快照及管理员 V2 查询均拒绝把候选当成单表源执行。无 DDL、无读者 JOIN 开放、不部署。详见 [P1_SEMANTIC_DASHBOARD_DRAFT_BINDING_08.md](P1_SEMANTIC_DASHBOARD_DRAFT_BINDING_08.md)。
+
+
+## 37. P1-SEMANTIC-RELATION-DUAL-RLS-PLAN-09：双侧行级权限 JOIN 编译预览（2026-10-17）
+
+新增仅管理员可用的双侧行规则编译预览：左/右数据源分别在 JOIN 前用非隐藏物理 STRING 字段和 JDBC `?` 参数占位符过滤，LEFT JOIN 的右侧限制不外置；单值和最多 20 值规则均校验，无列权限血缘时拒绝任意 deny。只返回 SQL 结构和参数数量，不返回读者行规则值、不执行 SQL/外部 JDBC，且不改变既有保守 access-review、候选封存和读者/报表发布禁止逻辑。详见 [P1_SEMANTIC_RELATION_DUAL_RLS_PLAN_09.md](P1_SEMANTIC_RELATION_DUAL_RLS_PLAN_09.md)。
