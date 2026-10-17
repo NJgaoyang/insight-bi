@@ -83,6 +83,9 @@ public class DatabaseStore {
     jdbc.execute("ALTER TABLE insight_semantic_relation ADD COLUMN approved_revision INT");
   if(!columnExists("insight_semantic_relation","approved_at"))
     jdbc.execute("ALTER TABLE insight_semantic_relation ADD COLUMN approved_at TIMESTAMP");
+  // Historical approved rows have a NULL fingerprint until explicitly reapproved.
+  if(!columnExists("insight_semantic_relation","approved_source_hash"))
+    jdbc.execute("ALTER TABLE insight_semantic_relation ADD COLUMN approved_source_hash VARCHAR(64)");
 
 
 

@@ -114,7 +114,7 @@ onMounted(load)
       · {{row.pairs.length}} 组字段 · v{{row.revision}}</small>
      <span v-if="row.status==='INVALID'" class="semantic-draft-error">{{row.reason}}</span>
      <span v-else-if="row.status==='APPROVED'" class="semantic-draft-approved">已确认 v{{row.revision}} · 未用于查询</span>
-     <span v-else class="semantic-draft-state">草稿 · 待确认</span>
+     <span v-else class="semantic-draft-state">草稿 · 待确认<span v-if="row.reason"> · {{row.reason}}</span></span>
     </div>
     <div class="semantic-draft-actions">
      <button v-if="row.status==='DRAFT'" type="button" @click="approve(row)">确认版本</button>

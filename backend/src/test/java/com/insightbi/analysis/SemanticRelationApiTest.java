@@ -17,7 +17,7 @@ class SemanticRelationApiTest {
  private static List<Map<String,Object>> pairs(String left,String right){
   return List.of(Map.of("leftFieldId",left,"rightFieldId",right));
  }
- private record Fixture(DatabaseStore store,JdbcTemplate db,SemanticRelationApi api){}
+ private record Fixture(DatabaseStore store,JdbcTemplate db,SemanticRelationApi api,FieldCatalog catalog){}
  private static Fixture fixture(){
   var db=new JdbcTemplate(new DriverManagerDataSource(
    "jdbc:h2:mem:semantic_"+UUID.randomUUID()+";MODE=MySQL;DB_CLOSE_DELAY=-1","sa",""));
@@ -32,7 +32,7 @@ class SemanticRelationApiTest {
   when(catalog.fields("left")).thenReturn(List.of(field("city","STRING"),field("period","DATE")));
   when(catalog.fields("right")).thenReturn(List.of(field("region","STRING"),field("wrong","DECIMAL")));
   when(catalog.fields("foreign")).thenReturn(List.of(field("city","STRING")));
-  return new Fixture(store,db,new SemanticRelationApi(store,db,catalog));
+  return new Fixture(store,db,new SemanticRelationApi(store,db,catalog),catalog);
  }
  @Test void createUpdateListDeleteWithCasAndNoExternalSql(){
   var f=fixture();
@@ -146,6 +146,70 @@ class SemanticRelationApiTest {
   f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?","SELECT 1","right");
   f.db().update("UPDATE insight_dataset SET connection_id=? WHERE id=?","other","right");
   assertThrows(IllegalArgumentException.class,()->f.api().compile(created.id(),req));
+ }
+
+
+ @Test void approvalPinsSourceSqlAndReapprovalRestoresPreview(){
+  var f=fixture();
+  var draft=f.api().create(Map.of("name","绑定两侧 SQL","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(draft.id(),Map.of("revision",1));
+  String before=f.db().queryForObject(
+    "SELECT approved_source_hash FROM insight_semantic_relation WHERE id=?",
+    String.class,draft.id());
+  assertNotNull(before);assertEquals(64,before.length());
+  f.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+    "SELECT '上海' AS city","left");
+  assertEquals("DRAFT",f.api().list().get(0).status());
+  assertTrue(f.api().list().get(0).reason().contains("重新确认"));
+  var req=Map.<String,Object>of("revision",1,"joinType","LEFT",
+    "leftFieldIds",List.of("city"),"rightFieldIds",List.of("region"));
+  assertThrows(IllegalStateException.class,()->f.api().compile(draft.id(),req));
+  assertEquals("APPROVED",f.api().approve(draft.id(),Map.of("revision",1)).status());
+  String after=f.db().queryForObject(
+    "SELECT approved_source_hash FROM insight_semantic_relation WHERE id=?",
+    String.class,draft.id());
+  assertNotEquals(before,after);
+  assertEquals("APPROVED",f.api().list().get(0).status());
+  assertTrue(f.api().compile(draft.id(),req).sqlPreview().contains("LEFT JOIN"));
+ }
+ @Test void approvalTracksPhysicalFieldsAndConnectionsNotLabels(){
+  var f=fixture();
+  var draft=f.api().create(Map.of("name","字段绑定","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(draft.id(),Map.of("revision",1));
+  when(f.catalog().fields("left")).thenReturn(List.of(
+    new FieldCatalog.Field("city","城市展示","city","STRING","DIMENSION",false,false,"ROW",null),
+    new FieldCatalog.Field("period","月份展示","period","DATE","DIMENSION",false,false,"ROW",null)));
+  assertEquals("APPROVED",f.api().list().get(0).status());
+  when(f.catalog().fields("left")).thenReturn(List.of(
+    field("city","STRING"),
+    new FieldCatalog.Field("period","period","period","DATE","DIMENSION",false,false,"ROW",null,true)));
+  assertEquals("DRAFT",f.api().list().get(0).status());
+  f.api().approve(draft.id(),Map.of("revision",1));
+  assertEquals("APPROVED",f.api().list().get(0).status());
+  f.db().update("UPDATE insight_dataset SET connection_id=? WHERE id IN (?,?)",
+    "new-connection","left","right");
+  assertEquals("DRAFT",f.api().list().get(0).status());
+ }
+ @Test void existingApprovalWithoutFingerprintFailsClosedAndMigrationIsIdempotent(){
+  var f=fixture();
+  var draft=f.api().create(Map.of("name","历史关系","sourceDatasetId","left",
+    "targetDatasetId","right","pairs",pairs("city","region")));
+  f.api().approve(draft.id(),Map.of("revision",1));
+  f.db().update("UPDATE insight_semantic_relation SET approved_source_hash=NULL WHERE id=?",
+    draft.id());
+  f.store().schema();f.store().schema();
+  assertEquals("DRAFT",f.api().list().get(0).status());
+  assertThrows(IllegalStateException.class,()->f.api().compile(draft.id(),
+    Map.of("revision",1,"joinType","LEFT","leftFieldIds",List.of("city"),
+      "rightFieldIds",List.of("region"))));
+  assertEquals("APPROVED",f.api().approve(draft.id(),Map.of("revision",1)).status());
+  f.api().update(draft.id(),Map.of("revision",1,"name","新草稿",
+    "pairs",pairs("city","region")));
+  assertNull(f.db().queryForObject(
+    "SELECT approved_source_hash FROM insight_semantic_relation WHERE id=?",
+    String.class,draft.id()));
  }
 
  @Test void rejectsBlankOrSpaceOnlyNames(){

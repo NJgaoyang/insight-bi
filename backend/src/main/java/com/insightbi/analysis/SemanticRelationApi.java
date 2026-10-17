@@ -27,7 +27,7 @@ public class SemanticRelationApi {
   @GetMapping
   public List<Relation> list(){
     var saved=db.queryForList(
-      "SELECT id,name,source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision "+
+      "SELECT id,name,source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision,approved_source_hash "+
       "FROM insight_semantic_relation ORDER BY name,id LIMIT 101");
     if(saved.size()>100)throw new IllegalStateException("草稿关系超过安全展示上限");
     List<Relation> result=new ArrayList<>();
@@ -35,14 +35,21 @@ public class SemanticRelationApi {
       var pairs=readPairs(String.valueOf(row.get("pairs_json")));
       String source=String.valueOf(row.get("source_dataset_id"));
       String target=String.valueOf(row.get("target_dataset_id"));
-      String reason="";
-      try{validate(source,target,pairs);}
-      catch(RuntimeException invalid){reason="字段或数据集已变化，请编辑并重新确认"; }
       int rev=((Number)row.get("revision")).intValue();
       int approved=row.get("approved_revision") instanceof Number number?number.intValue():0;
+      String status="DRAFT",reason="";
+      try{
+        validate(source,target,pairs);
+        if(approved==rev){
+          if(sourceFingerprint(source,target).equals(row.get("approved_source_hash")))
+            status="APPROVED";
+          else reason="源 SQL、连接或字段定义已变化，请重新确认当前版本";
+        }
+      }catch(RuntimeException invalid){
+        status="INVALID";reason="字段或数据集已失效，请编辑并重新确认";
+      }
       result.add(new Relation(String.valueOf(row.get("id")),String.valueOf(row.get("name")),
-        source,target,pairs,rev,
-        !reason.isEmpty()?"INVALID":approved==rev?"APPROVED":"DRAFT",reason));
+        source,target,pairs,rev,status,reason));
     }
     return result;
   }
@@ -77,7 +84,7 @@ public class SemanticRelationApi {
     var pairs=bodyPairs(body.get("pairs"));
     validate(current.sourceDatasetId(),current.targetDatasetId(),pairs);
     int changed=db.update(
-      "UPDATE insight_semantic_relation SET name=?,pairs_json=?,revision=revision+1,approved_revision=NULL,approved_at=NULL,updated_at=CURRENT_TIMESTAMP "+
+      "UPDATE insight_semantic_relation SET name=?,pairs_json=?,revision=revision+1,approved_revision=NULL,approved_at=NULL,approved_source_hash=NULL,updated_at=CURRENT_TIMESTAMP "+
       "WHERE id=? AND revision=?",name,store.json(pairs),id,expected);
     if(changed!=1)throw new IllegalStateException("关系草稿版本已变化，请刷新");
     return new Relation(id,name,current.sourceDatasetId(),current.targetDatasetId(),
@@ -102,9 +109,10 @@ public class SemanticRelationApi {
     String target=String.valueOf(row.get("target_dataset_id"));
     List<Pair> mapping=readPairs(String.valueOf(row.get("pairs_json")));
     validate(source,target,mapping);
+    String fingerprint=sourceFingerprint(source,target);
     int saved=db.update(
-      "UPDATE insight_semantic_relation SET approved_revision=?,approved_at=CURRENT_TIMESTAMP "+
-      "WHERE id=? AND revision=?",expected,relation,expected);
+      "UPDATE insight_semantic_relation SET approved_revision=?,approved_at=CURRENT_TIMESTAMP,approved_source_hash=? "+
+      "WHERE id=? AND revision=?",expected,fingerprint,relation,expected);
     if(saved!=1)throw new IllegalStateException("关系草稿版本已变化，请刷新");
     return new Relation(relation,String.valueOf(row.get("name")),source,target,mapping,
       expected,"APPROVED","");
@@ -120,7 +128,7 @@ public class SemanticRelationApi {
     String relation=id(relationId);
     int expected=revision(body.get("revision"));
     var rows=db.queryForList(
-      "SELECT source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision "+
+      "SELECT source_dataset_id,target_dataset_id,pairs_json,revision,approved_revision,approved_source_hash "+
       "FROM insight_semantic_relation WHERE id=?",relation);
     if(rows.size()!=1)throw new IllegalArgumentException("关系草稿不存在");
     var row=rows.get(0);
@@ -132,6 +140,8 @@ public class SemanticRelationApi {
     String rightId=String.valueOf(row.get("target_dataset_id"));
     var pairs=readPairs(String.valueOf(row.get("pairs_json")));
     validate(leftId,rightId,pairs);
+    if(!sourceFingerprint(leftId,rightId).equals(row.get("approved_source_hash")))
+      throw new IllegalStateException("关系源数据已变化，请重新确认当前版本");
     return SemanticRelationSqlPreview.compile(
       store.dataset(leftId),store.dataset(rightId),leftId,rightId,pairs,
       physicalFields(leftId),physicalFields(rightId),expected,body);
@@ -175,6 +185,12 @@ public class SemanticRelationApi {
       if(!usedLeft.add(pair.leftFieldId())||!usedRight.add(pair.rightFieldId()))
         throw new IllegalArgumentException("不能重复使用关联字段");
     }
+  }
+  /** Deterministic snapshot of both source SQL strings, connections and physical fields. */
+  private String sourceFingerprint(String leftId,String rightId){
+    return SemanticRelationSourceFingerprint.compute(
+      store.dataset(leftId),store.dataset(rightId),
+      catalog.fields(leftId),catalog.fields(rightId));
   }
   private Map<String,FieldCatalog.Field> physicalFields(String dataset){
     var fields=new HashMap<String,FieldCatalog.Field>();

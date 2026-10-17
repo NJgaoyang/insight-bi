@@ -108,6 +108,12 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   await approval.locator('.el-message-box__btns .el-button--primary').click()
   await page.getByText(/已确认 v1/).waitFor()
   assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),0)
+  // A changed SQL/field snapshot invalidates previous confirmation without changing revision.
+  rows=[{...rows[0],status:'DRAFT',reason:'源 SQL、连接或字段定义已变化，请重新确认当前版本'}]
+  await page.reload({waitUntil:'domcontentloaded'})
+  await page.locator('.semantic-draft-item').waitFor()
+  await page.getByText(/源 SQL、连接或字段定义已变化/).waitFor()
+  assert.equal(await page.locator('.semantic-draft-item').getByRole('button',{name:'确认版本'}).count(),1)
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})
   await edit.locator('input[maxlength="100"]').fill('城市映射更新')

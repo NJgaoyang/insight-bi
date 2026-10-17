@@ -7,6 +7,7 @@ on:
     paths:
       - backend/src/main/java/com/insightbi/DatabaseStore.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationApi.java
+      - backend/src/main/java/com/insightbi/analysis/SemanticRelationSourceFingerprint.java
       - backend/src/main/java/com/insightbi/analysis/SemanticRelationSqlPreview.java
       - backend/src/test/java/com/insightbi/analysis/SemanticRelationApiTest.java
       - frontend/src/SemanticRelationDrafts.vue
@@ -15,6 +16,7 @@ on:
       - scripts/semantic_relation_drafts_browser_smoke.cjs
       - docs/P1_SEMANTIC_RELATION_DRAFT_01.md
       - docs/P1_SEMANTIC_RELATION_COMPILE_03.md
+      - docs/P1_SEMANTIC_RELATION_SOURCE_PIN_04.md
       - .github/workflows/semantic-relation-scoped.yml
 jobs:
   relationship-backend:

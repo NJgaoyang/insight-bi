@@ -303,3 +303,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 31. P1-SEMANTIC-RELATION-COMPILE-03：关系 SQL 编译预览（2026-10-17）
 
 管理员提交已批准修订号、INNER/LEFT 模式和双方稳定物理字段 ID，可编译受控 JOIN SQL 预览；服务端重新校验版本、同连接、类型、字段可见性及只读源 SQL，固定结果上限 200。不执行 SQL、不引入读者权限、不修改旧仪表板或线上环境。详见 [P1_SEMANTIC_RELATION_COMPILE_03.md](P1_SEMANTIC_RELATION_COMPILE_03.md)。
+
+
+## 32. P1-SEMANTIC-RELATION-SOURCE-PIN-04：语义关系源快照保护（2026-10-17）
+
+关系确认现在必须同时绑定两侧数据集 SQL、连接和物理字段定义的 SHA-256 指纹。源数据变化后关系从已确认降为待重新确认且 SQL 编译预览拒绝；纯字段显示名更新不会使关系失效。历史批准但未留指纹的记录安全降级，须重新批准。新增元数据列必须在备份/恢复门禁通过后才能生产落地，不涉及多表实际执行。详见 [P1_SEMANTIC_RELATION_SOURCE_PIN_04.md](P1_SEMANTIC_RELATION_SOURCE_PIN_04.md)。
