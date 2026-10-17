@@ -1,6 +1,7 @@
 package com.insightbi;
 
 import java.util.*;
+import com.insightbi.analysis.SemanticRelationRlsRevocationGate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.*;
@@ -357,6 +358,7 @@ class GovernanceApi {
   @DeleteMapping("/users/{id}")
   @Transactional
   Map<String,Object> deleteUser(@PathVariable String id){
+    SemanticRelationRlsRevocationGate.lockForGovernanceMutation(db,id);
     if(db.queryForObject("SELECT COUNT(*) FROM insight_governance_user WHERE id=?",Integer.class,id)!=1)
       throw new NoSuchElementException("用户不存在");
     db.update("DELETE FROM insight_folder_acl WHERE principal_type='USER' AND principal_id=?",id);
@@ -383,6 +385,7 @@ class GovernanceApi {
   @Transactional
   Map<String,Object> setDeniedColumns(@PathVariable String id,@PathVariable String datasetId,
                                       @RequestBody Map<String,Object> body){
+    SemanticRelationRlsRevocationGate.lockForGovernanceMutation(db,id);
     requireUser(id);
     if(body.size()!=1||!(body.get("fieldIds") instanceof List<?> requested)
        ||requested.size()>20)
@@ -410,6 +413,7 @@ class GovernanceApi {
   @DeleteMapping("/users/{id}/denied-columns/{datasetId}")
   @Transactional
   Map<String,Object> clearDeniedColumns(@PathVariable String id,@PathVariable String datasetId){
+    SemanticRelationRlsRevocationGate.lockForGovernanceMutation(db,id);
     requireUser(id);
     db.update("DELETE FROM insight_reader_column_deny WHERE user_id=? AND dataset_id=?",id,datasetId);
     db.update("UPDATE insight_governance_user SET auth_version=auth_version+1 WHERE id=?",id);
@@ -443,6 +447,7 @@ class GovernanceApi {
   @Transactional
   Map<String,Object> setRowPolicy(@PathVariable String id,@PathVariable String datasetId,
                                   @RequestBody Map<String,Object> body){
+    SemanticRelationRlsRevocationGate.lockForGovernanceMutation(db,id);
     requireUser(id);
     if(!Set.of("fieldId","allowedValue","allowedValues").containsAll(body.keySet())||
        !body.containsKey("fieldId")||
@@ -485,6 +490,7 @@ class GovernanceApi {
   @DeleteMapping("/users/{id}/row-policies/{datasetId}")
   @Transactional
   Map<String,Object> deleteRowPolicy(@PathVariable String id,@PathVariable String datasetId){
+    SemanticRelationRlsRevocationGate.lockForGovernanceMutation(db,id);
     requireUser(id);
     db.update("DELETE FROM insight_reader_row_policy_value WHERE user_id=? AND dataset_id=?",id,datasetId);
     db.update("DELETE FROM insight_reader_row_policy WHERE user_id=? AND dataset_id=?",id,datasetId);

@@ -358,3 +358,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 42. P1-SEMANTIC-RLS-EXECUTION-BOUNDARY-14：隔离 JDBC 只读计划准备与 H2 验证（2026-10-17）
 
 新增仅包内可见的 `SemanticRelationRlsExecutionBoundary`，检查已有双侧 RLS 编译和参数证明后才准备 JDBC 只读语句；要求显式 source JDBC 事务、不可忽略的 5 秒超时及 200 行上限，并发最多两条，额度在连接借用前取得。仅在新增 H2 专项测试中绑定测试值并执行受控 LEFT JOIN；组件本身不执行、不获取业务账户、不接任何 Web/Reader 路由。现有读者发布/SQL 执行限制完全不变；真实 JDBC readOnly 仍只是驱动提示，必须等待最小权限账号及跨连接撤权问题解决。详情见 [P1_SEMANTIC_RLS_EXECUTION_BOUNDARY_14.md](P1_SEMANTIC_RLS_EXECUTION_BOUNDARY_14.md)。
+
+
+## 43. P1-SEMANTIC-RLS-PREEXEC-AUTH-15：读者行锁与源账号最小权限门禁（2026-10-17）
+
+新增只限内部使用的双侧 RLS 执行前读者身份锁：必须在 READ_COMMITTED 可写元数据事务中先锁定读者账号行，再复核双侧策略绑定指纹；治理行策略、列拒绝和账号删除均在 ACL 修改前先持有同一行锁，H2 双线程检验撤权阻塞与后续失效。来源账号使用保守的 MySQL SHOW GRANTS 白名单检查；StarRocks 及未知授权 fail-closed，仍须真实源最小权限审计。本批无 Reader JOIN、无新 API 或 DDL、不部署生产，详情见 [P1_SEMANTIC_RLS_PREEXEC_AUTH_15.md](P1_SEMANTIC_RLS_PREEXEC_AUTH_15.md)。
