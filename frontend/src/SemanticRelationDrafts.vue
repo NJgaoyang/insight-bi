@@ -22,7 +22,9 @@ const profiling=ref(false),profile=ref<{id:string;revision:number;data:SamplePro
 type Reader={id:string;display_name:string;role:string;enabled:boolean}
 const reviewOpen=ref(false),reviewRow=ref<Draft|null>(null),readers=ref<Reader[]>([])
 const reviewReader=ref(''),reviewJoin=ref<'INNER'|'LEFT'>('LEFT')
-const reviewBusy=ref(false),reviewMessage=ref('')
+const reviewBusy=ref(false),reviewMessage=ref(''),reviewReady=ref(false)
+type Snapshot={releaseNo:number;relationRevision:number;status:'SEALED_ONLY'|'STALE'|'BLOCKED';reason:string}
+const snapshots=ref<Snapshot[]>([])
 const targets=computed(()=>datasets.value.filter(d=>d.id!==source.value&&
  !!source.value&&d.connection_id===datasets.value.find(x=>x.id===source.value)?.connection_id))
 const left=computed(()=>fields.value[source.value]?.filter(f=>!f.calculated&&!f.hidden)||[])
@@ -115,23 +117,53 @@ async function inspectKeys(row:Draft){
 async function openAccessReview(row:Draft){
  if(busy.value||row.status!=='APPROVED')return
  reviewRow.value=row;reviewReader.value='';reviewJoin.value='LEFT';reviewMessage.value=''
+ reviewReady.value=false;snapshots.value=[]
  reviewOpen.value=true
  try{
   const users=await api<Reader[]>('/governance/users')
   readers.value=users.filter(u=>u.enabled&&['VIEWER','EDITOR'].includes(u.role))
  }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'无法加载读者账号'}
 }
+async function loadReleaseSnapshots(){
+ const row=reviewRow.value
+ if(!row||!reviewReader.value)return
+ try{
+  const rows=await api<Snapshot[]>('/model/semantic-relations/'+encodeURIComponent(row.id)+
+   '/release-snapshots?readerId='+encodeURIComponent(reviewReader.value))
+  if(reviewRow.value?.id===row.id)snapshots.value=rows
+ }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'候选版本读取失败'}
+}
+function onReaderChange(){reviewReady.value=false;reviewMessage.value='';snapshots.value=[];void loadReleaseSnapshots()}
+function onJoinChange(){reviewReady.value=false;reviewMessage.value=''}
+async function sealReleaseSnapshot(){
+ const row=reviewRow.value
+ if(!row||!reviewReady.value||!reviewReader.value||reviewBusy.value)return
+ try{await ElMessageBox.confirm(
+  '仅封存已审查的当前关系及读者权限快照，不会绑定到已发布报表，也不开放任何读者 SQL。确认封存？',
+  '封存候选版本（非发布）',{type:'warning',confirmButtonText:'仅封存候选版本',cancelButtonText:'取消'})}
+ catch{return}
+ reviewBusy.value=true
+ try{
+  const sealed=await post<{releaseNo:number;status:string}>(
+   '/model/semantic-relations/'+encodeURIComponent(row.id)+'/release-snapshots',
+   {revision:row.revision,readerId:reviewReader.value,acknowledgeNotPublished:true})
+  reviewMessage.value='候选版本 v'+sealed.releaseNo+' 已封存；没有正式发布或读者访问授权。'
+  await loadReleaseSnapshots()
+ }catch(e:unknown){reviewReady.value=false;reviewMessage.value=e instanceof Error?e.message:'候选版本封存失败'}
+ finally{reviewBusy.value=false}
+}
 async function submitAccessReview(){
  const row=reviewRow.value
  if(!row||!reviewReader.value||reviewBusy.value||row.status!=='APPROVED')return
- reviewBusy.value=true;reviewMessage.value=''
+ reviewBusy.value=true;reviewMessage.value='';reviewReady.value=false
  try{
   const response=await post<{status:string;reason:string}>(
    '/model/semantic-relations/'+encodeURIComponent(row.id)+'/access-review',{
     revision:row.revision,readerId:reviewReader.value,joinType:reviewJoin.value,
     leftFieldIds:[...new Set(row.pairs.map(p=>p.leftFieldId))],
     rightFieldIds:[...new Set(row.pairs.map(p=>p.rightFieldId))]})
-  reviewMessage.value=response.status==='READY_FOR_REVIEW'?
+  reviewReady.value=response.status==='READY_FOR_REVIEW'
+  reviewMessage.value=reviewReady.value?
     '已记录预发布审查；没有授予读者访问权，也没有发布模型。':
     response.reason
  }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'权限审查失败'}
@@ -145,8 +177,9 @@ async function checkAccessReview(){
   const report=await api<{status:string;reason:string}>(
    '/model/semantic-relations/'+encodeURIComponent(row.id)+
    '/access-review?readerId='+encodeURIComponent(reviewReader.value))
+  reviewReady.value=report.status==='READY_FOR_REVIEW'
   reviewMessage.value=report.status+' · '+report.reason
- }catch(e:unknown){reviewMessage.value=e instanceof Error?e.message:'审查状态查询失败'}
+ }catch(e:unknown){reviewReady.value=false;reviewMessage.value=e instanceof Error?e.message:'审查状态查询失败'}
  finally{reviewBusy.value=false}
 }
 async function erase(row:Draft){
@@ -200,23 +233,30 @@ onMounted(load)
    <div class="semantic-access-review">
     <p>仅审查当前已确认关系的关联键输出。此步骤不是报表发布、SQL 查询，也不会赋予读者权限。</p>
     <label>选择已启用读者
-     <el-select v-model="reviewReader" placeholder="选择需要检查的账号" filterable>
+     <el-select v-model="reviewReader" placeholder="选择需要检查的账号" filterable @update:model-value="onReaderChange">
       <el-option v-for="u in readers" :key="u.id" :value="u.id"
        :label="u.display_name+' · '+u.role"/>
      </el-select>
     </label>
     <label>预期关联模式
-     <el-select v-model="reviewJoin">
+     <el-select v-model="reviewJoin" @update:model-value="onJoinChange">
       <el-option label="左连接 LEFT" value="LEFT"/>
       <el-option label="内连接 INNER" value="INNER"/>
      </el-select>
     </label>
     <p v-if="reviewMessage" role="status">{{reviewMessage}}</p>
-    <p>若此读者对任何一侧数据集存在列拒绝或行过滤规则，审查必定拒绝。即使审查通过，仍需单独实现安全发布流程。</p>
+    <p>若此读者对任何一侧数据集存在列拒绝或行过滤规则，审查必定拒绝。候选版本是不可执行的元数据，不能作为读者发布凭据。</p>
+    <div v-if="snapshots.length" class="semantic-review-snapshots">
+     <strong>候选版本（并非已发布）</strong>
+     <p v-for="item in snapshots" :key="item.releaseNo">
+      v{{item.releaseNo}} · 关系修订 {{item.relationRevision}} · {{item.status}} · {{item.reason}}
+     </p>
+    </div>
    </div>
    <template #footer>
     <button type="button" @click="reviewOpen=false">关闭</button>
     <button type="button" :disabled="!reviewReader||reviewBusy" @click="checkAccessReview">检查已有状态</button>
+    <button type="button" :disabled="!reviewReady||reviewBusy" @click="sealReleaseSnapshot">封存候选版本</button>
     <button type="button" :disabled="!reviewReader||reviewBusy" @click="submitAccessReview">
      {{reviewBusy?'检查中…':'生成审查记录'}}
     </button>

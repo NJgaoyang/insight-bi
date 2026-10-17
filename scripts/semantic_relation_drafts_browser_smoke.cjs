@@ -5,7 +5,7 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
  const browser=await chromium.launch({args:['--no-sandbox']})
  try{
   const page=await browser.newPage({viewport:{width:1480,height:960}})
-  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0
+  let rows=[],requests=[],errors=[],profileRequests=0,accessReviews=0,releaseVersions=[]
   page.on('pageerror',e=>errors.push(e.stack||e.message))
   const send=(r,v,status=200)=>r.fulfill({status,contentType:'application/json',body:JSON.stringify(v)})
   await page.route('**/api/**',route=>{
@@ -37,6 +37,18 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
    if(p==='/api/model/semantic-relations/draft1/access-review'&&m==='GET'){
     assert.equal(url.searchParams.get('readerId'),'viewer1')
     return send(route,{status:'READY_FOR_REVIEW',reason:'未发布'})
+   }
+   if(p==='/api/model/semantic-relations/draft1/release-snapshots'&&m==='POST'){
+    assert.deepEqual(req.postDataJSON(),{
+     revision:1,readerId:'viewer1',acknowledgeNotPublished:true})
+    const releaseNo=releaseVersions.length+1
+    releaseVersions.unshift({releaseNo,relationRevision:1,status:'SEALED_ONLY',
+     reason:'仅候选封存，未正式发布'})
+    return send(route,{releaseNo,status:'SEALED_ONLY',relationRevision:1})
+   }
+   if(p==='/api/model/semantic-relations/draft1/release-snapshots'&&m==='GET'){
+    assert.equal(url.searchParams.get('readerId'),'viewer1')
+    return send(route,releaseVersions)
    }
    if(p==='/api/model/semantic-relations/draft1/join-key-profile'&&m==='POST'){
     const data=req.postDataJSON();profileRequests++
@@ -145,6 +157,13 @@ const origin=process.env.P0_PREVIEW_URL||'http://127.0.0.1:18225'
   assert.equal(accessReviews,1)
   await accessDialog.getByRole('button',{name:'检查已有状态'}).click()
   await accessDialog.getByText(/READY_FOR_REVIEW/).waitFor()
+  await accessDialog.getByRole('button',{name:'封存候选版本'}).click()
+  const sealing=page.locator('.el-message-box').last()
+  await sealing.waitFor()
+  await sealing.locator('.el-message-box__btns .el-button--primary').click()
+  await accessDialog.getByText(/候选版本 v1 已封存/).waitFor()
+  await accessDialog.getByText(/SEALED_ONLY/).waitFor()
+  assert.equal(releaseVersions.length,1)
   await accessDialog.getByRole('button',{name:'关闭'}).click()
   await page.locator('.semantic-draft-item').getByRole('button',{name:'编辑'}).click()
   const edit=page.getByRole('dialog',{name:'编辑语义关系草稿'})

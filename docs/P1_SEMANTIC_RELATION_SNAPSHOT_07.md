@@ -21,3 +21,7 @@ Java H2：封存必须经过审查、只封存不可发布、连续版本、权�
 这不是可执行模型发布：没有接入 insight_dashboard_version、ReaderApi、SQL JOIN 执行、双侧 row policy 下推、最终关联行数或真实 StarRocks 验收。SEALED_ONLY 不是 PUBLISHED。生产/18110/18130 均未部署；新增 DDL 必须先通过元数据库一致性备份与恢复门禁。
 
 下一批：受控地设计报表组件显式引用候选模型版本及完整双侧行列权限下推与发布检查，而不是直接启用 SQL 预览。
+
+## 管理员端 UI
+
+审查对话框新增“封存候选版本”按钮：仅在当前读者审查报告 READY_FOR_REVIEW 时可点，二次弹窗明确不发布、不授予读者权限；管理员可查看各候选版本的 SEALED_ONLY、STALE、BLOCKED 动态状态。切换读者或 JOIN 模式会清除本地可封存状态。Chromium smoke 覆盖确认审查、封存和列表显示。
