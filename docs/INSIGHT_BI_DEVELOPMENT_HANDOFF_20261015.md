@@ -353,3 +353,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 41. P1-SEMANTIC-RLS-BIND-PREFLIGHT-13：双侧权限参数与同事务预检（2026-10-17）
 
 在 P1-12 管理员计划票据的生成/核验调用中加入只限服务端使用的双侧策略绑定检查：从当前元数据事务中重读身份、列拒绝、LEFT/RIGHT 行策略值，核验各侧绑定数量和 SQL 占位符一致性，拒绝孤立策略值；把含字段 ID 和有序原始值的摘要放进 AES-GCM 票据（v2，旧 v1 拒绝），没有明文值返回或实际业务 SQL 执行。仍不开放 Reader JOIN 或发布，不新增 DDL；只以 `SemanticRelationRlsPlanPreviewTest` 验收。详见 [P1_SEMANTIC_RLS_BIND_PREFLIGHT_13.md](P1_SEMANTIC_RLS_BIND_PREFLIGHT_13.md)。
+
+
+## 42. P1-SEMANTIC-RLS-EXECUTION-BOUNDARY-14：隔离 JDBC 只读计划准备与 H2 验证（2026-10-17）
+
+新增仅包内可见的 `SemanticRelationRlsExecutionBoundary`，检查已有双侧 RLS 编译和参数证明后才准备 JDBC 只读语句；要求显式 source JDBC 事务、不可忽略的 5 秒超时及 200 行上限，并发最多两条，额度在连接借用前取得。仅在新增 H2 专项测试中绑定测试值并执行受控 LEFT JOIN；组件本身不执行、不获取业务账户、不接任何 Web/Reader 路由。现有读者发布/SQL 执行限制完全不变；真实 JDBC readOnly 仍只是驱动提示，必须等待最小权限账号及跨连接撤权问题解决。详情见 [P1_SEMANTIC_RLS_EXECUTION_BOUNDARY_14.md](P1_SEMANTIC_RLS_EXECUTION_BOUNDARY_14.md)。
