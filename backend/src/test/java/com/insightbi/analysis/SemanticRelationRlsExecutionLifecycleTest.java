@@ -118,8 +118,16 @@ class SemanticRelationRlsExecutionLifecycleTest {
                 String host="host".equals(mismatch)?"wrong.invalid":"source.invalid";
                 int port="port".equals(mismatch)?3307:3306;
                 String database="database".equals(mismatch)?"otherdb":"analytics";
-                return "jdbc:mysql://"+host+":"+port+"/"+database+
-                  ("fragment".equals(mismatch)?"#spoof":"?useSSL=false");
+                String opts="?sslMode=VERIFY_IDENTITY"+
+                  "&fallbackToSystemTrustStore=false"+
+                  "&allowPublicKeyRetrieval=false&connectTimeout=5000&socketTimeout=5000";
+                if("fragment".equals(mismatch))opts+="#spoof";
+                if("weaktls".equals(mismatch))opts=opts.replace(
+                  "VERIFY_IDENTITY","REQUIRED");
+                if("no-tls".equals(mismatch))opts="?connectTimeout=5000";
+                if("insecure-legacy".equals(mismatch))opts+="&useSSL=false";
+                if("duplicate-tls".equals(mismatch))opts+="&sslMode=PREFERRED";
+                return "jdbc:mysql://"+host+":"+port+"/"+database+opts;
               }
               throw new IllegalStateException("Unexpected driver metadata access");
             });
@@ -136,6 +144,9 @@ class SemanticRelationRlsExecutionLifecycleTest {
                 List<String> values;
                 if("SELECT CURRENT_USER()".equals(sql))
                   values=List.of("principal".equals(mismatch)?"other@%":"reader@%");
+                else if("SHOW SESSION STATUS LIKE 'Ssl_cipher'".equals(sql))
+                  values=List.of("Ssl_cipher",
+                    "no-cipher".equals(mismatch)?"":"TLS_AES_128_GCM_SHA256");
                 else if("SHOW GRANTS".equals(sql))
                   values=allow?List.of(
                     "GRANT USAGE ON *.* TO 'reader'@'%'",
@@ -148,7 +159,9 @@ class SemanticRelationRlsExecutionLifecycleTest {
                     if(rm.getName().equals("next"))
                       return index.getAndIncrement()<values.size();
                     if(rm.getName().equals("getString"))
-                      return values.get(index.get()-1);
+                      return values.get(values.size()==2&&
+                        "Ssl_cipher".equals(values.get(0))
+                        ?((Number)ra[0]).intValue()-1:index.get()-1);
                     if(rm.getName().equals("close"))return null;
                     throw new IllegalStateException("Unexpected identity cursor call");
                   });
@@ -256,7 +269,8 @@ class SemanticRelationRlsExecutionLifecycleTest {
   @Test void endpointAndEffectiveIdentityMismatchNeverPrepareJoin(){
     var f=fixture();
     for(String mismatch:List.of("host","port","database","username","principal",
-        "catalog","replication","missing-url","fragment")){
+        "catalog","replication","missing-url","fragment","weaktls","no-tls",
+        "insecure-legacy","duplicate-tls","no-cipher")){
       var closed=new AtomicBoolean();
       var callback=new AtomicInteger();
       assertThrows(RuntimeException.class,()->

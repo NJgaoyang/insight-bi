@@ -3,7 +3,6 @@ package com.insightbi.analysis;
 import java.net.URI;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -28,9 +27,11 @@ final class SemanticRelationRlsSourceIdentityGate {
     var metadata=source.getMetaData();
     String url=metadata.getURL();
     String driverUser=metadata.getUserName();
-    if(url==null||!url.startsWith("jdbc:mysql://")||
-       driverUser==null||!username.equals(driverUser))
-      throw new IllegalStateException("来源驱动 URL 或登录用户与审批配置不一致");
+    if(driverUser==null||!username.equals(driverUser))
+      throw new IllegalStateException("来源驱动登录用户与审批配置不一致");
+    // Runtime metadata must reflect the non-downgradable factory mode.
+    // TLS verification occurs in Connector/J during its handshake.
+    SemanticRelationRlsTlsConnectionFactory.requireVerifiedUrl(url);
     URI uri;
     try{
       uri=URI.create(url.substring(5));
@@ -43,6 +44,19 @@ final class SemanticRelationRlsSourceIdentityGate {
        uri.getRawFragment()!=null||!("/"+catalog).equals(uri.getRawPath())||
        !catalog.equalsIgnoreCase(source.getCatalog()))
       throw new IllegalStateException("实际 JDBC 服务地址、端口或数据库与审批配置不同");
+    // Additional server-side evidence that this precise session negotiated
+    // encryption; an empty cipher means plaintext or unsupported status.
+    try(var stmt=source.createStatement()){
+      stmt.setQueryTimeout(5);
+      stmt.setMaxRows(1);
+      try(var rs=stmt.executeQuery("SHOW SESSION STATUS LIKE 'Ssl_cipher'")){
+        if(!rs.next()||!"Ssl_cipher".equalsIgnoreCase(rs.getString(1)))
+          throw new IllegalStateException("无法从源会话读取 TLS 加密状态");
+        String cipher=rs.getString(2);
+        if(cipher==null||!cipher.matches("[A-Za-z0-9_+-]{1,128}")||rs.next())
+          throw new IllegalStateException("源 JDBC 会话未提供有效 TLS 加密套件");
+      }
+    }
     // CURRENT_USER() is resolved by the server, not by request parameters.
     // SHOW GRANTS must subsequently match this exact effective principal.
     try(var statement=source.createStatement()){

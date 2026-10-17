@@ -378,3 +378,8 @@ node --experimental-strip-types --test scripts/analysis_workspace_layout.test.mj
 ## 46. P1-SEMANTIC-RLS-JDBC-IDENTITY-18：实际 JDBC 与服务端授权身份校验（2026-10-17）
 
 内部隔离执行链路新增 `SemanticRelationRlsSourceIdentityGate`：从已审批并锁定的连接取 host/port/db/username，比对同一 JDBC 连接的驱动 URL、驱动账号、catalog，并查询服务端 `CURRENT_USER()`；严格的 `SHOW GRANTS` 检查进一步要求授权对象与当前生效账号一致。H2 测试代理覆盖主机、端口、库名、账号、有效身份及非法 URL，身份错误时一律在 JOIN 准备之前拒绝且释放资源。**未连接真实数据库、未验证 TLS 服务端身份，现有连接工厂仍有 useSSL=false；不能视为生产查询安全证明。** Reader JOIN、正式发布继续禁用，未部署或新增 DDL。见 [P1_SEMANTIC_RLS_JDBC_IDENTITY_18.md](P1_SEMANTIC_RLS_JDBC_IDENTITY_18.md)。
+
+
+## 47. P1-SEMANTIC-RLS-TLS-CONNECTION-19：独立连接工厂的强制 TLS 校验（2026-10-17）
+
+新增包内、未接入生产的 `SemanticRelationRlsTlsConnectionFactory`，要求可读且含有效 CA 证书的 PKCS#12 信任库，并以 `sslMode=VERIFY_IDENTITY`、禁止 fallback 和公钥获取、严格 URL 白名单构造 MySQL JDBC Properties；凭据不入 URL 或调试字符串。P1-18 身份门禁再增加同连接 `Ssl_cipher` 非空校验及驱动 URL TLS 不能降级的判定。仅用自建测试 CA 与 H2/JDBC 代理专项验证；未进行真实 MySQL 证书握手，不触碰现有 `DatabaseStore.open` 的 `useSSL=false` 生产路径、不开放 JOIN 或发布，无 DDL/部署。见 [P1_SEMANTIC_RLS_TLS_CONNECTION_19.md](P1_SEMANTIC_RLS_TLS_CONNECTION_19.md)。
