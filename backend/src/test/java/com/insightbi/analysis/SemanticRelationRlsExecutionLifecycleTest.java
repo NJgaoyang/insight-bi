@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Only test code opens and inspects a prepared JOIN; no HTTP or live source. */
 class SemanticRelationRlsExecutionLifecycleTest {
   private record F(JdbcTemplate db,DataSourceTransactionManager transactions,
+    DatabaseStore store,FieldCatalog catalog,String relationId,
     Map<String,FieldCatalog.Field> left,Map<String,FieldCatalog.Field> right,
     SemanticRelationRlsPlanPreview.Preview plan,
     SemanticRelationRlsBindPreflight.Attestation binds,
@@ -37,6 +38,10 @@ class SemanticRelationRlsExecutionLifecycleTest {
     var store=new DatabaseStore(db,new ObjectMapper(),
       Base64.getEncoder().encodeToString(new byte[32]));
     store.schema();
+    db.update("INSERT INTO insight_connection(id,name,engine,host,port,db_name,"+
+      "username,credential) VALUES(?,?,?,?,?,?,?,?)",
+      "same-isolated-test-source","Isolated","mysql","source.invalid",3306,
+      "analytics","reader",store.encrypt("test-credential"));
     db.execute("CREATE TABLE lifecycle_orders(city VARCHAR(40),tenant VARCHAR(40))");
     db.execute("CREATE TABLE lifecycle_cities(city VARCHAR(40),tenant VARCHAR(40))");
     db.update("INSERT INTO lifecycle_orders VALUES('Paris','A')");
@@ -64,13 +69,19 @@ class SemanticRelationRlsExecutionLifecycleTest {
     db.update("INSERT INTO insight_reader_row_policy "+
       "(user_id,dataset_id,field_id,allowed_value) VALUES(?,?,?,?)",
       READER,"right",rt,"B");
+    var api=new SemanticRelationApi(store,db,catalog);
+    var relation=api.create(Map.of("name","Lifecycle approved sources",
+      "sourceDatasetId","left","targetDatasetId","right",
+      "pairs",List.of(Map.of("leftFieldId",lc,"rightFieldId",rc))));
+    api.approve(relation.id(),Map.of("revision",1));
     var plan=SemanticRelationRlsPlanPreview.compile(db,READER,
       store.dataset("left"),store.dataset("right"),"left","right",
       List.of(new SemanticRelationApi.Pair(lc,rc)),lf,rf,1,
       Map.of("joinType","LEFT","leftFieldIds",List.of(lc),"rightFieldIds",List.of(rc)));
     var binds=SemanticRelationRlsBindPreflight.inspect(db,READER,
       "left","right",lf,rf,plan);
-    return new F(db,new DataSourceTransactionManager(data),lf,rf,plan,binds,data);
+    return new F(db,new DataSourceTransactionManager(data),
+      store,catalog,relation.id(),lf,rf,plan,binds,data);
   }
   private static String field(Map<String,FieldCatalog.Field> fields,String column){
     return fields.values().stream().filter(f->column.equals(f.sourceColumn()))
@@ -127,9 +138,9 @@ class SemanticRelationRlsExecutionLifecycleTest {
   }
   private static void inspect(F f,String engine,boolean grants,
       AtomicBoolean closed,SemanticRelationRlsExecutionLifecycle.StatementProbe probe){
-    SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),READER,
+    SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),
+      f.store(),f.catalog(),f.relationId(),READER,
       "left","right",f.left(),f.right(),f.plan(),f.binds(),
-      engine,"analytics",
       ()->simulatedSource(f.source().getConnection(),grants,closed,
         "starrocks".equals(engine)),probe);
   }
@@ -228,21 +239,74 @@ class SemanticRelationRlsExecutionLifecycleTest {
     var forged=new SemanticRelationRlsBindPreflight.Attestation(
       0,0,"f".repeat(64));
     assertThrows(IllegalStateException.class,()->
-      SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),READER,
-        "left","right",f.left(),f.right(),f.plan(),forged,
-        "mysql","analytics",()->{
+      SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),
+        f.store(),f.catalog(),f.relationId(),READER,
+        "left","right",f.left(),f.right(),f.plan(),forged,()->{
           opened.incrementAndGet();
           return f.source().getConnection();
         },stmt->fail("must reject before prepare")));
     assertEquals(0,opened.get());
   }
 
+  @Test void approvalGateRejectsSourceSqlConnectionAndFieldDriftBeforeBorrow(){
+    var source=fixture();
+    source.db().update("UPDATE insight_dataset SET sql_body=? WHERE id=?",
+      "SELECT city FROM lifecycle_orders","left");
+    mustRejectBeforeSource(source);
+    var connector=fixture();
+    connector.db().update("UPDATE insight_connection SET host=? WHERE id=?",
+      "changed.invalid","same-isolated-test-source");
+    mustRejectBeforeSource(connector);
+    var credential=fixture();
+    credential.db().update("UPDATE insight_connection SET credential=? WHERE id=?",
+      credential.store().encrypt("new-secret"),"same-isolated-test-source");
+    mustRejectBeforeSource(credential);
+    var field=fixture();
+    field.db().update("UPDATE insight_dataset_field SET hidden=TRUE "+
+      "WHERE dataset_id=? AND source_name=?","right","city");
+    mustRejectBeforeSource(field);
+  }
+
+  @Test void approvalGateRejectsDeletedConnectionAndStaleRelationBeforeBorrow(){
+    var missing=fixture();
+    missing.db().update("DELETE FROM insight_connection WHERE id=?",
+      "same-isolated-test-source");
+    mustRejectBeforeSource(missing);
+    var noApproval=fixture();
+    noApproval.db().update("UPDATE insight_semantic_relation "+
+      "SET approved_revision=NULL WHERE id=?",noApproval.relationId());
+    mustRejectBeforeSource(noApproval);
+    var changedPairs=fixture();
+    changedPairs.db().update("UPDATE insight_semantic_relation "+
+      "SET pairs_json=? WHERE id=?",changedPairs.store().json(List.of(
+        Map.of("leftFieldId",field(changedPairs.left(),"tenant"),
+               "rightFieldId",field(changedPairs.right(),"tenant")))),
+      changedPairs.relationId());
+    mustRejectBeforeSource(changedPairs);
+    var revision=fixture();
+    revision.db().update("UPDATE insight_semantic_relation "+
+      "SET revision=revision+1 WHERE id=?",revision.relationId());
+    mustRejectBeforeSource(revision);
+  }
+
+  private static void mustRejectBeforeSource(F f){
+    var borrowed=new AtomicInteger();
+    assertThrows(RuntimeException.class,()->
+      SemanticRelationRlsExecutionLifecycle.inspect(
+        f.db(),f.transactions(),f.store(),f.catalog(),f.relationId(),READER,
+        "left","right",f.left(),f.right(),f.plan(),f.binds(),
+        ()->{borrowed.incrementAndGet();return f.source().getConnection();},
+        stmt->fail("must reject unapproved source before JDBC")));
+    assertEquals(0,borrowed.get());
+  }
+
   @Test void rejectsAmbientTransactionWithoutOpeningSource(){
     var f=fixture();
     var opened=new AtomicInteger();
     assertThrows(IllegalStateException.class,()->updateTransaction(f).execute(s->{
-      SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),READER,
-        "left","right",f.left(),f.right(),f.plan(),f.binds(),"mysql","analytics",
+      SemanticRelationRlsExecutionLifecycle.inspect(f.db(),f.transactions(),
+        f.store(),f.catalog(),f.relationId(),READER,
+        "left","right",f.left(),f.right(),f.plan(),f.binds(),
         ()->{opened.incrementAndGet();return f.source().getConnection();},
         stmt->fail("unexpected"));
       return null;
