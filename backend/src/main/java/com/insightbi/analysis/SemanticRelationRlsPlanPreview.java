@@ -64,7 +64,8 @@ public final class SemanticRelationRlsPlanPreview {
     }
     List<String> on=new ArrayList<>();
     for(var p:pairs){
-      var a=leftFields.get(p.leftFieldId()),z=rightFields.get(p.rightFieldId());
+      FieldCatalog.Field a=leftFields.get(p.leftFieldId());
+      FieldCatalog.Field z=rightFields.get(p.rightFieldId());
       if(a==null||z==null||a.sourceColumn()==null||z.sourceColumn()==null)
         throw new IllegalArgumentException("关联字段已失效");
       on.add("bi_left."+FormulaCompiler.quote(a.sourceColumn())+
